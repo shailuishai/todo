@@ -1,0 +1,1 @@
+module analytics-service
