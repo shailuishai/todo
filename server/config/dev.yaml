@@ -1,0 +1,55 @@
+env: "dev"
+http_server:
+  address: "0.0.0.0:8080"
+  timeout: 4s
+  idle_timeout: 60s
+db:
+  username: "user"
+  host: "dpg-cu0kkc3tq21c73csdjl0-a"
+  port: "5432"
+  dbname: "film_32q6"
+  ssl_mode: "disable"
+cache:
+  address: "red-cu0kic3v2p9s73dhu8ig:6379"
+  db: 0
+  state_expiration: 4m
+  email_confirmed_code_expiration: 16m
+s3:
+  endpoint: "storage-173.s3hoster.by"
+  region: "BTC"
+  buckets:
+    - name: "useravatar"
+      default_file:
+        path:
+          - "./server/defaultAvatars/userAvatar512Dark.webp"
+          - "./server/defaultAvatars/userAvatar64Dark.webp"
+          - "./server/defaultAvatars/userAvatar512Light.webp"
+          - "./server/defaultAvatars/userAvatar64Light.webp"
+        keys:
+          - "default/512x512_Dark.webp"
+          - "default/64x64_Dark.webp"
+          - "default/512x512_Light.webp"
+          - "default/64x64_Light.webp"
+    - name: "filmposter"
+      default_file:
+        path:
+          - "./server/defaultAvatars/filmPosterDark.webp"
+          - "./server/defaultAvatars/filmPosterLight.webp"
+        keys:
+          - "default/800x1200_Dark.webp"
+          - "default/800x1200_Light.webp"
+    - name: "actoravatar"
+      default_file:
+        path:
+          - "./server/defaultAvatars/actorAvatarDark.webp"
+          - "./server/defaultAvatars/actorAvatarLight.webp"
+        keys:
+          - "default/512x512_Dark.webp"
+          - "default/512x512_Light.webp"
+smtp:
+  host: "smtp.yandex.ru"
+  port: 465
+  username: "OfflinerMen@yandex.by"
+jwt:
+  access_expire: 8m
+  refresh_expire: 128h

@@ -1,0 +1,1239 @@
+basePath: /v1
+definitions:
+  controller.CreateGenreRequest:
+    properties:
+      name:
+        type: string
+    type: object
+  controller.CreateReviewRequest:
+    properties:
+      film_id:
+        type: integer
+      rating:
+        maximum: 100
+        minimum: 0
+        type: integer
+      review_text:
+        type: string
+      user_id:
+        type: integer
+    required:
+    - film_id
+    - rating
+    - review_text
+    - user_id
+    type: object
+  controller.EmailConfirmedRequest:
+    properties:
+      code:
+        example: 54JK64
+        type: string
+      email:
+        example: jon.doe@gmail.com
+        type: string
+    required:
+    - code
+    - email
+    type: object
+  controller.SendConfirmedEmailCodeRequest:
+    properties:
+      email:
+        example: jon.doe@gmail.com
+        type: string
+    required:
+    - email
+    type: object
+  controller.UpdateGenreRequest:
+    properties:
+      genre_id:
+        type: integer
+      name:
+        type: string
+    type: object
+  controller.UpdateReviewRequest:
+    properties:
+      film_id:
+        type: integer
+      rating:
+        maximum: 100
+        minimum: 0
+        type: integer
+      review_id:
+        type: integer
+      review_text:
+        type: string
+      user_id:
+        type: integer
+    required:
+    - film_id
+    - rating
+    - review_id
+    - review_text
+    - user_id
+    type: object
+  controller.UserSignInRequest:
+    properties:
+      email:
+        example: jon.doe@gmail.com
+        type: string
+      login:
+        example: user1
+        maxLength: 50
+        minLength: 1
+        type: string
+      password:
+        example: SuperPassword123
+        type: string
+    required:
+    - password
+    type: object
+  controller.UserSignUpRequest:
+    properties:
+      email:
+        example: jon.doe@gmail.com
+        type: string
+      login:
+        example: user1
+        maxLength: 50
+        minLength: 1
+        type: string
+      password:
+        example: SuperPassword123
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  response.Response:
+    description: Structure for a standard API response
+    properties:
+      data: {}
+      error:
+        example: any error
+        type: string
+      status:
+        example: success/error
+        type: string
+    type: object
+host: film-catalog-8re5.onrender.com
+info:
+  contact:
+    name: Evdokimov Igor
+    url: https://t.me/epelptic
+  description: API for potatorate site
+  title: Film-catalog API
+  version: 1.0.0
+paths:
+  /actors:
+    get:
+      description: Возвращает список актеров с возможностью фильтрации по имени, дате
+        создания, количеству фильмов, сортировке и пагинации
+      parameters:
+      - description: Имя актера
+        in: query
+        name: name
+        type: string
+      - description: Год добавления актера
+        in: query
+        name: create_at
+        type: integer
+      - description: Минимальный год создания актера
+        in: query
+        name: min_year
+        type: integer
+      - description: Максимальный год создания актера
+        in: query
+        name: max_year
+        type: integer
+      - description: Минимальное количество фильмов, в которых снялся актер
+        in: query
+        name: min_movies_count
+        type: integer
+      - description: Максимальное количество фильмов, в которых снялся актер
+        in: query
+        name: max_movies_count
+        type: integer
+      - description: Поле для сортировки (например, 'name', 'created_at')
+        in: query
+        name: sort_by
+        type: string
+      - description: Порядок сортировки (asc или desc)
+        in: query
+        name: order
+        type: string
+      - description: Номер страницы для пагинации
+        in: query
+        name: page
+        type: integer
+      - description: Количество актеров на странице
+        in: query
+        name: page_size
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/response.Response'
+            type: array
+        "400":
+          description: Неверные данные запроса
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получить список актеров с фильтрацией по различным параметрам
+      tags:
+      - actor
+    post:
+      consumes:
+      - application/json
+      description: Создает нового актера с указанными параметрами
+      parameters:
+      - description: Данные актера
+        in: formData
+        name: json
+        required: true
+        type: string
+      - description: Аватар актера
+        in: formData
+        name: avatar
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Создание нового актера
+      tags:
+      - actor
+  /actors/{id}:
+    delete:
+      description: Удаляет актера по его FilmId
+      parameters:
+      - description: FilmId актера
+        in: query
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Удалить актера по FilmId
+      tags:
+      - actor
+    get:
+      description: Возвращает информацию об актере по его FilmId
+      parameters:
+      - description: FilmId актера
+        in: query
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получить актера по FilmId
+      tags:
+      - actor
+    put:
+      consumes:
+      - application/json
+      description: Обновляет данные актера, включая аватар
+      parameters:
+      - description: FilmId актера
+        in: query
+        name: id
+        required: true
+        type: string
+      - description: Reset avatar to default
+        in: query
+        name: reset_avatar
+        type: boolean
+      - description: JSON with login data
+        in: formData
+        name: json
+        required: true
+        type: string
+      - description: Avatar image file (max 1MB)
+        in: formData
+        name: avatar
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Обновить информацию об актере
+      tags:
+      - actor
+  /auth/{provider}:
+    get:
+      consumes:
+      - application/json
+      description: Redirects the user to the OAuth provider for authentication.
+      parameters:
+      - description: OAuth provider DON'T WORK IN SWAGGER!!!
+        example: '"google" or "yandex"'
+        in: path
+        name: provider
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "307":
+          description: Redirecting to provider
+        "400":
+          description: Provider not supported
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: User SignWithOauth
+      tags:
+      - auth
+  /auth/{provider}/callback:
+    get:
+      consumes:
+      - application/json
+      description: Handles the callback from the OAuth provider after the user has
+        authorized the app. THIS ENDPOINT IS CALLED BY THE OAUTH PROVIDER, NOT THE
+        FRONTEND!!!
+      parameters:
+      - description: OAuth provider
+        example: '"google" or "yandex"'
+        in: path
+        name: provider
+        required: true
+        type: string
+      - description: State parameter sent during OAuth authorization
+        example: '"randomstate123"'
+        in: query
+        name: state
+        required: true
+        type: string
+      - description: Authorization code returned by OAuth provider
+        example: '"authorizationcode123"'
+        in: query
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User already exists, successfully authenticated
+          schema:
+            $ref: '#/definitions/response.Response'
+        "201":
+          description: New user created and successfully authenticated
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Provider not supported or invalid state
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: OAuth2 Callback Handler
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      description: Logs out the user by clearing the refresh token cookie. If the
+        cookie is not found, returns success without any action.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User successfully logged out or no refresh token found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "204":
+          description: No content, token was successfully invalidated
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Logout user
+      tags:
+      - auth
+  /auth/refresh-token:
+    post:
+      consumes:
+      - application/json
+      description: Refreshes the access token using the provided refresh token from
+        cookies.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successfully refreshed access token
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Invalid, missing or expired refresh token
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Refresh Access Token
+      tags:
+      - auth
+  /auth/sign-in:
+    post:
+      consumes:
+      - application/json
+      description: Create access and refresh token and return them to the user
+      parameters:
+      - description: User login details
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UserSignInRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User successfully signed in
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid request payload or validation error
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Invalid Password or Email
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: User email is not confirmed
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: User SignIn
+      tags:
+      - auth
+  /auth/sign-up:
+    post:
+      consumes:
+      - application/json
+      description: Registers a new user with the provided email and password.
+      parameters:
+      - description: User registration details
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UserSignUpRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: User successfully created
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Validation error or invalid request payload
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: Conflict - User with this email or login already exists
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: User SignUp
+      tags:
+      - auth
+  /email/confirm:
+    put:
+      consumes:
+      - application/json
+      description: Validate confirmed code and is it confirmed update email_status
+      parameters:
+      - description: data for confirmed email
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.EmailConfirmedRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success email confirmation
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Error email confirmation
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Confirmation email address
+      tags:
+      - email
+  /email/send-code:
+    post:
+      consumes:
+      - application/json
+      description: Generate code for confirmation email and send this to email. This
+        endpoint have rate 1 req in 1 min
+      parameters:
+      - description: Email пользователя для подтверждения
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.SendConfirmedEmailCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Код подтверждения успешно отправлен
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Ошибка валидации или неверный запрос
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Внутренняя ошибка сервера
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Send code for confirmation email
+      tags:
+      - email
+  /films:
+    get:
+      description: Возвращает список фильмов с возможностью фильтрации по жанрам,
+        актерам, продюсеру, рейтингу, дате выпуска, длительности и сортировке
+      parameters:
+      - collectionFormat: csv
+        description: Список FilmId жанров
+        in: query
+        items:
+          type: integer
+        name: genre_ids
+        type: array
+      - collectionFormat: csv
+        description: Список FilmId актеров
+        in: query
+        items:
+          type: integer
+        name: actor_ids
+        type: array
+      - description: Продюсер
+        in: query
+        name: producer
+        type: string
+      - description: Минимальный рейтинг
+        in: query
+        name: min_rating
+        type: number
+      - description: Максимальный рейтинг
+        in: query
+        name: max_rating
+        type: number
+      - description: 'Минимальная дата выпуска (формат: 2006-01-02)'
+        in: query
+        name: min_date
+        type: string
+      - description: 'Максимальная дата выпуска (формат: 2006-01-02)'
+        in: query
+        name: max_date
+        type: string
+      - description: 'Минимальная длительность (пример: 2h30m, 90m)'
+        in: query
+        name: min_duration
+        type: string
+      - description: 'Максимальная длительность (пример: 2h30m, 90m)'
+        in: query
+        name: max_duration
+        type: string
+      - description: Поле для сортировки (rating, release_date, runtime)
+        in: query
+        name: sort_by
+        type: string
+      - description: Порядок сортировки (asc, desc)
+        in: query
+        name: order
+        type: string
+      - description: Номер страницы
+        in: query
+        name: page
+        type: integer
+      - description: Размер страницы
+        in: query
+        name: page_size
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/response.Response'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получить список фильмов с фильтрацией и пагинацией
+      tags:
+      - film
+    post:
+      consumes:
+      - multipart/form-data
+      description: Создает новый фильм с указанными параметрами
+      parameters:
+      - description: Данные фильма в формате JSON
+        in: formData
+        name: data
+        required: true
+        type: string
+      - description: Постер фильма
+        in: formData
+        name: poster
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Создать новый фильм
+      tags:
+      - film
+  /films/{id}:
+    delete:
+      description: Удаляет фильм по его FilmId
+      parameters:
+      - description: FilmId фильма
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Удалить фильм по FilmId
+      tags:
+      - film
+    get:
+      description: Возвращает информацию о фильме по его FilmId
+      parameters:
+      - description: FilmId фильма
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получить фильм по FilmId
+      tags:
+      - film
+    put:
+      consumes:
+      - multipart/form-data
+      description: Обновляет данные фильма, включая постер
+      parameters:
+      - description: FilmId фильма
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Данные фильма в формате JSON
+        in: formData
+        name: data
+        required: true
+        type: string
+      - description: Постер фильма
+        in: formData
+        name: poster
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Обновить информацию о фильме
+      tags:
+      - film
+  /films/search:
+    get:
+      description: Возвращает список фильмов, соответствующих поисковому запросу
+      parameters:
+      - description: Поисковый запрос
+        in: query
+        name: query
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/response.Response'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Поиск фильмов по запросу
+      tags:
+      - film
+  /genres:
+    get:
+      description: Возвращает список всех доступных жанров
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/response.Response'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получение списка жанров
+      tags:
+      - genre
+    post:
+      consumes:
+      - application/json
+      description: Создает новый жанр с указанным названием
+      parameters:
+      - description: Название жанра
+        in: body
+        name: json
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateGenreRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Создание нового жанра
+      tags:
+      - genre
+    put:
+      consumes:
+      - application/json
+      description: Обновляет название существующего жанра
+      parameters:
+      - description: FilmId жанра и новое название
+        in: body
+        name: json
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateGenreRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Обновление жанра
+      tags:
+      - genre
+  /genres/{id}:
+    delete:
+      description: Удаляет жанр по указанному FilmId
+      parameters:
+      - description: FilmId жанра
+        in: query
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Удаление жанра
+      tags:
+      - genre
+    get:
+      description: Возвращает информацию о жанре по указанному FilmId
+      parameters:
+      - description: FilmId жанра
+        in: query
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получение жанра по FilmId
+      tags:
+      - genre
+  /profile:
+    delete:
+      description: Deletes the user profile and all associated data.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User profile deleted successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete user profile
+      tags:
+      - profile
+    get:
+      description: Retrieves the user profile information.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User profile retrieved successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Get user profile
+      tags:
+      - profile
+    put:
+      consumes:
+      - multipart/form-data
+      description: |-
+        Updates the user profile information, including login and avatar.
+        The request accepts a JSON part with the login data, an optional avatar file, and a query parameter `reset_avatar`.
+      parameters:
+      - description: Reset avatar to default
+        in: query
+        name: reset_avatar
+        type: boolean
+      - description: JSON with login data
+        in: formData
+        name: json
+        required: true
+        type: string
+      - description: Avatar image file (max 1MB)
+        in: formData
+        name: avatar
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profile updated successfully
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "413":
+          description: File size exceeds 1MB limit
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: Update user profile
+      tags:
+      - profile
+  /reviews:
+    post:
+      consumes:
+      - application/json
+      description: Создает новый отзыв с указанными данными
+      parameters:
+      - description: Данные отзыва
+        in: body
+        name: json
+        required: true
+        schema:
+          $ref: '#/definitions/controller.CreateReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Создание нового отзыва
+      tags:
+      - review
+    put:
+      consumes:
+      - application/json
+      description: Обновляет данные отзыва
+      parameters:
+      - description: Данные отзыва
+        in: body
+        name: json
+        required: true
+        schema:
+          $ref: '#/definitions/controller.UpdateReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Обновление отзыва
+      tags:
+      - review
+  /reviews/{id}:
+    delete:
+      description: Удаляет отзыв по указанному FilmId
+      parameters:
+      - description: FilmId отзыва
+        in: query
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Удаление отзыва
+      tags:
+      - review
+    get:
+      description: Возвращает информацию о отзыве по указанному FilmId
+      parameters:
+      - description: FilmId отзыва
+        in: query
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получение отзыва по FilmId
+      tags:
+      - review
+  /reviews/film/{film_id}:
+    get:
+      description: Возвращает список отзывов для указанного фильма
+      parameters:
+      - description: FilmId фильма
+        in: query
+        name: film_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/response.Response'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получение отзывов по FilmId фильма
+      tags:
+      - review
+  /reviews/reviewer/{user_id}:
+    get:
+      description: Возвращает список отзывов, оставленных указанным пользователем
+      parameters:
+      - description: FilmId пользователя
+        in: query
+        name: reviewer_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/response.Response'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Получение отзывов по FilmId пользователя
+      tags:
+      - review
+schemes:
+- https
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
