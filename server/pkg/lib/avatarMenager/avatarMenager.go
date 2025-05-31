@@ -10,7 +10,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
-	"mime/multipart"
+	// "mime/multipart" // Больше не нужен, если принимаем io.Reader
 	"net/http"
 	"sync"
 )
@@ -21,37 +21,58 @@ var (
 	ErrInvalidResolutionAvatar = errors.New("invalid resolution avatar, supported avatar resolution 1x1")
 	ErrInvalidTypePoster       = errors.New("invalid type poster, supported avatar formats are jpg, jpeg, png, webp, or no animated gif")
 	ErrInvalidResolutionPoster = errors.New("invalid resolution poster, supported poster resolution 800x1200")
+	ErrInvalidSizeAvatar       = errors.New("sasdf")
 )
 
-func ParsingAvatarImage(file *multipart.File) ([]byte, []byte, error) {
+// ИЗМЕНЕНА СИГНАТУРА: принимает io.Reader
+func ParsingAvatarImage(reader io.Reader) ([]byte, []byte, error) {
 	buffer := new(bytes.Buffer)
-	if _, err := io.Copy(buffer, *file); err != nil {
-		return nil, nil, ErrInternal
+	// Копируем данные из reader в buffer. Reader может быть прочитан только один раз.
+	// Поэтому, если contentType также нужен из buffer, его нужно определять после копирования.
+	// Или, если multipart.FileHeader доступен, contentType можно взять оттуда.
+	// Но http.DetectContentType работает с []byte.
+	if _, err := io.Copy(buffer, reader); err != nil {
+		return nil, nil, ErrInternal // Ошибка чтения из источника
 	}
+
+	// Важно: после io.Copy(buffer, reader) сам reader уже прочитан.
+	// Все последующие операции должны использовать buffer.Bytes() или bytes.NewReader(buffer.Bytes()).
 
 	var img image.Image
 	var err error
+	// Определяем тип контента по байтам из буфера
 	contentType := http.DetectContentType(buffer.Bytes())
+
+	// Для декодирования нужно снова создать reader из буфера, т.к. buffer.Read() сдвигает указатель
+	imageDataReader := bytes.NewReader(buffer.Bytes())
 
 	switch contentType {
 	case "image/png":
-		img, err = png.Decode(buffer)
+		img, err = png.Decode(imageDataReader)
 	case "image/jpeg":
-		img, err = jpeg.Decode(buffer)
+		img, err = jpeg.Decode(imageDataReader)
 	case "image/gif":
-		isNonAnimated, err := isNonAnimatedGIF(bytes.NewReader(buffer.Bytes()))
-		if err != nil || !isNonAnimated {
-			return nil, nil, ErrInvalidTypeAvatar
+		// isNonAnimatedGIF также ожидает io.Reader
+		gifReaderForCheck := bytes.NewReader(buffer.Bytes())
+		isNonAnimated, nonAnimatedErr := isNonAnimatedGIF(gifReaderForCheck)
+		if nonAnimatedErr != nil {
+			return nil, nil, ErrInvalidTypeAvatar // Ошибка проверки GIF
 		}
-		img, err = gif.Decode(buffer)
+		if !isNonAnimated {
+			return nil, nil, ErrInvalidTypeAvatar // Анимированный GIF
+		}
+		// Декодируем GIF заново
+		gifReaderForDecode := bytes.NewReader(buffer.Bytes())
+		img, err = gif.Decode(gifReaderForDecode)
 	case "image/webp":
-		img, err = webp.Decode(buffer)
+		img, err = webp.Decode(imageDataReader)
 	default:
 		return nil, nil, ErrInvalidTypeAvatar
 	}
 
 	if err != nil {
-		return nil, nil, ErrInvalidTypeAvatar
+		// err уже содержит информацию об ошибке декодирования
+		return nil, nil, ErrInvalidTypeAvatar // Можно обернуть err, если нужно: fmt.Errorf("%w: %v", ErrInvalidTypeAvatar, err)
 	}
 
 	bounds := img.Bounds()
@@ -66,36 +87,32 @@ func ParsingAvatarImage(file *multipart.File) ([]byte, []byte, error) {
 	var buf512, buf64 []byte
 	var err512, err64 error
 
-	// Обработка 512x512
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		resized := resize.Resize(512, 512, img, resize.Lanczos3)
-		buffer := new(bytes.Buffer)
-		if err := webp.Encode(buffer, resized, &webp.Options{Quality: 80}); err != nil {
-			err512 = ErrInternal
+		imgBuffer := new(bytes.Buffer) // Локальный буфер для этой горутины
+		if encErr := webp.Encode(imgBuffer, resized, &webp.Options{Quality: 80}); encErr != nil {
+			err512 = ErrInternal // Можно сделать более специфичную ошибку
 			return
 		}
-		buf512 = buffer.Bytes()
+		buf512 = imgBuffer.Bytes()
 	}()
 
-	// Обработка 52x52
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		resized := resize.Resize(64, 64, img, resize.Lanczos3)
-		buffer := new(bytes.Buffer)
-		if err := webp.Encode(buffer, resized, &webp.Options{Quality: 80}); err != nil {
+		imgBuffer := new(bytes.Buffer) // Локальный буфер
+		if encErr := webp.Encode(imgBuffer, resized, &webp.Options{Quality: 80}); encErr != nil {
 			err64 = ErrInternal
 			return
 		}
-		buf64 = buffer.Bytes()
+		buf64 = imgBuffer.Bytes()
 	}()
 
-	// Ожидание завершения всех горутин
 	wg.Wait()
 
-	// Проверка на ошибки
 	if err512 != nil {
 		return nil, nil, err512
 	}
@@ -106,29 +123,37 @@ func ParsingAvatarImage(file *multipart.File) ([]byte, []byte, error) {
 	return buf64, buf512, nil
 }
 
-func ParsingPosterImage(file *multipart.File) ([]byte, []byte, error) {
+// Аналогично изменить ParsingPosterImage, если используется
+func ParsingPosterImage(reader io.Reader) ([]byte, []byte, error) {
+	// ... похожая логика с io.Copy в buffer и использованием bytes.NewReader(buffer.Bytes()) для декодеров ...
 	buffer := new(bytes.Buffer)
-	if _, err := io.Copy(buffer, *file); err != nil {
+	if _, err := io.Copy(buffer, reader); err != nil {
 		return nil, nil, ErrInternal
 	}
-
+	// ... остальная логика аналогична ParsingAvatarImage, только с другими размерами и проверками
 	var img image.Image
 	var err error
 	contentType := http.DetectContentType(buffer.Bytes())
+	imageDataReader := bytes.NewReader(buffer.Bytes())
 
 	switch contentType {
 	case "image/png":
-		img, err = png.Decode(buffer)
+		img, err = png.Decode(imageDataReader)
 	case "image/jpeg":
-		img, err = jpeg.Decode(buffer)
+		img, err = jpeg.Decode(imageDataReader)
 	case "image/gif":
-		isNonAnimated, err := isNonAnimatedGIF(bytes.NewReader(buffer.Bytes()))
-		if err != nil || !isNonAnimated {
+		gifReaderForCheck := bytes.NewReader(buffer.Bytes())
+		isNonAnimated, nonAnimatedErr := isNonAnimatedGIF(gifReaderForCheck)
+		if nonAnimatedErr != nil {
 			return nil, nil, ErrInvalidTypePoster
 		}
-		img, err = gif.Decode(buffer)
+		if !isNonAnimated {
+			return nil, nil, ErrInvalidTypePoster
+		}
+		gifReaderForDecode := bytes.NewReader(buffer.Bytes())
+		img, err = gif.Decode(gifReaderForDecode)
 	case "image/webp":
-		img, err = webp.Decode(buffer)
+		img, err = webp.Decode(imageDataReader)
 	default:
 		return nil, nil, ErrInvalidTypePoster
 	}
@@ -141,8 +166,7 @@ func ParsingPosterImage(file *multipart.File) ([]byte, []byte, error) {
 	width := bounds.Dx()
 	height := bounds.Dy()
 
-	// Проверка на минимальное разрешение постера
-	if width < 800 || height < 1200 {
+	if width < 800 || height < 1200 { // Примерные размеры для постера
 		return nil, nil, ErrInvalidResolutionPoster
 	}
 
@@ -150,43 +174,37 @@ func ParsingPosterImage(file *multipart.File) ([]byte, []byte, error) {
 	var bufLarge, bufThumbnail []byte
 	var errLarge, errThumbnail error
 
-	// Обработка большого постера (800x1200)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		resized := resize.Resize(800, 1200, img, resize.Lanczos3)
-		buffer := new(bytes.Buffer)
-		if err := webp.Encode(buffer, resized, &webp.Options{Quality: 85}); err != nil {
+		resized := resize.Resize(800, 1200, img, resize.Lanczos3) // Размеры для постера
+		imgBuffer := new(bytes.Buffer)
+		if encErr := webp.Encode(imgBuffer, resized, &webp.Options{Quality: 85}); encErr != nil {
 			errLarge = ErrInternal
 			return
 		}
-		bufLarge = buffer.Bytes()
+		bufLarge = imgBuffer.Bytes()
 	}()
 
-	// Обработка миниатюры постера (200x300)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		resized := resize.Resize(200, 300, img, resize.Lanczos3)
-		buffer := new(bytes.Buffer)
-		if err := webp.Encode(buffer, resized, &webp.Options{Quality: 85}); err != nil {
+		resized := resize.Resize(200, 300, img, resize.Lanczos3) // Размеры для thumbnail
+		imgBuffer := new(bytes.Buffer)
+		if encErr := webp.Encode(imgBuffer, resized, &webp.Options{Quality: 85}); encErr != nil {
 			errThumbnail = ErrInternal
 			return
 		}
-		bufThumbnail = buffer.Bytes()
+		bufThumbnail = imgBuffer.Bytes()
 	}()
 
-	// Ожидание завершения всех горутин
 	wg.Wait()
-
-	// Проверка на ошибки
 	if errLarge != nil {
 		return nil, nil, errLarge
 	}
 	if errThumbnail != nil {
 		return nil, nil, errThumbnail
 	}
-
 	return bufThumbnail, bufLarge, nil
 }
 

@@ -6,97 +6,133 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types" // Для types.ObjectIdentifier
 	"log/slog"
-	s3Storage "server/internal/init/s3"
-	u "server/internal/modules/user"
-	"sync"
+	s3init "server/internal/init/s3" // Пакет инициализации S3 клиента
+	"server/internal/modules/user"   // Пакет с ошибками user
 )
 
 type ProfileS3 struct {
 	log    *slog.Logger
-	s3     *s3Storage.S3Storage
-	bucket string
+	client *s3.Client // S3 клиент из пакета init
+	// bucket string  // Имя бакета теперь будет передаваться в каждый метод
 }
 
-func NewProfileS3(log *slog.Logger, s3 *s3Storage.S3Storage) *ProfileS3 {
+// NewProfileS3 теперь принимает только логгер и S3 клиент.
+// Имена бакетов будут передаваться из UseCase, который берет их из конфига.
+func NewProfileS3(log *slog.Logger, s3Client *s3init.S3Storage) *ProfileS3 {
 	return &ProfileS3{
 		log:    log,
-		s3:     s3,
-		bucket: "useravatar",
+		client: s3Client.Client, // Используем сам s3.Client
 	}
 }
 
-func (s *ProfileS3) UploadAvatar(avatarSmall []byte, avatarLarge []byte, login string, userId uint) (*string, error) {
-	s.log = s.log.With("op", "uploadAvatar")
+// UploadAvatar загружает один файл аватара в указанный бакет с указанным ключом.
+func (s *ProfileS3) UploadAvatar(bucketName string, s3Key string, avatarBytes []byte, contentType string) error {
+	log := s.log.With(
+		slog.String("op", "ProfileS3.UploadAvatar"),
+		slog.String("bucket", bucketName),
+		slog.String("key", s3Key),
+		slog.String("contentType", contentType),
+	)
 
-	folderPath := fmt.Sprintf("%s_%d/", login, userId)
-
-	objectKeySmall := folderPath + "64x64.webp"
-	objectKeyLarge := folderPath + "512x512.webp"
-
-	var wg sync.WaitGroup
-	var errSmall, errLarge error
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		uploadInputSmall := &s3.PutObjectInput{
-			Bucket:      aws.String(s.bucket),
-			Key:         aws.String(objectKeySmall),
-			Body:        bytes.NewReader(avatarSmall),
-			ContentType: aws.String("image/webp"),
-		}
-
-		_, errSmall = s.s3.Client.PutObject(context.TODO(), uploadInputSmall)
-		return
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		uploadInputLarge := &s3.PutObjectInput{
-			Bucket:      aws.String(s.bucket),
-			Key:         aws.String(objectKeyLarge),
-			Body:        bytes.NewReader(avatarLarge),
-			ContentType: aws.String("image/webp"),
-		}
-
-		_, errLarge = s.s3.Client.PutObject(context.TODO(), uploadInputLarge)
-		return
-	}()
-
-	wg.Wait()
-
-	if errSmall != nil || errLarge != nil {
-		s.log.Error("uploadAvatar err", "err", errSmall, "err", errLarge)
-		return nil, u.ErrInternal
+	if contentType == "" {
+		contentType = "application/octet-stream" // Default content type
 	}
 
-	folderURL := fmt.Sprintf("https://%s.%s/%s", s.bucket, s.s3.Endpoint, folderPath)
-	return &folderURL, nil
+	_, err := s.client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket:      aws.String(bucketName),
+		Key:         aws.String(s3Key),
+		Body:        bytes.NewReader(avatarBytes),
+		ContentType: aws.String(contentType),
+		// ACL: types.ObjectCannedACLPublicRead, // Если бакеты не публичны по умолчанию
+	})
+
+	if err != nil {
+		log.Error("failed to upload avatar to S3", "error", err)
+		return user.ErrInternal // Ошибка при загрузке на S3
+	}
+
+	log.Info("avatar uploaded to S3 successfully")
+	return nil
 }
 
-func (s *ProfileS3) DeleteAvatar(login string, userId uint) error {
-	folderPath := fmt.Sprintf("%s_%d/", login, userId)
+// DeleteAvatar удаляет один объект из S3 по бакету и ключу.
+func (s *ProfileS3) DeleteAvatar(bucketName string, s3Key string) error {
+	log := s.log.With(
+		slog.String("op", "ProfileS3.DeleteAvatar"),
+		slog.String("bucket", bucketName),
+		slog.String("key", s3Key),
+	)
 
-	objectsToDelete := []string{folderPath + "64x64.wabp", folderPath + "512x512.webp"}
+	_, err := s.client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(s3Key),
+	})
 
-	var objectsId []types.ObjectIdentifier
-	objectsId = append(objectsId, types.ObjectIdentifier{Key: aws.String(objectsToDelete[0])})
-	objectsId = append(objectsId, types.ObjectIdentifier{Key: aws.String(objectsToDelete[1])})
+	if err != nil {
+		// Можно проверить специфичные ошибки S3, если нужно (например, NoSuchKey)
+		log.Error("failed to delete avatar from S3", "error", err)
+		return user.ErrInternal // Ошибка при удалении с S3
+	}
 
-	deleteInput := &s3.DeleteObjectsInput{
-		Bucket: aws.String(s.bucket),
+	log.Info("avatar deleted from S3 successfully")
+	return nil
+}
+
+// DeleteAvatars (если нужно удалять несколько размеров одновременно, как в старом коде)
+// Эта функция не соответствует текущему упрощенному интерфейсу UploadAvatar/DeleteAvatar,
+// но я оставлю ее как пример, если ты решишь вернуться к загрузке нескольких размеров
+// и хранению нескольких ключей.
+func (s *ProfileS3) DeleteAvatars(bucketName string, s3Keys []string) error {
+	log := s.log.With(
+		slog.String("op", "ProfileS3.DeleteAvatars"),
+		slog.String("bucket", bucketName),
+		slog.Any("keys", s3Keys),
+	)
+
+	if len(s3Keys) == 0 {
+		log.Info("no S3 keys provided for deletion")
+		return nil
+	}
+
+	var objectsToDelete []types.ObjectIdentifier
+	for _, key := range s3Keys {
+		objectsToDelete = append(objectsToDelete, types.ObjectIdentifier{Key: aws.String(key)})
+	}
+
+	_, err := s.client.DeleteObjects(context.TODO(), &s3.DeleteObjectsInput{
+		Bucket: aws.String(bucketName),
 		Delete: &types.Delete{
-			Objects: objectsId,
-			Quiet:   aws.Bool(true),
+			Objects: objectsToDelete,
+			Quiet:   aws.Bool(false), // false - чтобы получить информацию об ошибках для каждого объекта
 		},
+	})
+
+	if err != nil {
+		log.Error("failed to delete objects from S3", "error", err)
+		// В ответе DeleteObjectsOutput.Errors можно посмотреть, какие конкретно ключи не удалились.
+		return user.ErrInternal
 	}
 
-	_, err := s.s3.Client.DeleteObjects(context.TODO(), deleteInput)
+	log.Info("avatars deleted from S3 successfully")
+	return nil
+}
 
-	return err
+// GetPublicURL формирует публичный URL для объекта в S3.
+// Это вспомогательная функция, которая может быть полезна, если UseCase или DB Repo
+// не имеют прямого доступа к s3endpoint.
+// endpoint должен быть полным, например "useravatar.storage-321.s3hoster.by" (без https://)
+// Или, если бакет является частью хоста, то endpoint "storage-321.s3hoster.by"
+// и bucketName "useravatar". Зависит от твоего S3 провайдера.
+// Пока что не используется напрямую в интерфейсе Repo, но может пригодиться.
+func (s *ProfileS3) GetPublicURL(bucketName string, s3Key string, s3Endpoint string) string {
+	if s3Key == "" {
+		return ""
+	}
+	// Формат URL может отличаться для разных S3-совместимых хранилищ.
+	// Вариант 1: bucket является частью хоста (например, Amazon S3 по умолчанию)
+	// return fmt.Sprintf("https://%s.%s/%s", bucketName, s3Endpoint, s3Key)
+	// Вариант 2: bucket является частью пути (часто для MinIO или других)
+	return fmt.Sprintf("https://%s/%s/%s", s3Endpoint, bucketName, s3Key)
 }

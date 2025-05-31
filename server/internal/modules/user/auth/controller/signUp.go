@@ -36,7 +36,7 @@ func (c *AuthController) SignUp(w http.ResponseWriter, r *http.Request) {
 	if err := c.validate.Struct(req); err != nil {
 		log.Error("failed to validate request", err)
 		w.WriteHeader(http.StatusBadRequest)
-		render.JSON(w, r, resp.ValidationError(err))
+		resp.SendValidationError(w, r, err)
 		return
 	}
 

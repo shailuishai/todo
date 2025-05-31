@@ -5,7 +5,7 @@ import (
 )
 
 type UserEmail struct {
-	UserId        int64  `json:"user_id"`
+	UserId        uint   `json:"user_id"` // Изменил int64 на uint для консистентности с User.UserId
 	Email         string `json:"email"`
 	VerifiedEmail bool   `json:"verified_email"`
 }
@@ -25,4 +25,5 @@ type Repo interface {
 	IsEmailConfirmed(email string) (bool, error)
 	SaveEmailConfirmedCode(email string, code string) error
 	GetEmailConfirmedCode(email string) (string, error)
+	DeleteEmailConfirmedCode(email string) error
 }

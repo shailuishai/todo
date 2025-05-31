@@ -15,6 +15,7 @@ type Config struct {
 	SMTPConfig       SMTPConfig       `yaml:"smtp" env-required:"true"`
 	JWTConfig        JWTConfig        `yaml:"jwt" env-required:"true"`
 	S3Config         S3Config         `yaml:"s3" env-required:"true"`
+	OAuthConfig      OAuthConfig      `yaml:"oauth" env-required:"true"`
 }
 
 type CacheConfig struct {
@@ -22,12 +23,23 @@ type CacheConfig struct {
 	Db                           int           `yaml:"db"`
 	StateExpiration              time.Duration `yaml:"state_expiration" env-required:"true"`
 	EmailConfirmedCodeExpiration time.Duration `yaml:"email_confirmed_code_expiration" env-required:"true"`
+	DefaultTaskCacheTtl          time.Duration `yaml:"default_task_cache_ttl" env-required:"true"`
+	DefaultTeamCacheTtl          time.Duration `yaml:"default_team_cache_ttl" env-required:"true"`
+	DefaultTeamListCacheTtl      time.Duration `yaml:"default_team_list_cache_ttl" env-required:"true"`
+}
+
+type TLSConfig struct {
+	Enabled  bool   `yaml:"enabled" env-default:"false"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
 }
 
 type HttpServerConfig struct {
-	Address     string        `yaml:"address" env-required:"true"`
-	Timeout     time.Duration `yaml:"timeout" env-required:"true"`
-	IdleTimeout time.Duration `yaml:"idle_timeout" env-required:"true"`
+	Address        string        `yaml:"address" env-required:"true"`
+	Timeout        time.Duration `yaml:"timeout" env-required:"true"`
+	IdleTimeout    time.Duration `yaml:"idle_timeout" env-required:"true"`
+	AllowedOrigins []string      `yaml:"allowed_origins"`
+	TLS            TLSConfig     `yaml:"tls"`
 }
 
 type DbConfig struct {
@@ -49,36 +61,50 @@ var JwtConfig JWTConfig
 type JWTConfig struct {
 	AccessExpire  time.Duration `yaml:"access_expire" env-required:"true"`
 	RefreshExpire time.Duration `yaml:"refresh_expire" env-required:"true"`
-}
-
-type BucketConfig struct {
-	Name        string      `yaml:"name"`
-	DefaultFile DefaultFile `yaml:"default_file"`
-}
-
-type DefaultFile struct {
-	Path []string `yaml:"path"`
-	Keys []string `yaml:"keys"`
+	CookieDomain  string        `yaml:"cookie_domain" env-required:"true"`
+	SecureCookie  bool          `yaml:"secure_cookie" default:"false"`
 }
 
 type S3Config struct {
-	Endpoint string         `yaml:"endpoint"`
-	Region   string         `yaml:"region"`
-	Buckets  []BucketConfig `yaml:"buckets"`
+	Endpoint              string `yaml:"endpoint"`
+	Region                string `yaml:"region"`
+	BucketUserAvatars     string `yaml:"bucket_user_avatars"`
+	BucketTeamImages      string `yaml:"bucket_team_images"` // Добавлено
+	MaxTeamImageSizeBytes int    `yaml:"max_team_image_size_bytes" default:"0"`
+}
+
+type OAuthConfig struct {
+	GoogleRedirectURL          string `yaml:"google_redirect_url" env-required:"true"`
+	YandexRedirectURL          string `yaml:"yandex_redirect_url" env-required:"true"`
+	FrontendRedirectSuccessURL string `yaml:"frontend_redirect_success_url" env-required:"true"` // Добавлено
+	FrontendRedirectErrorURL   string `yaml:"frontend_redirect_error_url" env-required:"true"`   // Добавлено
 }
 
 func MustLoad() *Config {
 	ConfigPath := os.Getenv("CONFIG_PATH")
 	if ConfigPath == "" {
-		log.Fatal("CONFIG_PATH environment variable not set")
+		defaultPath := "./server/config/local.yaml"
+		if _, err := os.Stat(defaultPath); err == nil {
+			ConfigPath = defaultPath
+			log.Printf("CONFIG_PATH environment variable not set, using default: %s", ConfigPath)
+		} else {
+			configPathFromRoot := "server/config/local.yaml"
+			if _, errRoot := os.Stat(configPathFromRoot); errRoot == nil {
+				ConfigPath = configPathFromRoot
+				log.Printf("CONFIG_PATH environment variable not set, using default relative to root: %s", ConfigPath)
+			} else {
+				log.Fatalf("CONFIG_PATH environment variable not set and default config file not found at %s or %s", defaultPath, configPathFromRoot)
+			}
+		}
 	}
+
 	if _, err := os.Stat(ConfigPath); os.IsNotExist(err) {
 		log.Fatalf("config file does not exist: %s", ConfigPath)
 	}
 
 	var cfg Config
 	if err := cleanenv.ReadConfig(ConfigPath, &cfg); err != nil {
-		log.Fatalf("error reading config file: %s", err)
+		log.Fatalf("error reading config file: %s. Error: %v", ConfigPath, err)
 	}
 
 	JwtConfig = cfg.JWTConfig

@@ -1,28 +1,5 @@
 basePath: /v1
 definitions:
-  controller.CreateGenreRequest:
-    properties:
-      name:
-        type: string
-    type: object
-  controller.CreateReviewRequest:
-    properties:
-      film_id:
-        type: integer
-      rating:
-        maximum: 100
-        minimum: 0
-        type: integer
-      review_text:
-        type: string
-      user_id:
-        type: integer
-    required:
-    - film_id
-    - rating
-    - review_text
-    - user_id
-    type: object
   controller.EmailConfirmedRequest:
     properties:
       code:
@@ -35,6 +12,13 @@ definitions:
     - code
     - email
     type: object
+  controller.RefreshTokenNativeRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
   controller.SendConfirmedEmailCodeRequest:
     properties:
       email:
@@ -42,34 +26,6 @@ definitions:
         type: string
     required:
     - email
-    type: object
-  controller.UpdateGenreRequest:
-    properties:
-      genre_id:
-        type: integer
-      name:
-        type: string
-    type: object
-  controller.UpdateReviewRequest:
-    properties:
-      film_id:
-        type: integer
-      rating:
-        maximum: 100
-        minimum: 0
-        type: integer
-      review_id:
-        type: integer
-      review_text:
-        type: string
-      user_id:
-        type: integer
-    required:
-    - film_id
-    - rating
-    - review_id
-    - review_text
-    - user_id
     type: object
   controller.UserSignInRequest:
     properties:
@@ -104,297 +60,528 @@ definitions:
     - email
     - password
     type: object
-  response.Response:
-    description: Structure for a standard API response
+  profile.UserProfileResponse:
     properties:
-      data: {}
+      accent_color:
+        type: string
+      avatar_url:
+        type: string
+      email:
+        description: Убрал omitempty
+        type: string
+      has_mobile_device_linked:
+        type: boolean
+      is_sidebar_collapsed:
+        type: boolean
+      login:
+        description: Убрал omitempty, login всегда должен быть
+        type: string
+      notifications_email_enabled:
+        description: Настройки уведомлений
+        type: boolean
+      notifications_push_task_assigned:
+        type: boolean
+      notifications_push_task_deadline:
+        type: boolean
+      notifications_push_team_mention:
+        type: boolean
+      theme:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  response.ErrorResponse:
+    properties:
       error:
-        example: any error
+        example: Error message
         type: string
       status:
+        example: error
+        type: string
+    type: object
+  response.Response:
+    properties:
+      data:
+        description: Payload for success responses
+      error:
+        example: Error message if status is 'error'
+        type: string
+      status:
+        description: '"success" or "error"'
         example: success/error
         type: string
     type: object
-host: film-catalog-8re5.onrender.com
+  response.SuccessResponse:
+    properties:
+      data: {}
+      status:
+        example: success
+        type: string
+    type: object
+  tag.CreateTeamTagRequest:
+    properties:
+      color:
+        type: string
+      name:
+        maxLength: 50
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  tag.CreateUserTagRequest:
+    properties:
+      color:
+        type: string
+      name:
+        maxLength: 50
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  tag.TagResponse:
+    properties:
+      color:
+        type: string
+      created_at:
+        type: string
+      id:
+        description: UserTagID или TeamTagID
+        type: integer
+      name:
+        type: string
+      owner_id:
+        description: OwnerUserID для "user", TeamID для "team"
+        type: integer
+      type:
+        description: '"user" или "team"'
+        type: string
+      updated_at:
+        type: string
+    type: object
+  tag.UpdateTeamTagRequest:
+    properties:
+      color:
+        type: string
+      name:
+        maxLength: 50
+        minLength: 1
+        type: string
+    type: object
+  tag.UpdateUserTagRequest:
+    properties:
+      color:
+        type: string
+      name:
+        maxLength: 50
+        minLength: 1
+        type: string
+    type: object
+  task.CreateTaskRequest:
+    properties:
+      assigned_to_user_id:
+        type: integer
+      deadline:
+        type: string
+      description:
+        maxLength: 65535
+        type: string
+      priority:
+        maximum: 3
+        minimum: 1
+        type: integer
+      status:
+        enum:
+        - todo
+        - in_progress
+        - deferred
+        - done
+        type: string
+      team_id:
+        type: integer
+      team_tag_ids:
+        description: <<< ДОБАВЛЕНО
+        items:
+          type: integer
+        type: array
+      title:
+        maxLength: 255
+        minLength: 1
+        type: string
+      user_tag_ids:
+        description: <<< ДОБАВЛЕНО
+        items:
+          type: integer
+        type: array
+    required:
+    - title
+    type: object
+  task.PatchTaskRequest:
+    properties:
+      assigned_to_user_id:
+        type: integer
+      clear_assigned_to:
+        type: boolean
+      clear_deadline:
+        type: boolean
+      deadline:
+        type: string
+      description:
+        maxLength: 65535
+        type: string
+      priority:
+        maximum: 3
+        minimum: 1
+        type: integer
+      status:
+        enum:
+        - todo
+        - in_progress
+        - deferred
+        - done
+        type: string
+      team_tag_ids:
+        description: <<< ДОБАВЛЕНО (указатель)
+        items:
+          type: integer
+        type: array
+      title:
+        maxLength: 255
+        minLength: 1
+        type: string
+      user_tag_ids:
+        description: <<< ДОБАВЛЕНО (указатель)
+        items:
+          type: integer
+        type: array
+    type: object
+  task.TaskResponse:
+    properties:
+      assigned_to_user_id:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      created_by_user_id:
+        type: integer
+      deadline:
+        type: string
+      description:
+        type: string
+      is_deleted:
+        type: boolean
+      priority:
+        type: integer
+      status:
+        type: string
+      tags:
+        description: <<< ДОБАВЛЕНО поле для тегов
+        items:
+          $ref: '#/definitions/tag.TagResponse'
+        type: array
+      task_id:
+        type: integer
+      team_id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  task.UpdateTaskRequest:
+    properties:
+      assigned_to_user_id:
+        description: Может быть null для снятия назначения
+        type: integer
+      deadline:
+        description: Может быть null для сброса
+        type: string
+      description:
+        maxLength: 65535
+        type: string
+      priority:
+        maximum: 3
+        minimum: 1
+        type: integer
+      status:
+        enum:
+        - todo
+        - in_progress
+        - deferred
+        - done
+        type: string
+      team_tag_ids:
+        description: <<< ДОБАВЛЕНО (указатель)
+        items:
+          type: integer
+        type: array
+      title:
+        maxLength: 255
+        minLength: 1
+        type: string
+      user_tag_ids:
+        description: <<< ДОБАВЛЕНО (указатель, чтобы отличить отсутствие от пустого
+          массива)
+        items:
+          type: integer
+        type: array
+    required:
+    - priority
+    - status
+    - title
+    type: object
+  team.AddTeamMemberRequest:
+    properties:
+      role:
+        allOf:
+        - $ref: '#/definitions/team.TeamMemberRole'
+        description: Owner не назначается так
+        enum:
+        - admin
+        - editor
+        - member
+      user_id:
+        description: |-
+          Пользователь будет идентифицироваться по UserID или Login/Email.
+          Пока сделаем UserID, т.к. поиск по логину/email - это отдельная логика.
+          Если добавляем по логину/email, то нужен будет UseCase пользователя для поиска.
+          Для простоты начнем с UserID.
+        type: integer
+    required:
+    - user_id
+    type: object
+  team.CreateTeamRequest:
+    properties:
+      color:
+        description: Валидация цвета
+        type: string
+      description:
+        description: Max length для TEXT
+        maxLength: 65535
+        type: string
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  team.GenerateInviteTokenRequest:
+    properties:
+      expires_in_hours:
+        description: Срок действия токена в часах. Если не указан, используется значение
+          по умолчанию.
+        maximum: 720
+        minimum: 1
+        type: integer
+      role_to_assign:
+        allOf:
+        - $ref: '#/definitions/team.TeamMemberRole'
+        description: |-
+          Роль, которая будет назначена пользователю при вступлении по этому токену.
+          По умолчанию 'member'. Owner/Admin не могут быть назначены через токен.
+        enum:
+        - editor
+        - member
+    type: object
+  team.JoinTeamByTokenRequest:
+    properties:
+      invite_token:
+        type: string
+    required:
+    - invite_token
+    type: object
+  team.TeamDetailResponse:
+    properties:
+      color:
+        type: string
+      created_at:
+        type: string
+      created_by_user_id:
+        type: integer
+      current_user_role:
+        allOf:
+        - $ref: '#/definitions/team.TeamMemberRole'
+        description: Роль текущего пользователя в этой команде
+      description:
+        type: string
+      image_url:
+        description: Полный URL, будет формироваться в UseCase
+        type: string
+      is_deleted:
+        type: boolean
+      members:
+        items:
+          $ref: '#/definitions/team.TeamMemberResponse'
+        type: array
+      name:
+        type: string
+      team_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  team.TeamInviteTokenResponse:
+    properties:
+      expires_at:
+        description: Когда токен перестанет действовать
+        type: string
+      invite_link:
+        description: Полная ссылка-приглашение (формируется на фронте или здесь)
+        type: string
+      invite_token:
+        description: Сам токен
+        type: string
+      role_on_join:
+        allOf:
+        - $ref: '#/definitions/team.TeamMemberRole'
+        description: Роль, которая будет назначена при вступлении
+    type: object
+  team.TeamMemberResponse:
+    properties:
+      joined_at:
+        type: string
+      role:
+        $ref: '#/definitions/team.TeamMemberRole'
+      user:
+        allOf:
+        - $ref: '#/definitions/team.UserLiteResponse'
+        description: Информация о пользователе
+    type: object
+  team.TeamMemberRole:
+    enum:
+    - owner
+    - admin
+    - editor
+    - member
+    type: string
+    x-enum-comments:
+      RoleEditor: Может управлять задачами команды
+      RoleMember: Может создавать задачи и менять статус назначенных ему
+    x-enum-varnames:
+    - RoleOwner
+    - RoleAdmin
+    - RoleEditor
+    - RoleMember
+  team.TeamResponse:
+    properties:
+      color:
+        type: string
+      created_at:
+        type: string
+      created_by_user_id:
+        type: integer
+      current_user_role:
+        allOf:
+        - $ref: '#/definitions/team.TeamMemberRole'
+        description: Роль текущего пользователя в этой команде
+      description:
+        type: string
+      image_url:
+        description: Полный URL, будет формироваться в UseCase
+        type: string
+      is_deleted:
+        type: boolean
+      name:
+        type: string
+      team_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  team.UpdateTeamMemberRoleRequest:
+    properties:
+      role:
+        allOf:
+        - $ref: '#/definitions/team.TeamMemberRole'
+        description: Owner не изменяется так
+        enum:
+        - admin
+        - editor
+        - member
+    required:
+    - role
+    type: object
+  team.UserLiteResponse:
+    properties:
+      avatar_url:
+        type: string
+      login:
+        type: string
+      user_id:
+        type: integer
+    type: object
+host: localhost:8080 // Динамически обновляется
 info:
   contact:
     name: Evdokimov Igor
     url: https://t.me/epelptic
-  description: API for potatorate site
-  title: Film-catalog API
+  description: API for ToDoApp
+  title: ToDoApp API
   version: 1.0.0
 paths:
-  /actors:
-    get:
-      description: Возвращает список актеров с возможностью фильтрации по имени, дате
-        создания, количеству фильмов, сортировке и пагинации
-      parameters:
-      - description: Имя актера
-        in: query
-        name: name
-        type: string
-      - description: Год добавления актера
-        in: query
-        name: create_at
-        type: integer
-      - description: Минимальный год создания актера
-        in: query
-        name: min_year
-        type: integer
-      - description: Максимальный год создания актера
-        in: query
-        name: max_year
-        type: integer
-      - description: Минимальное количество фильмов, в которых снялся актер
-        in: query
-        name: min_movies_count
-        type: integer
-      - description: Максимальное количество фильмов, в которых снялся актер
-        in: query
-        name: max_movies_count
-        type: integer
-      - description: Поле для сортировки (например, 'name', 'created_at')
-        in: query
-        name: sort_by
-        type: string
-      - description: Порядок сортировки (asc или desc)
-        in: query
-        name: order
-        type: string
-      - description: Номер страницы для пагинации
-        in: query
-        name: page
-        type: integer
-      - description: Количество актеров на странице
-        in: query
-        name: page_size
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/response.Response'
-            type: array
-        "400":
-          description: Неверные данные запроса
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Внутренняя ошибка сервера
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получить список актеров с фильтрацией по различным параметрам
-      tags:
-      - actor
-    post:
-      consumes:
-      - application/json
-      description: Создает нового актера с указанными параметрами
-      parameters:
-      - description: Данные актера
-        in: formData
-        name: json
-        required: true
-        type: string
-      - description: Аватар актера
-        in: formData
-        name: avatar
-        type: file
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "413":
-          description: Request Entity Too Large
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Создание нового актера
-      tags:
-      - actor
-  /actors/{id}:
-    delete:
-      description: Удаляет актера по его FilmId
-      parameters:
-      - description: FilmId актера
-        in: query
-        name: id
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Удалить актера по FilmId
-      tags:
-      - actor
-    get:
-      description: Возвращает информацию об актере по его FilmId
-      parameters:
-      - description: FilmId актера
-        in: query
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получить актера по FilmId
-      tags:
-      - actor
-    put:
-      consumes:
-      - application/json
-      description: Обновляет данные актера, включая аватар
-      parameters:
-      - description: FilmId актера
-        in: query
-        name: id
-        required: true
-        type: string
-      - description: Reset avatar to default
-        in: query
-        name: reset_avatar
-        type: boolean
-      - description: JSON with login data
-        in: formData
-        name: json
-        required: true
-        type: string
-      - description: Avatar image file (max 1MB)
-        in: formData
-        name: avatar
-        type: file
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "413":
-          description: Request Entity Too Large
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Обновить информацию об актере
-      tags:
-      - actor
   /auth/{provider}:
     get:
-      consumes:
-      - application/json
-      description: Redirects the user to the OAuth provider for authentication.
+      description: |-
+        Redirects the user to the OAuth provider's authorization page.
+        For native clients, a 'native_final_redirect_uri' query parameter can be provided,
+        which will be used as the final redirect target after successful OAuth with the provider and our backend.
       parameters:
-      - description: OAuth provider DON'T WORK IN SWAGGER!!!
-        example: '"google" or "yandex"'
+      - description: OAuth provider (e.g., google, yandex)
         in: path
         name: provider
         required: true
         type: string
-      produces:
-      - application/json
+      - description: URI to redirect native clients to after successful authentication
+          by our backend (e.g., http://127.0.0.1:8989/native-oauth-landing)
+        in: query
+        name: native_final_redirect_uri
+        type: string
       responses:
         "307":
-          description: Redirecting to provider
+          description: Temporary Redirect to OAuth provider
         "400":
-          description: Provider not supported
-          schema:
-            $ref: '#/definitions/response.Response'
+          description: Bad Request - Unsupported provider or provider not configured
         "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: User SignWithOauth
+          description: Internal Server Error
+      summary: Initiate OAuth flow
       tags:
       - auth
   /auth/{provider}/callback:
     get:
-      consumes:
-      - application/json
-      description: Handles the callback from the OAuth provider after the user has
-        authorized the app. THIS ENDPOINT IS CALLED BY THE OAUTH PROVIDER, NOT THE
-        FRONTEND!!!
+      description: |-
+        Handles the callback from the OAuth provider after user authentication.
+        Exchanges the authorization code for tokens, authenticates/creates a user in our system.
+        For web clients, sets an httpOnly refresh_token cookie and redirects to FrontendRedirectSuccessURL.
+        For native clients (if 'native_final_redirect_uri' was provided earlier),
+        redirects to that URI with app's access_token and refresh_token in query parameters.
       parameters:
-      - description: OAuth provider
-        example: '"google" or "yandex"'
+      - description: OAuth provider (e.g., google, yandex)
         in: path
         name: provider
         required: true
         type: string
-      - description: State parameter sent during OAuth authorization
-        example: '"randomstate123"'
-        in: query
-        name: state
-        required: true
-        type: string
-      - description: Authorization code returned by OAuth provider
-        example: '"authorizationcode123"'
+      - description: Authorization code from OAuth provider
         in: query
         name: code
         required: true
         type: string
-      produces:
-      - application/json
+      - description: State parameter from OAuth provider
+        in: query
+        name: state
+        required: true
+        type: string
       responses:
-        "200":
-          description: User already exists, successfully authenticated
-          schema:
-            $ref: '#/definitions/response.Response'
-        "201":
-          description: New user created and successfully authenticated
-          schema:
-            $ref: '#/definitions/response.Response'
+        "307":
+          description: Temporary Redirect to frontend or native client landing page
         "400":
-          description: Provider not supported or invalid state
-          schema:
-            $ref: '#/definitions/response.Response'
+          description: Bad Request - Missing code/state, invalid state, or other OAuth
+            processing error
         "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: OAuth2 Callback Handler
+          description: Internal Server Error
+      summary: OAuth Callback
       tags:
       - auth
   /auth/logout:
@@ -417,28 +604,48 @@ paths:
       summary: Logout user
       tags:
       - auth
-  /auth/refresh-token:
+  /auth/refresh-token-native:
     post:
       consumes:
       - application/json
-      description: Refreshes the access token using the provided refresh token from
-        cookies.
+      description: |-
+        Refreshes the access token using the provided refresh token in the request body.
+        Optionally returns a new refresh token for rotation.
+      parameters:
+      - description: Refresh token payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controller.RefreshTokenNativeRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: Successfully refreshed access token
+          description: Successfully refreshed tokens. Data contains 'access_token'
+            and optionally 'refresh_token'.
           schema:
-            $ref: '#/definitions/response.Response'
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "400":
+          description: Invalid request payload or validation error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "401":
-          description: Invalid, missing or expired refresh token
+          description: Invalid, missing, or expired refresh token
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/response.Response'
-      summary: Refresh Access Token
+            $ref: '#/definitions/response.ErrorResponse'
+      summary: Refresh Access Token (Native)
       tags:
       - auth
   /auth/sign-in:
@@ -517,9 +724,10 @@ paths:
     put:
       consumes:
       - application/json
-      description: Validate confirmed code and is it confirmed update email_status
+      description: Validate confirmation code and if it's correct, update email_verified
+        status.
       parameters:
-      - description: data for confirmed email
+      - description: Data for email confirmation (email and code)
         in: body
         name: request
         required: true
@@ -529,18 +737,27 @@ paths:
       - application/json
       responses:
         "200":
-          description: Success email confirmation
+          description: Email successfully confirmed
           schema:
             $ref: '#/definitions/response.Response'
         "400":
-          description: Error email confirmation
+          description: Invalid request, invalid code, or email already confirmed
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: Email already confirmed (if detected before code check, otherwise
+            400)
           schema:
             $ref: '#/definitions/response.Response'
         "500":
           description: Internal server error
           schema:
             $ref: '#/definitions/response.Response'
-      summary: Confirmation email address
+      summary: Confirm email address
       tags:
       - email
   /email/send-code:
@@ -548,9 +765,9 @@ paths:
       consumes:
       - application/json
       description: Generate code for confirmation email and send this to email. This
-        endpoint have rate 1 req in 1 min
+        endpoint has a rate limit of 1 request per minute per IP.
       parameters:
-      - description: Email пользователя для подтверждения
+      - description: User's email for confirmation
         in: body
         name: request
         required: true
@@ -559,461 +776,44 @@ paths:
       produces:
       - application/json
       responses:
-        "201":
-          description: Код подтверждения успешно отправлен
+        "202":
+          description: Confirmation code sending process initiated
           schema:
             $ref: '#/definitions/response.Response'
         "400":
-          description: Ошибка валидации или неверный запрос
+          description: Validation error, email already confirmed, or user not found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "429":
+          description: Too many requests (rate limit exceeded)
           schema:
             $ref: '#/definitions/response.Response'
         "500":
-          description: Внутренняя ошибка сервера
+          description: Internal server error
           schema:
             $ref: '#/definitions/response.Response'
       summary: Send code for confirmation email
       tags:
       - email
-  /films:
-    get:
-      description: Возвращает список фильмов с возможностью фильтрации по жанрам,
-        актерам, продюсеру, рейтингу, дате выпуска, длительности и сортировке
-      parameters:
-      - collectionFormat: csv
-        description: Список FilmId жанров
-        in: query
-        items:
-          type: integer
-        name: genre_ids
-        type: array
-      - collectionFormat: csv
-        description: Список FilmId актеров
-        in: query
-        items:
-          type: integer
-        name: actor_ids
-        type: array
-      - description: Продюсер
-        in: query
-        name: producer
-        type: string
-      - description: Минимальный рейтинг
-        in: query
-        name: min_rating
-        type: number
-      - description: Максимальный рейтинг
-        in: query
-        name: max_rating
-        type: number
-      - description: 'Минимальная дата выпуска (формат: 2006-01-02)'
-        in: query
-        name: min_date
-        type: string
-      - description: 'Максимальная дата выпуска (формат: 2006-01-02)'
-        in: query
-        name: max_date
-        type: string
-      - description: 'Минимальная длительность (пример: 2h30m, 90m)'
-        in: query
-        name: min_duration
-        type: string
-      - description: 'Максимальная длительность (пример: 2h30m, 90m)'
-        in: query
-        name: max_duration
-        type: string
-      - description: Поле для сортировки (rating, release_date, runtime)
-        in: query
-        name: sort_by
-        type: string
-      - description: Порядок сортировки (asc, desc)
-        in: query
-        name: order
-        type: string
-      - description: Номер страницы
-        in: query
-        name: page
-        type: integer
-      - description: Размер страницы
-        in: query
-        name: page_size
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/response.Response'
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получить список фильмов с фильтрацией и пагинацией
-      tags:
-      - film
-    post:
-      consumes:
-      - multipart/form-data
-      description: Создает новый фильм с указанными параметрами
-      parameters:
-      - description: Данные фильма в формате JSON
-        in: formData
-        name: data
-        required: true
-        type: string
-      - description: Постер фильма
-        in: formData
-        name: poster
-        type: file
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Создать новый фильм
-      tags:
-      - film
-  /films/{id}:
-    delete:
-      description: Удаляет фильм по его FilmId
-      parameters:
-      - description: FilmId фильма
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "204":
-          description: No Content
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Удалить фильм по FilmId
-      tags:
-      - film
-    get:
-      description: Возвращает информацию о фильме по его FilmId
-      parameters:
-      - description: FilmId фильма
-        in: path
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получить фильм по FilmId
-      tags:
-      - film
-    put:
-      consumes:
-      - multipart/form-data
-      description: Обновляет данные фильма, включая постер
-      parameters:
-      - description: FilmId фильма
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Данные фильма в формате JSON
-        in: formData
-        name: data
-        required: true
-        type: string
-      - description: Постер фильма
-        in: formData
-        name: poster
-        type: file
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Обновить информацию о фильме
-      tags:
-      - film
-  /films/search:
-    get:
-      description: Возвращает список фильмов, соответствующих поисковому запросу
-      parameters:
-      - description: Поисковый запрос
-        in: query
-        name: query
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/response.Response'
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Поиск фильмов по запросу
-      tags:
-      - film
-  /genres:
-    get:
-      description: Возвращает список всех доступных жанров
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/response.Response'
-            type: array
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получение списка жанров
-      tags:
-      - genre
-    post:
-      consumes:
-      - application/json
-      description: Создает новый жанр с указанным названием
-      parameters:
-      - description: Название жанра
-        in: body
-        name: json
-        required: true
-        schema:
-          $ref: '#/definitions/controller.CreateGenreRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Создание нового жанра
-      tags:
-      - genre
-    put:
-      consumes:
-      - application/json
-      description: Обновляет название существующего жанра
-      parameters:
-      - description: FilmId жанра и новое название
-        in: body
-        name: json
-        required: true
-        schema:
-          $ref: '#/definitions/controller.UpdateGenreRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Обновление жанра
-      tags:
-      - genre
-  /genres/{id}:
-    delete:
-      description: Удаляет жанр по указанному FilmId
-      parameters:
-      - description: FilmId жанра
-        in: query
-        name: id
-        required: true
-        type: string
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Удаление жанра
-      tags:
-      - genre
-    get:
-      description: Возвращает информацию о жанре по указанному FilmId
-      parameters:
-      - description: FilmId жанра
-        in: query
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получение жанра по FilmId
-      tags:
-      - genre
   /profile:
     delete:
-      description: Deletes the user profile and all associated data.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: User profile deleted successfully
-          schema:
-            $ref: '#/definitions/response.Response'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/response.Response'
+      responses: {}
       security:
       - ApiKeyAuth: []
-      summary: Delete user profile
-      tags:
-      - profile
-    get:
-      description: Retrieves the user profile information.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: User profile retrieved successfully
-          schema:
-            $ref: '#/definitions/response.Response'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: User not found
-          schema:
-            $ref: '#/definitions/response.Response'
-        "500":
-          description: Internal server error
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - ApiKeyAuth: []
-      summary: Get user profile
-      tags:
-      - profile
-    put:
+      summary: Delete current user's account
+    patch:
       consumes:
       - multipart/form-data
       description: |-
-        Updates the user profile information, including login and avatar.
-        The request accepts a JSON part with the login data, an optional avatar file, and a query parameter `reset_avatar`.
+        Partially updates profile fields. Only provided fields in json_data will be updated.
+        Avatar can also be updated or reset.
       parameters:
-      - description: Reset avatar to default
-        in: query
-        name: reset_avatar
-        type: boolean
-      - description: JSON with login data
+      - description: JSON string with profile fields to update (all optional).
+        example: '{"login":"new_username_partial","theme":"dark"}'
         in: formData
-        name: json
-        required: true
+        name: json_data
         type: string
-      - description: Avatar image file (max 1MB)
+      - description: New avatar image file.
         in: formData
         name: avatar
         type: file
@@ -1021,23 +821,181 @@ paths:
       - application/json
       responses:
         "200":
-          description: Profile updated successfully
+          description: Profile partially updated.
           schema:
-            $ref: '#/definitions/response.Response'
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/profile.UserProfileResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Partially update user profile (PATCH)
+      tags:
+      - Profile Management
+    put:
+      consumes:
+      - multipart/form-data
+      description: Fully updates the profile information. All mutable fields should
+        be provided.
+      parameters:
+      - description: JSON string with ALL profile data fields.
+        in: formData
+        name: json_data
+        required: true
+        type: string
+      - description: New avatar image file.
+        in: formData
+        name: avatar
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profile updated.
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/profile.UserProfileResponse'
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update user profile (PUT)
+      tags:
+      - Profile Management
+  /tasks:
+    get:
+      description: Retrieves a list of tasks based on filters and sorting. Returns
+        personal tasks or tasks of a specified team.
+      parameters:
+      - description: Filter by Team ID (for team tasks)
+        in: query
+        name: team_id
+        type: integer
+      - description: Filter by status (todo, in_progress, deferred, done)
+        enum:
+        - todo
+        - in_progress
+        - deferred
+        - done
+        in: query
+        name: status
+        type: string
+      - description: Filter by priority (1=low, 2=medium, 3=high)
+        enum:
+        - 1
+        - 2
+        - 3
+        in: query
+        name: priority
+        type: integer
+      - description: Filter by assigned user ID
+        in: query
+        name: assigned_to_user_id
+        type: integer
+      - description: 'Filter by deadline: start date (YYYY-MM-DD or RFC3339)'
+        format: date-time
+        in: query
+        name: deadline_from
+        type: string
+      - description: 'Filter by deadline: end date (YYYY-MM-DD or RFC3339)'
+        format: date-time
+        in: query
+        name: deadline_to
+        type: string
+      - description: Search by title or description
+        in: query
+        name: search
+        type: string
+      - description: Sort by field (created_at, updated_at, deadline, priority, status,
+          title)
+        enum:
+        - created_at
+        - updated_at
+        - deadline
+        - priority
+        - status
+        - title
+        in: query
+        name: sort_by
+        type: string
+      - description: Sort order (ASC, DESC)
+        enum:
+        - ASC
+        - DESC
+        in: query
+        name: sort_order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tasks retrieved successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/task.TaskResponse'
+                  type: array
+              type: object
         "400":
-          description: Invalid request data
+          description: Invalid query parameters
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied to team tasks
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a list of tasks
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      description: Create a new personal or team task.
+      parameters:
+      - description: Task creation data
+        in: body
+        name: task
+        required: true
+        schema:
+          $ref: '#/definitions/task.CreateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Task created successfully
+          schema:
+            $ref: '#/definitions/task.TaskResponse'
+        "400":
+          description: Invalid request payload or validation error
           schema:
             $ref: '#/definitions/response.Response'
         "401":
           description: Unauthorized
           schema:
             $ref: '#/definitions/response.Response'
-        "404":
-          description: User not found
+        "403":
+          description: Access denied (e.g., to create task in team)
           schema:
             $ref: '#/definitions/response.Response'
-        "413":
-          description: File size exceeds 1MB limit
+        "422":
+          description: Unprocessable Entity (e.g., assignee not in team)
           schema:
             $ref: '#/definitions/response.Response'
         "500":
@@ -1046,191 +1004,1141 @@ paths:
             $ref: '#/definitions/response.Response'
       security:
       - ApiKeyAuth: []
-      summary: Update user profile
+      summary: Create a new task
       tags:
-      - profile
-  /reviews:
+      - tasks
+  /tasks/{taskID}:
+    delete:
+      description: Logically deletes a task by its ID.
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Task deleted successfully
+        "400":
+          description: Invalid Task ID
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Task not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a task
+      tags:
+      - tasks
+    get:
+      description: Retrieves a task by its ID. Access is restricted based on user
+        ownership or team membership.
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Task retrieved successfully
+          schema:
+            $ref: '#/definitions/task.TaskResponse'
+        "400":
+          description: Invalid Task ID
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Task not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a specific task by ID
+      tags:
+      - tasks
+    patch:
+      consumes:
+      - application/json
+      description: Partially updates a task by its ID. Only provided fields will be
+        updated.
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskID
+        required: true
+        type: integer
+      - description: Task patch data (fields to update)
+        in: body
+        name: task
+        required: true
+        schema:
+          $ref: '#/definitions/task.PatchTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Task patched successfully
+          schema:
+            $ref: '#/definitions/task.TaskResponse'
+        "400":
+          description: Invalid request payload, validation error, or invalid Task
+            ID
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Task not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "422":
+          description: Unprocessable Entity (e.g., assignee not in team, already completed/deleted)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Partially update an existing task
+      tags:
+      - tasks
+    put:
+      consumes:
+      - application/json
+      description: Fully updates a task by its ID. All mutable fields should be provided.
+      parameters:
+      - description: Task ID
+        in: path
+        name: taskID
+        required: true
+        type: integer
+      - description: Task update data
+        in: body
+        name: task
+        required: true
+        schema:
+          $ref: '#/definitions/task.UpdateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Task updated successfully
+          schema:
+            $ref: '#/definitions/task.TaskResponse'
+        "400":
+          description: Invalid request payload, validation error, or invalid Task
+            ID
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Task not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "422":
+          description: Unprocessable Entity (e.g., assignee not in team, already completed/deleted)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update an existing task (full update)
+      tags:
+      - tasks
+  /teams:
     post:
       consumes:
       - application/json
-      description: Создает новый отзыв с указанными данными
+      description: Create a new team. The creator automatically becomes the owner.
       parameters:
-      - description: Данные отзыва
+      - description: Team creation data
         in: body
-        name: json
+        name: team
         required: true
         schema:
-          $ref: '#/definitions/controller.CreateReviewRequest'
+          $ref: '#/definitions/team.CreateTeamRequest'
       produces:
       - application/json
       responses:
         "201":
-          description: Created
+          description: Team created successfully
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/team.TeamResponse'
         "400":
-          description: Bad Request
+          description: Invalid request payload or validation error
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/response.Response'
-      summary: Создание нового отзыва
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new team
       tags:
-      - review
+      - teams
+  /teams/{teamID}:
+    delete:
+      description: Logically deletes a team by its ID. Only the team owner can perform
+        this action.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Team deleted successfully
+        "400":
+          description: Invalid Team ID format
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not owner)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a team
+      tags:
+      - teams
+    get:
+      description: Retrieves detailed information about a team by its ID, including
+        members. Access is restricted to team members.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Team retrieved successfully
+          schema:
+            $ref: '#/definitions/team.TeamDetailResponse'
+        "400":
+          description: Invalid Team ID format
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not a team member)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a specific team by ID
+      tags:
+      - teams
+    put:
+      consumes:
+      - multipart/form-data
+      description: Updates details of a specific team. Only the team owner can perform
+        this action.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      - description: JSON string with team details to update (UpdateTeamDetailsRequest)
+        in: formData
+        name: json_data
+        required: true
+        type: string
+      - description: New team image file (optional)
+        in: formData
+        name: image
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Team updated successfully
+          schema:
+            $ref: '#/definitions/team.TeamResponse'
+        "400":
+          description: Invalid request, Task ID, or validation error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not owner)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "413":
+          description: Image file too large
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "422":
+          description: Unprocessable Entity (e.g., invalid image type)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update team details (name, description, color, image)
+      tags:
+      - teams
+  /teams/{teamID}/invites:
+    post:
+      consumes:
+      - application/json
+      description: Generates a new invite token for the specified team. Requires owner
+        or admin privileges.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      - description: Invite token configuration (expiration, role)
+        in: body
+        name: invite_config
+        schema:
+          $ref: '#/definitions/team.GenerateInviteTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Invite token generated successfully
+          schema:
+            $ref: '#/definitions/team.TeamInviteTokenResponse'
+        "400":
+          description: Invalid request payload, validation error, or invalid Team
+            ID
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not owner/admin)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Generate an invite token for a team
+      tags:
+      - teams-invites
+  /teams/{teamID}/leave:
+    post:
+      description: Allows the current authenticated user to leave a team. Owner cannot
+        leave if they are the last member.
+      parameters:
+      - description: Team ID of the team to leave
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Successfully left the team
+        "400":
+          description: Invalid Team ID format
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (e.g., owner trying to leave as last member)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found or user not a member
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Leave a team
+      tags:
+      - teams-members
+  /teams/{teamID}/members:
+    get:
+      description: Retrieves a list of members for a specific team. Requester must
+        be a member of the team.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Team members retrieved successfully
+          schema:
+            $ref: '#/definitions/team.TeamMemberResponse'
+        "400":
+          description: Invalid Team ID format
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not a team member)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get list of team members
+      tags:
+      - teams-members
+    post:
+      consumes:
+      - application/json
+      description: Adds a user to a team with a specified role. Requires owner or
+        admin privileges in the team.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      - description: User ID and role to add
+        in: body
+        name: member_data
+        required: true
+        schema:
+          $ref: '#/definitions/team.AddTeamMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Member added successfully
+          schema:
+            $ref: '#/definitions/team.TeamMemberResponse'
+        "400":
+          description: Invalid request payload, validation error, or invalid Team/User
+            ID
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not owner/admin or trying to add owner)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team or target User not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: User is already a member of this team
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Add a member to a team
+      tags:
+      - teams-members
+  /teams/{teamID}/members/{userID}:
+    delete:
+      description: Removes a user from a team. Requires owner or admin privileges.
+        Owner cannot be removed.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      - description: User ID of the member to be removed
+        in: path
+        name: userID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Member removed successfully
+        "400":
+          description: Invalid Team/User ID format
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (e.g., not owner/admin, trying to remove owner)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team or target User not found in team
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Remove a member from a team (kick)
+      tags:
+      - teams-members
+  /teams/{teamID}/members/{userID}/role:
     put:
       consumes:
       - application/json
-      description: Обновляет данные отзыва
+      description: Updates the role of a specific member in a team. Requires owner
+        or admin privileges. Owner's role cannot be changed.
       parameters:
-      - description: Данные отзыва
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      - description: User ID of the member whose role is to be updated
+        in: path
+        name: userID
+        required: true
+        type: integer
+      - description: New role data
         in: body
-        name: json
+        name: role_data
         required: true
         schema:
-          $ref: '#/definitions/controller.UpdateReviewRequest'
+          $ref: '#/definitions/team.UpdateTeamMemberRoleRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Member's role updated successfully
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/team.TeamMemberResponse'
         "400":
-          description: Bad Request
+          description: Invalid request payload, validation error, or invalid Team/User
+            ID
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (e.g., not owner/admin, trying to change owner's
+            role, admin trying to change another admin's role)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "404":
-          description: Not Found
+          description: Team or target User not found in team
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
+        "422":
+          description: Unprocessable Entity (e.g., invalid role)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/response.Response'
-      summary: Обновление отзыва
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update a team member's role
       tags:
-      - review
-  /reviews/{id}:
+      - teams-members
+  /teams/{teamID}/tags:
+    get:
+      description: Retrieves a list of all tags for a specific team. Requester must
+        be a member of the team.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Team tags retrieved successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/tag.TagResponse'
+                  type: array
+              type: object
+        "400":
+          description: Invalid Team ID format
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not a team member)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get all tags for a specific team
+      tags:
+      - team-tags
+    post:
+      consumes:
+      - application/json
+      description: Creates a new tag for a specific team. Requires 'owner', 'admin',
+        or 'editor' role in the team.
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: integer
+      - description: Team tag data
+        in: body
+        name: tag_data
+        required: true
+        schema:
+          $ref: '#/definitions/tag.CreateTeamTagRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Team tag created successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/tag.TagResponse'
+              type: object
+        "400":
+          description: Invalid request payload, validation error, or invalid Team
+            ID
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (insufficient role in team)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: Tag with this name already exists for the team
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new team tag
+      tags:
+      - team-tags
+  /teams/{teamID}/tags/{tagID}:
     delete:
-      description: Удаляет отзыв по указанному FilmId
+      description: Deletes a specific tag for a team. Requires 'owner', 'admin', or
+        'editor' role in the team.
       parameters:
-      - description: FilmId отзыва
-        in: query
-        name: id
+      - description: Team ID
+        in: path
+        name: teamID
         required: true
-        type: string
+        type: integer
+      - description: Team Tag ID
+        in: path
+        name: tagID
+        required: true
+        type: integer
+      produces:
+      - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
+        "204":
+          description: Team tag deleted successfully
         "400":
-          description: Bad Request
+          description: Invalid Team/Tag ID format
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (insufficient role or tag not in team)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "404":
-          description: Not Found
+          description: Team or Tag not found
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/response.Response'
-      summary: Удаление отзыва
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a team tag
       tags:
-      - review
-    get:
-      description: Возвращает информацию о отзыве по указанному FilmId
+      - team-tags
+    put:
+      consumes:
+      - application/json
+      description: Updates a specific tag for a team. Requires 'owner', 'admin', or
+        'editor' role in the team.
       parameters:
-      - description: FilmId отзыва
-        in: query
-        name: id
+      - description: Team ID
+        in: path
+        name: teamID
         required: true
-        type: string
+        type: integer
+      - description: Team Tag ID
+        in: path
+        name: tagID
+        required: true
+        type: integer
+      - description: Data to update team tag
+        in: body
+        name: tag_data
+        required: true
+        schema:
+          $ref: '#/definitions/tag.UpdateTeamTagRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Team tag updated successfully
           schema:
-            $ref: '#/definitions/response.Response'
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/tag.TagResponse'
+              type: object
         "400":
-          description: Bad Request
+          description: Invalid request payload, validation error, or invalid Team/Tag
+            ID
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (insufficient role or tag not in team)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "404":
-          description: Not Found
+          description: Team or Tag not found
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: Tag with this name already exists for the team
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получение отзыва по FilmId
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update an existing team tag
       tags:
-      - review
-  /reviews/film/{film_id}:
-    get:
-      description: Возвращает список отзывов для указанного фильма
+      - team-tags
+  /teams/join:
+    post:
+      consumes:
+      - application/json
+      description: Allows an authenticated user to join a team using a valid invite
+        token.
       parameters:
-      - description: FilmId фильма
-        in: query
-        name: film_id
+      - description: Invite token
+        in: body
+        name: token_data
         required: true
+        schema:
+          $ref: '#/definitions/team.JoinTeamByTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successfully joined the team
+          schema:
+            $ref: '#/definitions/team.TeamResponse'
+        "400":
+          description: Invalid request payload or validation error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: Team not found (e.g., if token is invalid or team deleted)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: User is already a member of this team or token invalid/expired
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Join a team using an invite token
+      tags:
+      - teams-invites
+  /teams/my:
+    get:
+      description: Retrieves a list of teams where the currently authenticated user
+        is a member.
+      parameters:
+      - description: Search by team name
+        in: query
+        name: search
         type: string
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Teams retrieved successfully
           schema:
-            items:
-              $ref: '#/definitions/response.Response'
-            type: array
+            $ref: '#/definitions/team.TeamResponse'
         "400":
-          description: Bad Request
+          description: Invalid query parameters
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получение отзывов по FilmId фильма
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get a list of teams the current user is a member of
       tags:
-      - review
-  /reviews/reviewer/{user_id}:
+      - teams
+  /user-tags:
     get:
-      description: Возвращает список отзывов, оставленных указанным пользователем
-      parameters:
-      - description: FilmId пользователя
-        in: query
-        name: reviewer_id
-        required: true
-        type: string
+      description: Retrieves a list of all personal tags for the authenticated user.
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: User tags retrieved successfully
           schema:
-            items:
-              $ref: '#/definitions/response.Response'
-            type: array
-        "400":
-          description: Bad Request
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/tag.TagResponse'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
           schema:
-            $ref: '#/definitions/response.Response'
+            $ref: '#/definitions/response.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/response.Response'
-      summary: Получение отзывов по FilmId пользователя
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get all tags for the authenticated user
       tags:
-      - review
+      - user-tags
+    post:
+      consumes:
+      - application/json
+      description: Creates a new personal tag for the authenticated user.
+      parameters:
+      - description: User tag data
+        in: body
+        name: tag_data
+        required: true
+        schema:
+          $ref: '#/definitions/tag.CreateUserTagRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: User tag created successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/tag.TagResponse'
+              type: object
+        "400":
+          description: Invalid request payload or validation error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: Tag with this name already exists for the user
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new user tag
+      tags:
+      - user-tags
+  /user-tags/{tagID}:
+    delete:
+      description: Deletes a specific personal tag for the authenticated user.
+      parameters:
+      - description: User Tag ID
+        in: path
+        name: tagID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: User tag deleted successfully
+        "400":
+          description: Invalid Tag ID format
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not owner of the tag)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: User tag not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a user tag
+      tags:
+      - user-tags
+    put:
+      consumes:
+      - application/json
+      description: Updates a specific personal tag for the authenticated user.
+      parameters:
+      - description: User Tag ID
+        in: path
+        name: tagID
+        required: true
+        type: integer
+      - description: Data to update user tag
+        in: body
+        name: tag_data
+        required: true
+        schema:
+          $ref: '#/definitions/tag.UpdateUserTagRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User tag updated successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.SuccessResponse'
+            - properties:
+                data:
+                  $ref: '#/definitions/tag.TagResponse'
+              type: object
+        "400":
+          description: Invalid request payload, validation error, or invalid Tag ID
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "403":
+          description: Access denied (not owner of the tag)
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "404":
+          description: User tag not found
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "409":
+          description: Tag with this name already exists for the user
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/response.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update an existing user tag
+      tags:
+      - user-tags
 schemes:
+- http
 - https
+- ""
+- ""
+- //
+- Динамически
+- обновляется
+- (остается
+- одна
+- схема)
 securityDefinitions:
   ApiKeyAuth:
     in: header

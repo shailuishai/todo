@@ -1,46 +1,26 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Flutter/Dart/Pub specific
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
+**/doc/api/
+**/ios/Flutter/.last_build_id
 /build/
 
-# Symbolication related
+# Symbolication & Obfuscation
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-.idea
+# IDE specific temporary files (если не покрыто корневым)
+*.swp
+.history
+
+# Приватные ключи и сертификаты (ДУБЛИРУЕМ ДЛЯ НАДЕЖНОСТИ, если они вдруг окажутся здесь)
+key.pem # << ВАШ ФАЙЛ УЖЕ ЗДЕСЬ
+cert.pem
+
+# Локальные файлы конфигурации, которые могут содержать секреты
+*.local
+local.properties # Для Android
+devtools_options.yaml # Часто содержит локальные настройки DevTools, лучше игнорировать

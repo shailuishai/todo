@@ -2,13 +2,13 @@ package controller
 
 import (
 	"errors"
-	"github.com/go-chi/render"
+	"github.com/go-chi/render" // Используется напрямую, а не через resp.Send*
 	"github.com/go-playground/validator/v10"
 	"log/slog"
 	"net/http"
-	u "server/internal/modules/user"
+	gouser "server/internal/modules/user" // Импортируем как gouser
 	"server/internal/modules/user/email"
-	resp "server/pkg/lib/response"
+	resp "server/pkg/lib/response" // Пакет для стандартизированных ответов
 )
 
 type EmailController struct {
@@ -29,103 +29,103 @@ func NewEmailController(log *slog.Logger, uc email.UseCase) *EmailController {
 // SendConfirmedEmailCode
 // @Summary Send code for confirmation email
 // @Tags email
-// @Description Generate code for confirmation email and send this to email. This endpoint have rate 1 req in 1 min
+// @Description Generate code for confirmation email and send this to email. This endpoint has a rate limit of 1 request per minute per IP.
 // @Accept json
 // @Produce json
-// @Param request body SendConfirmedEmailCodeRequest true "Email пользователя для подтверждения"
-// @Success 201 {object} response.Response "Код подтверждения успешно отправлен"
-// @Failure 400 {object} response.Response "Ошибка валидации или неверный запрос"
-// @Failure 500 {object} response.Response "Внутренняя ошибка сервера"
+// @Param request body SendConfirmedEmailCodeRequest true "User's email for confirmation"
+// @Success 202 {object} response.Response "Confirmation code sending process initiated"
+// @Failure 400 {object} response.Response "Validation error, email already confirmed, or user not found"
+// @Failure 429 {object} response.Response "Too many requests (rate limit exceeded)"
+// @Failure 500 {object} response.Response "Internal server error"
 // @Router /email/send-code [post]
 func (c *EmailController) SendConfirmedEmailCode(w http.ResponseWriter, r *http.Request) {
-	log := c.log.With("op", "SendConfirmedEmailCode")
+	op := "EmailController.SendConfirmedEmailCode"
+	log := c.log.With(slog.String("op", op))
 
 	var req SendConfirmedEmailCodeRequest
 
 	if err := render.DecodeJSON(r.Body, &req); err != nil {
-		log.Error("failed to decode request body", err)
-		w.WriteHeader(http.StatusBadRequest)
-		render.JSON(w, r, resp.Error("failed to decode request"))
+		log.Error("failed to decode request body", "error", err)
+		// Используем стандартизированный ответ
+		resp.SendError(w, r, http.StatusBadRequest, "failed to decode request")
 		return
 	}
+	log = log.With(slog.String("email", req.Email)) // Логируем email после успешного парсинга
 
 	if err := c.validate.Struct(req); err != nil {
-		log.Info("failed to validate request data", err)
-		w.WriteHeader(http.StatusBadRequest)
-		render.JSON(w, r, resp.ValidationError(err))
+		log.Warn("validation failed for request data", "error", err)
+		resp.SendValidationError(w, r, err)
 		return
 	}
 
 	if err := c.uc.SendEmailForConfirmed(req.Email); err != nil {
-
+		log.Warn("usecase SendEmailForConfirmed failed", "error", err)
 		switch {
-		case errors.Is(err, u.ErrEmailAlreadyConfirmed):
-			w.WriteHeader(http.StatusBadRequest)
-			render.JSON(w, r, resp.Error(u.ErrEmailAlreadyConfirmed.Error()))
-		case errors.Is(err, u.ErrUserNotFound):
-			w.WriteHeader(http.StatusBadRequest)
-			render.JSON(w, r, resp.Error(u.ErrUserNotFound.Error()))
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-			render.JSON(w, r, resp.Error("internal server error"))
+		case errors.Is(err, gouser.ErrEmailAlreadyConfirmed):
+			resp.SendError(w, r, http.StatusBadRequest, err.Error())
+		case errors.Is(err, gouser.ErrUserNotFound):
+			resp.SendError(w, r, http.StatusNotFound, err.Error()) // 404 для UserNotFound
+		default: // Включая gouser.ErrInternal
+			resp.SendError(w, r, http.StatusInternalServerError, "failed to initiate email confirmation")
 		}
-
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	render.JSON(w, r, resp.OK())
-	return
+	// Отправка письма - асинхронный процесс. Код сохранен.
+	// 202 Accepted - запрос принят к обработке.
+	log.Info("email confirmation process initiated successfully")
+	resp.SendOK(w, r, http.StatusAccepted) // Используем 202 Accepted
 }
 
-// EmailConfirmed godoc
-// @Summary Confirmation email address
+// EmailConfirmed
+// @Summary Confirm email address
 // @Tags email
-// @Description Validate confirmed code and is it confirmed update email_status
+// @Description Validate confirmation code and if it's correct, update email_verified status.
 // @Accept json
 // @Produce json
-// @Param request body EmailConfirmedRequest true "data for confirmed email"
-// @Success 200 {object} response.Response "Success email confirmation"
-// @Failure 400 {object} response.Response "Error email confirmation"
+// @Param request body EmailConfirmedRequest true "Data for email confirmation (email and code)"
+// @Success 200 {object} response.Response "Email successfully confirmed"
+// @Failure 400 {object} response.Response "Invalid request, invalid code, or email already confirmed"
+// @Failure 404 {object} response.Response "User not found"
+// @Failure 409 {object} response.Response "Email already confirmed (if detected before code check, otherwise 400)"
 // @Failure 500 {object} response.Response "Internal server error"
-// @Router /email/confirm	 [put]
+// @Router /email/confirm [put]
 func (c *EmailController) EmailConfirmed(w http.ResponseWriter, r *http.Request) {
-	log := c.log.With("op", "EmailConfirmedHandler")
+	op := "EmailController.EmailConfirmed"
+	log := c.log.With(slog.String("op", op))
 
 	var req EmailConfirmedRequest
 
 	if err := render.DecodeJSON(r.Body, &req); err != nil {
-		log.Error("failed to decode request body", err)
-		w.WriteHeader(http.StatusBadRequest)
-		render.JSON(w, r, resp.Error("failed to decode request"))
+		log.Error("failed to decode request body", "error", err)
+		resp.SendError(w, r, http.StatusBadRequest, "failed to decode request")
 		return
 	}
+	log = log.With(slog.String("email", req.Email))
 
 	if err := c.validate.Struct(req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		render.JSON(w, r, resp.ValidationError(err))
+		log.Warn("validation failed for request data", "error", err)
+		resp.SendValidationError(w, r, err)
 		return
 	}
 
 	if err := c.uc.EmailConfirmed(req.Email, req.Code); err != nil {
+		log.Warn("usecase EmailConfirmed failed", "error", err)
 		switch {
-		case errors.Is(err, u.ErrUserNotFound):
-			w.WriteHeader(http.StatusNotFound)
-			render.JSON(w, r, resp.Error(u.ErrUserNotFound.Error()))
-		case errors.Is(err, u.ErrEmailAlreadyConfirmed):
-			w.WriteHeader(http.StatusConflict)
-			render.JSON(w, r, resp.Error(u.ErrEmailAlreadyConfirmed.Error()))
-		case errors.Is(err, u.ErrInvalidConfirmCode):
-			w.WriteHeader(http.StatusBadRequest)
-			render.JSON(w, r, resp.Error(u.ErrEmailNotConfirmed.Error()))
-		default:
-			log.Error("failed to confirm email", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			render.JSON(w, r, resp.Error("internal server error"))
+		case errors.Is(err, gouser.ErrUserNotFound):
+			resp.SendError(w, r, http.StatusNotFound, err.Error())
+		case errors.Is(err, gouser.ErrEmailAlreadyConfirmed):
+			// Если UseCase вернул эту ошибку, значит, email уже был подтвержден.
+			// Можно вернуть 400 Bad Request или 409 Conflict. 400 кажется более общим.
+			resp.SendError(w, r, http.StatusBadRequest, err.Error())
+		case errors.Is(err, gouser.ErrInvalidConfirmCode):
+			resp.SendError(w, r, http.StatusBadRequest, err.Error())
+		default: // Включая gouser.ErrInternal
+			resp.SendError(w, r, http.StatusInternalServerError, "failed to confirm email")
 		}
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	render.JSON(w, r, resp.OK())
+	log.Info("email confirmed successfully")
+	resp.SendOK(w, r, http.StatusOK)
 }

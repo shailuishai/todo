@@ -1,75 +1,73 @@
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: potato_rate_API
-    ports:
-      - "8080:8080"
-    environment:
-      - CONFIG_PATH=${CONFIG_PATH}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-      - JWT_SECRET=${JWT_SECRET}
-      - GOOGLE_KEY=${GOOGLE_KEY}
-      - GOOGLE_SECRET=${GOOGLE_SECRET}
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
-      - S3_SECRET_KEY=${S3_SECRET_KEY}
-      - YANDEX_KEY=${YANDEX_KEY}
-      - YANDEX_SECRET=${YANDEX_SECRET}
-      - YANDEX_EMAIL_PASSWORD=${YANDEX_EMAIL_PASSWORD}
-    depends_on:
-      - postgres
-      - redis
-      - elasticsearch
-    networks:
-      - my_network
+version: '3.8'
 
+services:
   postgres:
-    image: postgres:latest
-    container_name: postgres
+    image: postgres:15
+    container_name: todo_postgres_db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: user
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: film
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      POSTGRES_PASSWORD: ${DB_PASSWORD} # Берется из .env
+      POSTGRES_DB: todo
     ports:
       - "5432:5432"
-    networks:
-      - my_network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d todo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
-    image: redis:latest
-    container_name: redis
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    image: redis:7
+    container_name: todo_redis_cache
+    restart: unless-stopped
     ports:
       - "6379:6379"
+    # command: redis-server --requirepass ${REDIS_PASSWORD} # Если нужен пароль
     volumes:
       - redis_data:/data
-    networks:
-      - my_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  elasticsearch:
-    image: elastic/elasticsearch:8.16.2
-    container_name: elasticsearch
-    environment:
-      - discovery.type=single-node
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
-      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-    volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
+  app_server:
+    build:
+      context: . # Контекст сборки - корень проекта
+      dockerfile: Dockerfile # Путь к Dockerfile относительно контекста
+    container_name: todo_app_server
+    restart: unless-stopped
     ports:
-      - "9200:9200"
-    networks:
-      - my_network
+      # Маппим порт 8080 хоста на порт 8080 контейнера.
+      # Приложение внутри контейнера будет слушать HTTPS на своем порту 8080.
+      - "8080:8080"
+    environment:
+      CONFIG_PATH: /app/server/config/local.yaml # Путь к конфигу ВНУТРИ контейнера
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      GOOGLE_KEY: ${GOOGLE_KEY}
+      GOOGLE_SECRET: ${GOOGLE_SECRET}
+      YANDEX_KEY: ${YANDEX_KEY}
+      YANDEX_SECRET: ${YANDEX_SECRET}
+      YANDEX_EMAIL_PASSWORD: ${YANDEX_EMAIL_PASSWORD}
+      # REDIS_PASSWORD: ${REDIS_PASSWORD} # Если используешь пароль для Redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Пробрасываем директорию с сертификатами с хоста в контейнер.
+      # Путь слева: './.certs' на хосте (относительно docker-compose.yml, т.е. в корне проекта).
+      # Путь справа: '/app/.certs' внутри контейнера.
+      # Приложение будет искать сертификаты по этому пути (или по тому, что указано в local.yaml).
+      - ../.certs:/app/.certs:ro # ':ro' делает том доступным только для чтения в контейнере
 
 volumes:
   postgres_data:
   redis_data:
-  elasticsearch_data:
-
-networks:
-  my_network:
-    driver: bridge

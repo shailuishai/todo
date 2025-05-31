@@ -11,3 +11,7 @@ type UserSignInRequest struct {
 	Email    string `json:"email,omitempty" validate:"omitempty,email" example:"jon.doe@gmail.com"`
 	Password string `json:"password" validate:"required" example:"SuperPassword123"`
 }
+
+type RefreshTokenNativeRequest struct {
+	RefreshToken string `json:"refresh_token" validate:"required"`
+}

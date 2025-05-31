@@ -1,168 +1,209 @@
 package s3
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	config2 "github.com/aws/aws-sdk-go-v2/config"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config" // Используем псевдоним
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"log"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types" // Для типов ошибок и конфигурации создания бакета
+	"log"                                           // Стандартный log для этого пакета
 	"os"
-	"server/config"
+	"server/config" // Твоя структура конфигурации
+	"strings"
 	"time"
 )
 
+// S3Storage содержит клиент и конфигурацию S3.
 type S3Storage struct {
-	Client   *s3.Client
-	Endpoint string
-	Region   string
-	Buckets  []config.BucketConfig
+	Client *s3.Client
+	Cfg    config.S3Config
 }
 
-func NewS3Storage(config config.S3Config) (*S3Storage, error) {
+const (
+	delayBeforeS3Init         = 1 * time.Second
+	delayBetweenHeadAndCreate = 1 * time.Second
+	delayAfterCreateOp        = 3 * time.Second
+	delayAfterPolicyOp        = 2 * time.Second
+	delayBetweenBucketOps     = 5 * time.Second
+)
+
+// NewS3Storage инициализирует S3 клиент, проверяет/создает бакеты и применяет политики.
+func NewS3Storage(appS3Cfg config.S3Config) (*S3Storage, error) {
 	accessKey := os.Getenv("S3_ACCESS_KEY")
 	secretKey := os.Getenv("S3_SECRET_KEY")
 
 	if accessKey == "" || secretKey == "" {
-		return nil, errors.New("s3 environment variables are not set")
+		return nil, errors.New("S3_ACCESS_KEY or S3_SECRET_KEY environment variables are not set")
 	}
+
+	log.Printf("S3 Init: Starting S3 client initialization for endpoint: %s, region: %s", appS3Cfg.Endpoint, appS3Cfg.Region)
+	log.Printf("S3 Init: Applying initial delay of %v...", delayBeforeS3Init)
+	time.Sleep(delayBeforeS3Init)
 
 	customResolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
 		if service == s3.ServiceID {
+			endpointURL := appS3Cfg.Endpoint
+			if endpointURL != "" && !strings.HasPrefix(endpointURL, "http") {
+				endpointURL = "https://" + endpointURL
+			}
+			log.Printf("S3 Init: EndpointResolver using URL: %s for region: %s", endpointURL, region)
 			return aws.Endpoint{
-				URL: "https://" + config.Endpoint,
+				URL:               endpointURL,
+				HostnameImmutable: true,
 			}, nil
 		}
 		return aws.Endpoint{}, &aws.EndpointNotFoundError{}
 	})
 
-	cfg, err := config2.LoadDefaultConfig(context.Background(),
-		config2.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
-		config2.WithRegion(config.Region),
-		config2.WithEndpointResolver(customResolver),
-	)
+	sdkLoadOptions := []func(*awsConfig.LoadOptions) error{
+		awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+		awsConfig.WithRegion(appS3Cfg.Region),
+		awsConfig.WithEndpointResolver(customResolver),
+	}
+
+	sdkCfg, err := awsConfig.LoadDefaultConfig(context.TODO(), sdkLoadOptions...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("S3 Init: failed to load AWS SDK config: %w", err)
 	}
 
-	client := s3.NewFromConfig(cfg)
+	client := s3.NewFromConfig(sdkCfg)
 	storage := &S3Storage{
-		Client:   client,
-		Endpoint: config.Endpoint,
-		Region:   config.Region,
-		Buckets:  config.Buckets,
+		Client: client,
+		Cfg:    appS3Cfg,
 	}
 
-	// Создаем бакеты из конфигурации
-	for _, bucket := range config.Buckets {
-		err := storage.createBucketIfNotExists(bucket)
+	bucketNames := []string{}
+	if appS3Cfg.BucketUserAvatars != "" {
+		bucketNames = append(bucketNames, appS3Cfg.BucketUserAvatars)
+	}
+	if appS3Cfg.BucketTeamImages != "" {
+		bucketNames = append(bucketNames, appS3Cfg.BucketTeamImages)
+	}
+
+	for i, bucketName := range bucketNames {
+		if i > 0 {
+			log.Printf("S3 Init: Waiting %v before processing bucket '%s'...", delayBetweenBucketOps, bucketName)
+			time.Sleep(delayBetweenBucketOps)
+		}
+		log.Printf("S3 Init: Processing bucket '%s'...", bucketName)
+
+		err := storage.ensureBucketExistsAndConfigured(bucketName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize bucket %s: %v", bucket.Name, err)
+			log.Printf("S3 Init: Warning - Failed to ensure bucket '%s' is ready: %v. Subsequent S3 operations for this bucket might fail.", bucketName, err)
+		} else {
+			// fmt.Printf("S3 Bucket '%s' is ready.\n", bucketName) // Логирование уже внутри ensureBucketExistsAndConfigured
 		}
 	}
 
+	log.Println("S3 Init: S3 client initialization sequence finished.")
 	return storage, nil
 }
 
-func retryHeadBucket(client *s3.Client, bucket string, retries int, delay time.Duration) error {
-	var err error
-	for i := 0; i < retries; i++ {
-		_, err = client.HeadBucket(context.TODO(), &s3.HeadBucketInput{
-			Bucket: &bucket,
-		})
-		if err == nil {
-			return nil
+// ensureBucketExistsAndConfigured проверяет, создает бакет (если необходимо) и применяет политику.
+func (s *S3Storage) ensureBucketExistsAndConfigured(bucketName string) error {
+	log.Printf("S3 Bucket '%s': Checking existence...", bucketName)
+	_, err := s.Client.HeadBucket(context.TODO(), &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+
+	bucketExists := err == nil
+
+	if bucketExists {
+		log.Printf("S3 Bucket '%s': Already exists.", bucketName)
+	} else {
+		// Проверяем тип ошибки, чтобы убедиться, что это "не найдено"
+		var apiError interface{ ErrorCode() string } // Общий интерфейс для ошибок AWS SDK
+		isNotFoundError := false
+		if errors.As(err, &apiError) {
+			// s3types.NotFound{} (фактически это *smithy.GenericAPIError) или s3types.NoSuchBucket{}
+			// оба возвращают код "NotFound" или "NoSuchBucket"
+			errorCode := apiError.ErrorCode()
+			if errorCode == "NotFound" || errorCode == "NoSuchBucket" {
+				isNotFoundError = true
+			}
+			log.Printf("S3 Bucket '%s': HeadBucket error - Code: %s, Message: %s", bucketName, errorCode, apiError.ErrorCode())
+		} else {
+			log.Printf("S3 Bucket '%s': HeadBucket error (unknown type): %v", bucketName, err)
 		}
 
-		// Логируем ошибку и ожидаем перед следующей попыткой
-		log.Printf("Attempt %d: Error checking bucket: %v", i+1, err)
-		time.Sleep(delay)
+		if isNotFoundError {
+			log.Printf("S3 Bucket '%s': Not found by HeadBucket. Attempting to create...", bucketName)
+			log.Printf("S3 Bucket '%s': Waiting %v before CreateBucket operation...", bucketName, delayBetweenHeadAndCreate)
+			time.Sleep(delayBetweenHeadAndCreate)
+
+			var createBucketCfg *types.CreateBucketConfiguration
+			if s.Cfg.Region != "" && s.Cfg.Region != "us-east-1" {
+				createBucketCfg = &types.CreateBucketConfiguration{
+					LocationConstraint: types.BucketLocationConstraint(s.Cfg.Region),
+				}
+			}
+			_, createErr := s.Client.CreateBucket(context.TODO(), &s3.CreateBucketInput{
+				Bucket:                    aws.String(bucketName),
+				CreateBucketConfiguration: createBucketCfg,
+			})
+
+			if createErr != nil {
+				var alreadyOwnedError *types.BucketAlreadyOwnedByYou
+				var alreadyExistsError *types.BucketAlreadyExists
+				if errors.As(createErr, &alreadyOwnedError) || errors.As(createErr, &alreadyExistsError) {
+					log.Printf("S3 Bucket '%s': Already exists (caught during create attempt).", bucketName)
+					// Считаем успехом для этого шага, бакет есть
+				} else {
+					log.Printf("S3 Bucket '%s': Failed to create: %v. Policy application will be skipped.", bucketName, createErr)
+					return fmt.Errorf("failed to create bucket '%s': %w", bucketName, createErr) // Возвращаем ошибку, если создание не удалось
+				}
+			} else {
+				log.Printf("S3 Bucket '%s': Successfully created.", bucketName)
+			}
+		} else {
+			// Ошибка при HeadBucket, не связанная с отсутствием бакета (например, 429)
+			log.Printf("S3 Bucket '%s': Error checking existence (HeadBucket failed: %v). Policy application will be skipped.", bucketName, err)
+			return fmt.Errorf("error during HeadBucket for '%s': %w", bucketName, err) // Возвращаем ошибку
+		}
 	}
-	return fmt.Errorf("failed to check bucket after %d attempts: %v", retries, err)
-}
 
-func (s *S3Storage) createBucketIfNotExists(bucket config.BucketConfig) error {
-	err := retryHeadBucket(s.Client, bucket.Name, 2, 2*time.Second)
-	if err != nil {
-		log.Printf("Error checking bucket existence: %v", err)
+	// Если дошли сюда, значит бакет существует (либо был, либо только что создан)
+	// Применяем политику
+	log.Printf("S3 Bucket '%s': Waiting %v before applying public read policy...", bucketName, delayAfterCreateOp)
+	time.Sleep(delayAfterCreateOp)
+	log.Printf("S3 Bucket '%s': Attempting to apply public read policy...", bucketName)
 
-		_, err := s.Client.CreateBucket(context.TODO(), &s3.CreateBucketInput{
-			Bucket: &bucket.Name,
-		})
-		if err != nil {
-			return fmt.Errorf("unable to create bucket: %v", err)
-		}
-		log.Printf("Bucket %s created successfully.", bucket.Name)
-
-		err = applyBucketPolicy(s.Client, bucket.Name)
-		if err != nil {
-			return fmt.Errorf("failed to apply bucket policy: %v", err)
-		}
-
-		time.Sleep(10 * time.Second)
-
-		err = uploadDefaultAvatar(s.Client, bucket)
-		if err != nil {
-			return fmt.Errorf("failed to upload default avatar: %v", err)
-		}
+	policyErr := s.applyPublicReadPolicy(bucketName)
+	if policyErr != nil {
+		log.Printf("S3 Bucket '%s': Warning - Failed to apply public read policy: %v. Objects might not be publicly readable.", bucketName, policyErr)
+		// Не возвращаем ошибку policyErr наверх, чтобы не прерывать запуск, если только политика не удалась
+	} else {
+		log.Printf("S3 Bucket '%s': Public read policy applied/updated successfully.", bucketName)
 	}
+	log.Printf("S3 Bucket '%s': Waiting %v after policy operation...", bucketName, delayAfterPolicyOp)
+	time.Sleep(delayAfterPolicyOp)
+	log.Printf("S3 Bucket '%s' is ready.\n", bucketName)
 	return nil
 }
 
-func applyBucketPolicy(client *s3.Client, bucket string) error {
-	policy := `{
+// applyPublicReadPolicy применяет политику публичного чтения к бакету.
+func (s *S3Storage) applyPublicReadPolicy(bucketName string) error {
+	policy := fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
 			{
 				"Effect": "Allow",
-				"Action": ["s3:GetObject"],
-				"Resource": "arn:aws:s3:::` + bucket + `/*",
-				"Principal": "*"
+				"Principal": "*",
+				"Action": ["s3:GetObject"], 
+				"Resource": "arn:aws:s3:::%s/*" 
 			}
 		]
-	}`
+	}`, bucketName)
 
-	_, err := client.PutBucketPolicy(context.TODO(), &s3.PutBucketPolicyInput{
-		Bucket: &bucket,
-		Policy: &policy,
+	log.Printf("S3 Bucket '%s': Applying policy: %s", bucketName, policy)
+	_, err := s.Client.PutBucketPolicy(context.TODO(), &s3.PutBucketPolicyInput{
+		Bucket: aws.String(bucketName),
+		Policy: aws.String(policy),
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to apply bucket policy: %v", err)
-	}
-
-	log.Printf("Bucket policy applied to %s successfully.", bucket)
-	return nil
-}
-
-func uploadDefaultAvatar(client *s3.Client, bucket config.BucketConfig) error {
-	for i, path := range bucket.DefaultFile.Path {
-		file, err := os.Open(path)
-		if err != nil {
-			return fmt.Errorf("unable to open default file %s: %v", path, err)
-		}
-		defer file.Close()
-
-		fileData, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("failed to read default file %s: %v", path, err)
-		}
-
-		key := bucket.DefaultFile.Keys[i]
-		uploadInput := &s3.PutObjectInput{
-			Bucket:      &bucket.Name,
-			Key:         aws.String(key),
-			Body:        bytes.NewReader(fileData),
-			ContentType: aws.String("image/webp"),
-		}
-
-		_, err = client.PutObject(context.TODO(), uploadInput)
-		if err != nil {
-			return fmt.Errorf("failed to upload %s to S3: %v", key, err)
-		}
+		return fmt.Errorf("failed to apply public read policy: %w (check ARN format for your S3 provider)", err)
 	}
 	return nil
 }
