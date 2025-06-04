@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\user\WebstormProjects\todo\client\windows\flutter\ephemeral\.plugin_symlinks\emoji_picker_flutter\windows\emoji_picker_flutter_plugin_c_api.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\user\WebstormProjects\todo\client\windows\flutter\ephemeral\.plugin_symlinks\emoji_picker_flutter\windows\emoji_picker_flutter_plugin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\user\WebstormProjects\todo\client\windows\flutter\ephemeral\.plugin_symlinks\emoji_picker_flutter\windows\include\emoji_picker_flutter\emoji_picker_flutter_plugin_c_api.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\user\WebstormProjects\todo\client\windows\flutter\ephemeral\.plugin_symlinks\emoji_picker_flutter\windows\emoji_picker_flutter_plugin.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\user\WebstormProjects\todo\client\windows\flutter\ephemeral\.plugin_symlinks\emoji_picker_flutter\windows\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{0F67506E-2ED7-35F7-A6C4-16D7E54349D3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{784D202D-CF7C-3929-BDBA-9B4D641A6885}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

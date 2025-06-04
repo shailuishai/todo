@@ -1,0 +1,53 @@
+env: "local" # или "development"
+
+http_server:
+  address: "0.0.0.0:8080" # Слушаем на всех интерфейсах для доступа из Docker
+  timeout: 4s
+  idle_timeout: 60s
+  allowed_origins: # Домены фронтенда для CORS
+    - "https://localhost:5174"
+    - "https://127.0.0.1:5174"
+  tls:
+    enabled: true
+    cert_file: "/app/.certs/localhost+2.pem"
+    key_file: "/app/.certs/localhost+2-key.pem"
+
+db:
+  username: "user"     # Как в docker-compose.yml
+  host: "postgres"     # Имя сервиса из docker-compose.yml
+  port: "5432"
+  dbname: "todo"       # Как в docker-compose.yml
+  ssl_mode: "disable"  # Для локальной разработки
+
+cache:
+  address: "redis:6379" # Имя сервиса из docker-compose.yml
+  db: 0
+  state_expiration: 5m # Увеличил для удобства отладки OAuth
+  email_confirmed_code_expiration: 16m
+  default_task_cache_ttl: 5m # Для отдельных задач и списков задач
+  default_team_cache_ttl: 15m # Для инфо о команде
+  default_team_list_cache_ttl: 5m
+
+s3:
+  endpoint: "storage-321.s3hoster.by" # Твой S3 эндпоинт
+  region: "BTC"                       # Твой S3 регион
+  bucket_user_avatars: "useravatar"   # Имя бакета для аватарок пользователей
+  bucket_team_images: "teamimages"    # Имя бакета для изображений команд (НОВОЕ)
+  max_team_image_size_bytes: 5242880
+
+smtp:
+    host: "smtp.yandex.ru"
+    port: 587
+    username: "ToDoAppResp@yandex.by"
+
+jwt:
+  access_expire: 12h
+  refresh_expire: 168h
+  secure_cookie: true
+  cookie_domain: "localhost"
+
+oauth:
+  google_redirect_url: "https://localhost:8080/v1/auth/google/callback"
+  yandex_redirect_url: "https://localhost:8080/v1/auth/yandex/callback"
+  frontend_redirect_success_url: "https://localhost:5174/oauth-callback-success"
+  frontend_redirect_error_url: "https://localhost:5174/oauth-callback-error"

@@ -1,122 +1,286 @@
+// lib/main.dart
+import 'dart:io'; // Для MyHttpOverrides
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, defaultTargetPlatform; // kDebugMode
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Для SystemChrome
+import 'package:provider/provider.dart';
+// import 'core/routing/app_route_path.dart'; // Не используется напрямую в main
+import 'theme_provider.dart';
+import 'tag_provider.dart';
+import 'task_provider.dart';
+import 'team_provider.dart';
+import 'sidebar_state_provider.dart';
+import 'core/routing/app_route_information_parser.dart';
+import 'core/routing/app_router_delegate.dart';
+import 'package:flutter_web_plugins/url_strategy.dart'; // Для usePathUrlStrategy
+import 'auth_state.dart';
+import 'deleted_tasks_provider.dart';
+import 'dart:async'; // Для StreamSubscription
+import 'services/api_service.dart';
+import 'html_stub.dart' if (dart.library.html) 'dart:html' as html_lib; // Для html.window
 
-void main() {
-  runApp(const MyApp());
-}
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart'; // Для initializeDateFormatting
+// import 'themes.dart'; // themes.dart уже импортируется в theme_provider.dart или MyApp
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  // This widget is the root of your application.
+// Класс для обхода проверки SSL сертификатов в debug режиме на НЕ-WEB платформах
+class MyHttpOverrides extends HttpOverrides {
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) {
+        // Разрешаем самоподписанные сертификаты для localhost и 10.0.2.2 на порту 8080
+        final allowedHosts = ['localhost', '10.0.2.2'];
+        return allowedHosts.contains(host) && port == 8080;
+      };
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized(); // Обязательно для асинхронных операций до runApp
+  await initializeDateFormatting('ru_RU', null); // Инициализация локализации для дат
 
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
+  // Включение HttpOverrides только в debug режиме и НЕ для web
+  if (kDebugMode && !kIsWeb) {
+    HttpOverrides.global = MyHttpOverrides();
+    debugPrint("HttpOverrides for self-signed certs enabled for debug mode on non-web platforms.");
+  }
 
-  final String title;
+  usePathUrlStrategy(); // Используем "чистые" URL без # для веб
 
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  // Установка предпочтительной ориентации для мобильных устройств
+  if (!kIsWeb) {
+    if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
+      try {
+        await SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ]);
+      } catch (e) {
+        // ignore: avoid_print
+        print("Could not set preferred orientations: $e");
+      }
+    }
+  }
+
+  // Создаем ApiService один раз
+  final ApiService apiService = ApiService();
+
+  // Создаем AuthState, передавая ему ApiService
+  final AuthState authState = AuthState(apiService: apiService);
+
+  // Создаем TeamProvider, передавая ApiService и AuthState
+  final TeamProvider teamProvider = TeamProvider(apiService, authState);
+
+  // Создаем AppRouterDelegate, передавая AuthState и TeamProvider
+  final AppRouterDelegate routerDelegate = AppRouterDelegate(authState: authState, teamProvider: teamProvider);
+
+
+  runApp(
+    MultiProvider(
+      providers: [
+        Provider.value(value: apiService),
+        ChangeNotifierProvider.value(value: authState),
+        ChangeNotifierProvider.value(value: teamProvider),
+        ChangeNotifierProvider.value(value: routerDelegate),
+
+        ChangeNotifierProvider(create: (context) => ThemeProvider()),
+        ChangeNotifierProxyProvider<AuthState, TaskProvider>(
+          create: (context) => TaskProvider(
+            Provider.of<ApiService>(context, listen: false),
+            Provider.of<AuthState>(context, listen: false),
+          ),
+          update: (context, auth, previous) =>
+          previous ?? TaskProvider(Provider.of<ApiService>(context, listen: false), auth),
+        ),
+        ChangeNotifierProxyProvider<AuthState, TagProvider>(
+          create: (context) => TagProvider(
+            Provider.of<ApiService>(context, listen: false),
+            Provider.of<AuthState>(context, listen: false),
+          ),
+          update: (context, auth, previous) =>
+          previous ?? TagProvider(Provider.of<ApiService>(context, listen: false), auth),
+        ),
+        ChangeNotifierProvider(create: (_) => SidebarStateProvider()),
+        ChangeNotifierProvider(create: (context) => DeletedTasksProvider()),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final AppRouteInformationParser _routeInformationParser = AppRouteInformationParser();
+  StreamSubscription? _uriLinkSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final authState = Provider.of<AuthState>(context, listen: false);
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+
+    _loadThemeAndSubscribe(authState, themeProvider);
+
+    if (kIsWeb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _handleInitialWebUri();
+        }
+      });
+      _uriLinkSubscription = html_lib.window.onPopState.listen((event) {
+        if (mounted) {
+          _handleWebUri(Uri.tryParse(html_lib.window.location.href));
+        }
+      });
+    }
+  }
+
+  Future<void> _loadThemeAndSubscribe(AuthState authState, ThemeProvider themeProvider) async {
+    // ЗАГЛУШКА: Реализуйте loadThemePreference в ThemeProvider
+    // await themeProvider.loadThemePreference();
+    debugPrint("ThemeProvider.loadThemePreference() - ЗАГЛУШКА, РЕАЛИЗУЙТЕ В ПРОВАЙДЕРЕ");
+    await Future.delayed(Duration.zero);
+
+    if (authState.isLoggedIn && authState.currentUser != null) {
+      _applyProfileThemeSettings(authState.currentUser!, themeProvider);
+    }
+
+    authState.addListener(() { // Используем addListener
+      if (authState.isLoggedIn && authState.currentUser != null) {
+        _applyProfileThemeSettings(authState.currentUser!, themeProvider);
+      }
     });
   }
 
+  void _applyProfileThemeSettings(UserProfile profile, ThemeProvider themeProvider) {
+    final userTheme = profile.theme;
+    if (userTheme != null) {
+      // ЗАГЛУШКА: Реализуйте setThemeByName в ThemeProvider
+      // themeProvider.setThemeByName(userTheme);
+      debugPrint("ThemeProvider.setThemeByName('$userTheme') - ЗАГЛУШКА, РЕАЛИЗУЙТЕ В ПРОВАЙДЕРЕ");
+    }
+    final userAccentColor = profile.accentColor;
+    if (userAccentColor != null) {
+      try {
+        String colorString = userAccentColor.startsWith('#') ? userAccentColor.substring(1) : userAccentColor;
+        if (colorString.length == 6) colorString = 'FF$colorString';
+        themeProvider.setAccentColor(Color(int.parse(colorString, radix: 16)));
+      } catch (e) {
+        debugPrint("Error parsing accent color from profile: $e");
+      }
+    }
+  }
+
+
+  void _handleInitialWebUri() {
+    if (!kIsWeb || !mounted) return;
+    try {
+      final initialUri = Uri.tryParse(html_lib.window.location.href);
+      _handleWebUri(initialUri);
+    } catch (e) {
+      debugPrint("_MyAppState: Error processing initial web URI: $e");
+    }
+  }
+
+  Future<void> _handleWebUri(Uri? uri) async {
+    if (uri == null || !kIsWeb || !mounted ) return;
+
+    final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
+    debugPrint("_MyAppState: Handling WEB URI: $uri. Path: ${uri.path}, Query: ${uri.queryParameters}, Fragment: ${uri.fragment}");
+    final authState = routerDelegate.authState;
+    bool handledOAuthRedirect = false;
+
+    const String frontendSuccessPathSuffix = 'oauth-callback-success';
+    const String frontendErrorPathSuffix = 'oauth-callback-error';
+
+    if (uri.pathSegments.isNotEmpty && uri.pathSegments.last == frontendSuccessPathSuffix) {
+      debugPrint("_MyAppState: OAuth success redirect detected: $uri");
+      await authState.handleOAuthCallback(uri);
+      handledOAuthRedirect = true;
+    } else if (uri.pathSegments.isNotEmpty && uri.pathSegments.last == frontendErrorPathSuffix) {
+      final errorParam = uri.queryParameters['error_description'] ?? uri.queryParameters['error'] ?? 'unknown_oauth_error';
+      final providerParam = uri.queryParameters['provider'] ?? 'unknown_provider';
+      debugPrint("_MyAppState: OAuth error redirect detected: $uri, error: $errorParam, provider: $providerParam");
+      authState.setOAuthError("Ошибка аутентификации через $providerParam: $errorParam");
+      handledOAuthRedirect = true;
+    }
+
+    if (handledOAuthRedirect) {
+      try {
+        html_lib.window.history.replaceState(null, '', '/');
+        debugPrint("_MyAppState: Cleared OAuth params from URL, effectively navigating to '/' for router to re-evaluate.");
+      } catch (e) {
+        debugPrint("_MyAppState: Error clearing/replacing URI after OAuth: $e");
+      }
+      if (mounted) {
+        final newPath = await _routeInformationParser.parseRouteInformation(RouteInformation(uri: Uri(path: '/')) );
+        await routerDelegate.setNewRoutePath(newPath);
+      }
+    } else {
+      debugPrint("_MyAppState: URI $uri is not an OAuth redirect. Router should handle it.");
+    }
+  }
+
+
+  @override
+  void dispose() {
+    _uriLinkSubscription?.cancel();
+    // AuthState listener удалится автоматически при dispose самого AuthState.
+    // Если бы мы добавляли listener с помощью authState.addListener(myMethod),
+    // то нужно было бы authState.removeListener(myMethod) здесь.
+    // Но т.к. мы используем ChangeNotifierProvider.value, жизненный цикл AuthState
+    // управляется им, и он вызовет dispose у AuthState.
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
+    final routerDelegate = Provider.of<AppRouterDelegate>(context);
+
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, _) {
+        // ЗАГЛУШКА: Реализуйте currentThemeData в ThemeProvider
+        final ThemeData currentTheme = themeProvider.currentTheme ?? ThemeData.light(); // Используем дефолт, если нет
+        final ColorScheme colorScheme = currentTheme.colorScheme;
+
+        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+          statusBarColor: currentTheme.appBarTheme.backgroundColor ?? colorScheme.surface,
+          statusBarIconBrightness: colorScheme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+          statusBarBrightness: colorScheme.brightness,
+          systemNavigationBarColor: currentTheme.bottomNavigationBarTheme.backgroundColor ?? colorScheme.surface,
+          systemNavigationBarDividerColor: currentTheme.dividerColor,
+          systemNavigationBarIconBrightness: colorScheme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+        ));
+
+        return MaterialApp.router(
+          title: 'ChronosHub',
+          theme: currentTheme,
+          debugShowCheckedModeBanner: false,
+          routerDelegate: routerDelegate,
+          routeInformationParser: _routeInformationParser,
+          backButtonDispatcher: RootBackButtonDispatcher(),
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
           ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+          supportedLocales: const [
+            Locale('ru', 'RU'),
+            Locale('en', ''),
+          ],
+          locale: const Locale('ru', 'RU'),
+        );
+      },
     );
   }
 }

@@ -1,0 +1,3223 @@
+ {
+    "schemes": [
+        "http",
+        "https",
+        "",
+        "",
+        "//",
+        "Динамически",
+        "обновляется",
+        "(остается",
+        "одна",
+        "схема)"
+    ],
+    "swagger": "2.0",
+    "info": {
+        "description": "API for ToDoApp",
+        "title": "ToDoApp API",
+        "contact": {
+            "name": "Evdokimov Igor",
+            "url": "https://t.me/epelptic"
+        },
+        "version": "1.0.0"
+    },
+    "host": "localhost:8080 // Динамически обновляется",
+    "basePath": "/v1",
+    "paths": {
+        "/auth/logout": {
+            "post": {
+                "description": "Logs out the user by clearing the refresh token cookie. If the cookie is not found, returns success without any action.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Logout user",
+                "responses": {
+                    "200": {
+                        "description": "User successfully logged out or no refresh token found",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "204": {
+                        "description": "No content, token was successfully invalidated",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/refresh-token-native": {
+            "post": {
+                "description": "Refreshes the access token using the provided refresh token in the request body.\nOptionally returns a new refresh token for rotation.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Refresh Access Token (Native)",
+                "parameters": [
+                    {
+                        "description": "Refresh token payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.RefreshTokenNativeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successfully refreshed tokens. Data contains 'access_token' and optionally 'refresh_token'.",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "additionalProperties": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid, missing, or expired refresh token",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/sign-in": {
+            "post": {
+                "description": "Create access and refresh token and return them to the user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "User SignIn",
+                "parameters": [
+                    {
+                        "description": "User login details",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.UserSignInRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User successfully signed in",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid Password or Email",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "User email is not confirmed",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/sign-up": {
+            "post": {
+                "description": "Registers a new user with the provided email and password.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "User SignUp",
+                "parameters": [
+                    {
+                        "description": "User registration details",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.UserSignUpRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "User successfully created",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Validation error or invalid request payload",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict - User with this email or login already exists",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/{provider}": {
+            "get": {
+                "description": "Redirects the user to the OAuth provider's authorization page.\nFor native clients, a 'native_final_redirect_uri' query parameter can be provided,\nwhich will be used as the final redirect target after successful OAuth with the provider and our backend.",
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Initiate OAuth flow",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth provider (e.g., google, yandex)",
+                        "name": "provider",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "URI to redirect native clients to after successful authentication by our backend (e.g., http://127.0.0.1:8989/native-oauth-landing)",
+                        "name": "native_final_redirect_uri",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Temporary Redirect to OAuth provider"
+                    },
+                    "400": {
+                        "description": "Bad Request - Unsupported provider or provider not configured"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/auth/{provider}/callback": {
+            "get": {
+                "description": "Handles the callback from the OAuth provider after user authentication.\nExchanges the authorization code for tokens, authenticates/creates a user in our system.\nFor web clients, sets an httpOnly refresh_token cookie and redirects to FrontendRedirectSuccessURL.\nFor native clients (if 'native_final_redirect_uri' was provided earlier),\nredirects to that URI with app's access_token and refresh_token in query parameters.",
+                "tags": [
+                    "auth"
+                ],
+                "summary": "OAuth Callback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth provider (e.g., google, yandex)",
+                        "name": "provider",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Authorization code from OAuth provider",
+                        "name": "code",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "State parameter from OAuth provider",
+                        "name": "state",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Temporary Redirect to frontend or native client landing page"
+                    },
+                    "400": {
+                        "description": "Bad Request - Missing code/state, invalid state, or other OAuth processing error"
+                    },
+                    "500": {
+                        "description": "Internal Server Error"
+                    }
+                }
+            }
+        },
+        "/email/confirm": {
+            "put": {
+                "description": "Validate confirmation code and if it's correct, update email_verified status.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "email"
+                ],
+                "summary": "Confirm email address",
+                "parameters": [
+                    {
+                        "description": "Data for email confirmation (email and code)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.EmailConfirmedRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Email successfully confirmed",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request, invalid code, or email already confirmed",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Email already confirmed (if detected before code check, otherwise 400)",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/email/send-code": {
+            "post": {
+                "description": "Generate code for confirmation email and send this to email. This endpoint has a rate limit of 1 request per minute per IP.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "email"
+                ],
+                "summary": "Send code for confirmation email",
+                "parameters": [
+                    {
+                        "description": "User's email for confirmation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/controller.SendConfirmedEmailCodeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Confirmation code sending process initiated",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Validation error, email already confirmed, or user not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests (rate limit exceeded)",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/profile": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Fully updates the profile information. All mutable fields should be provided.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Profile Management"
+                ],
+                "summary": "Update user profile (PUT)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "JSON string with ALL profile data fields.",
+                        "name": "json_data",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "New avatar image file.",
+                        "name": "avatar",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile updated.",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/profile.UserProfileResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "summary": "Delete current user's account",
+                "responses": {}
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Partially updates profile fields. Only provided fields in json_data will be updated.\nAvatar can also be updated or reset.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Profile Management"
+                ],
+                "summary": "Partially update user profile (PATCH)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "example": "{\"login\":\"new_username_partial\",\"theme\":\"dark\"}",
+                        "description": "JSON string with profile fields to update (all optional).",
+                        "name": "json_data",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "file",
+                        "description": "New avatar image file.",
+                        "name": "avatar",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile partially updated.",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/profile.UserProfileResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieves a list of tasks based on filters and sorting. Returns personal tasks or tasks of a specified team.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Get a list of tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Filter by Team ID (for team tasks)",
+                        "name": "team_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "todo",
+                            "in_progress",
+                            "deferred",
+                            "done"
+                        ],
+                        "type": "string",
+                        "description": "Filter by status (todo, in_progress, deferred, done)",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            1,
+                            2,
+                            3
+                        ],
+                        "type": "integer",
+                        "description": "Filter by priority (1=low, 2=medium, 3=high)",
+                        "name": "priority",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by assigned user ID",
+                        "name": "assigned_to_user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Filter by deadline: start date (YYYY-MM-DD or RFC3339)",
+                        "name": "deadline_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Filter by deadline: end date (YYYY-MM-DD or RFC3339)",
+                        "name": "deadline_to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search by title or description",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "created_at",
+                            "updated_at",
+                            "deadline",
+                            "priority",
+                            "status",
+                            "title"
+                        ],
+                        "type": "string",
+                        "description": "Sort by field (created_at, updated_at, deadline, priority, status, title)",
+                        "name": "sort_by",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "ASC",
+                            "DESC"
+                        ],
+                        "type": "string",
+                        "description": "Sort order (ASC, DESC)",
+                        "name": "sort_order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Tasks retrieved successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/task.TaskResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied to team tasks",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new personal or team task.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Create a new task",
+                "parameters": [
+                    {
+                        "description": "Task creation data",
+                        "name": "task",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/task.CreateTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Task created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/task.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (e.g., to create task in team)",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity (e.g., assignee not in team)",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{taskID}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieves a task by its ID. Access is restricted based on user ownership or team membership.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Get a specific task by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Task ID",
+                        "name": "taskID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/task.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Task ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Task not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Fully updates a task by its ID. All mutable fields should be provided.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Update an existing task (full update)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Task ID",
+                        "name": "taskID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Task update data",
+                        "name": "task",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/task.UpdateTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task updated successfully",
+                        "schema": {
+                            "$ref": "#/definitions/task.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload, validation error, or invalid Task ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Task not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity (e.g., assignee not in team, already completed/deleted)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Logically deletes a task by its ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Delete a task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Task ID",
+                        "name": "taskID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Task deleted successfully"
+                    },
+                    "400": {
+                        "description": "Invalid Task ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Task not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Partially updates a task by its ID. Only provided fields will be updated.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tasks"
+                ],
+                "summary": "Partially update an existing task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Task ID",
+                        "name": "taskID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Task patch data (fields to update)",
+                        "name": "task",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/task.PatchTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Task patched successfully",
+                        "schema": {
+                            "$ref": "#/definitions/task.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload, validation error, or invalid Task ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Task not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity (e.g., assignee not in team, already completed/deleted)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Create a new team. The creator automatically becomes the owner.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams"
+                ],
+                "summary": "Create a new team",
+                "parameters": [
+                    {
+                        "description": "Team creation data",
+                        "name": "team",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/team.CreateTeamRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Team created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/join": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Allows an authenticated user to join a team using a valid invite token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams-invites"
+                ],
+                "summary": "Join a team using an invite token",
+                "parameters": [
+                    {
+                        "description": "Invite token",
+                        "name": "token_data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/team.JoinTeamByTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successfully joined the team",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found (e.g., if token is invalid or team deleted)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "User is already a member of this team or token invalid/expired",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/my": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieves a list of teams where the currently authenticated user is a member.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams"
+                ],
+                "summary": "Get a list of teams the current user is a member of",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search by team name",
+                        "name": "search",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Teams retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid query parameters",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{teamID}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieves detailed information about a team by its ID, including members. Access is restricted to team members.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams"
+                ],
+                "summary": "Get a specific team by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Team retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Team ID format",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not a team member)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Updates details of a specific team. Only the team owner can perform this action.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams"
+                ],
+                "summary": "Update team details (name, description, color, image)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "JSON string with team details to update (UpdateTeamDetailsRequest)",
+                        "name": "json_data",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "New team image file (optional)",
+                        "name": "image",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Team updated successfully",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request, Task ID, or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not owner)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Image file too large",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity (e.g., invalid image type)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Logically deletes a team by its ID. Only the team owner can perform this action.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams"
+                ],
+                "summary": "Delete a team",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Team deleted successfully"
+                    },
+                    "400": {
+                        "description": "Invalid Team ID format",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not owner)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{teamID}/invites": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Generates a new invite token for the specified team. Requires owner or admin privileges.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams-invites"
+                ],
+                "summary": "Generate an invite token for a team",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Invite token configuration (expiration, role)",
+                        "name": "invite_config",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/team.GenerateInviteTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Invite token generated successfully",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamInviteTokenResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload, validation error, or invalid Team ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not owner/admin)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{teamID}/leave": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Allows the current authenticated user to leave a team. Owner cannot leave if they are the last member.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams-members"
+                ],
+                "summary": "Leave a team",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID of the team to leave",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successfully left the team"
+                    },
+                    "400": {
+                        "description": "Invalid Team ID format",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (e.g., owner trying to leave as last member)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found or user not a member",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{teamID}/members": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieves a list of members for a specific team. Requester must be a member of the team.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams-members"
+                ],
+                "summary": "Get list of team members",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Team members retrieved successfully",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamMemberResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Team ID format",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not a team member)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Adds a user to a team with a specified role. Requires owner or admin privileges in the team.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams-members"
+                ],
+                "summary": "Add a member to a team",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "User ID and role to add",
+                        "name": "member_data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/team.AddTeamMemberRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Member added successfully",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamMemberResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload, validation error, or invalid Team/User ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not owner/admin or trying to add owner)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team or target User not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "User is already a member of this team",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{teamID}/members/{userID}": {
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Removes a user from a team. Requires owner or admin privileges. Owner cannot be removed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams-members"
+                ],
+                "summary": "Remove a member from a team (kick)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID of the member to be removed",
+                        "name": "userID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Member removed successfully"
+                    },
+                    "400": {
+                        "description": "Invalid Team/User ID format",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (e.g., not owner/admin, trying to remove owner)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team or target User not found in team",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{teamID}/members/{userID}/role": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Updates the role of a specific member in a team. Requires owner or admin privileges. Owner's role cannot be changed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "teams-members"
+                ],
+                "summary": "Update a team member's role",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID of the member whose role is to be updated",
+                        "name": "userID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New role data",
+                        "name": "role_data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/team.UpdateTeamMemberRoleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Member's role updated successfully",
+                        "schema": {
+                            "$ref": "#/definitions/team.TeamMemberResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload, validation error, or invalid Team/User ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (e.g., not owner/admin, trying to change owner's role, admin trying to change another admin's role)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team or target User not found in team",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity (e.g., invalid role)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{teamID}/tags": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieves a list of all tags for a specific team. Requester must be a member of the team.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "team-tags"
+                ],
+                "summary": "Get all tags for a specific team",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Team tags retrieved successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/tag.TagResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Team ID format",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not a team member)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Creates a new tag for a specific team. Requires 'owner', 'admin', or 'editor' role in the team.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "team-tags"
+                ],
+                "summary": "Create a new team tag",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Team tag data",
+                        "name": "tag_data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/tag.CreateTeamTagRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Team tag created successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/tag.TagResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload, validation error, or invalid Team ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (insufficient role in team)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Tag with this name already exists for the team",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/teams/{teamID}/tags/{tagID}": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Updates a specific tag for a team. Requires 'owner', 'admin', or 'editor' role in the team.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "team-tags"
+                ],
+                "summary": "Update an existing team tag",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Team Tag ID",
+                        "name": "tagID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data to update team tag",
+                        "name": "tag_data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/tag.UpdateTeamTagRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Team tag updated successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/tag.TagResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload, validation error, or invalid Team/Tag ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (insufficient role or tag not in team)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team or Tag not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Tag with this name already exists for the team",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Deletes a specific tag for a team. Requires 'owner', 'admin', or 'editor' role in the team.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "team-tags"
+                ],
+                "summary": "Delete a team tag",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Team ID",
+                        "name": "teamID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Team Tag ID",
+                        "name": "tagID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Team tag deleted successfully"
+                    },
+                    "400": {
+                        "description": "Invalid Team/Tag ID format",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (insufficient role or tag not in team)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Team or Tag not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/user-tags": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieves a list of all personal tags for the authenticated user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user-tags"
+                ],
+                "summary": "Get all tags for the authenticated user",
+                "responses": {
+                    "200": {
+                        "description": "User tags retrieved successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/tag.TagResponse"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Creates a new personal tag for the authenticated user.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user-tags"
+                ],
+                "summary": "Create a new user tag",
+                "parameters": [
+                    {
+                        "description": "User tag data",
+                        "name": "tag_data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/tag.CreateUserTagRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "User tag created successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/tag.TagResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Tag with this name already exists for the user",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/user-tags/{tagID}": {
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Updates a specific personal tag for the authenticated user.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user-tags"
+                ],
+                "summary": "Update an existing user tag",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User Tag ID",
+                        "name": "tagID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data to update user tag",
+                        "name": "tag_data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/tag.UpdateUserTagRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "User tag updated successfully",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.SuccessResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/tag.TagResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request payload, validation error, or invalid Tag ID",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not owner of the tag)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User tag not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Tag with this name already exists for the user",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Deletes a specific personal tag for the authenticated user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user-tags"
+                ],
+                "summary": "Delete a user tag",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User Tag ID",
+                        "name": "tagID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "User tag deleted successfully"
+                    },
+                    "400": {
+                        "description": "Invalid Tag ID format",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Access denied (not owner of the tag)",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "User tag not found",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/response.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "controller.EmailConfirmedRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "email"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "54JK64"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "jon.doe@gmail.com"
+                }
+            }
+        },
+        "controller.RefreshTokenNativeRequest": {
+            "type": "object",
+            "required": [
+                "refresh_token"
+            ],
+            "properties": {
+                "refresh_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "controller.SendConfirmedEmailCodeRequest": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "jon.doe@gmail.com"
+                }
+            }
+        },
+        "controller.UserSignInRequest": {
+            "type": "object",
+            "required": [
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "jon.doe@gmail.com"
+                },
+                "login": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 1,
+                    "example": "user1"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "SuperPassword123"
+                }
+            }
+        },
+        "controller.UserSignUpRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "password"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "jon.doe@gmail.com"
+                },
+                "login": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 1,
+                    "example": "user1"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "SuperPassword123"
+                }
+            }
+        },
+        "profile.UserProfileResponse": {
+            "type": "object",
+            "properties": {
+                "accent_color": {
+                    "type": "string"
+                },
+                "avatar_url": {
+                    "type": "string"
+                },
+                "email": {
+                    "description": "Убрал omitempty",
+                    "type": "string"
+                },
+                "has_mobile_device_linked": {
+                    "type": "boolean"
+                },
+                "is_sidebar_collapsed": {
+                    "type": "boolean"
+                },
+                "login": {
+                    "description": "Убрал omitempty, login всегда должен быть",
+                    "type": "string"
+                },
+                "notifications_email_enabled": {
+                    "description": "Настройки уведомлений",
+                    "type": "boolean"
+                },
+                "notifications_push_task_assigned": {
+                    "type": "boolean"
+                },
+                "notifications_push_task_deadline": {
+                    "type": "boolean"
+                },
+                "notifications_push_team_mention": {
+                    "type": "boolean"
+                },
+                "theme": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "response.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Error message"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "error"
+                }
+            }
+        },
+        "response.Response": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "description": "Payload for success responses"
+                },
+                "error": {
+                    "type": "string",
+                    "example": "Error message if status is 'error'"
+                },
+                "status": {
+                    "description": "\"success\" or \"error\"",
+                    "type": "string",
+                    "example": "success/error"
+                }
+            }
+        },
+        "response.SuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "status": {
+                    "type": "string",
+                    "example": "success"
+                }
+            }
+        },
+        "tag.CreateTeamTagRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 1
+                }
+            }
+        },
+        "tag.CreateUserTagRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 1
+                }
+            }
+        },
+        "tag.TagResponse": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "UserTagID или TeamTagID",
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "description": "OwnerUserID для \"user\", TeamID для \"team\"",
+                    "type": "integer"
+                },
+                "type": {
+                    "description": "\"user\" или \"team\"",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "tag.UpdateTeamTagRequest": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 1
+                }
+            }
+        },
+        "tag.UpdateUserTagRequest": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "minLength": 1
+                }
+            }
+        },
+        "task.CreateTaskRequest": {
+            "type": "object",
+            "required": [
+                "title"
+            ],
+            "properties": {
+                "assigned_to_user_id": {
+                    "type": "integer"
+                },
+                "deadline": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 65535
+                },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 3,
+                    "minimum": 1
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "todo",
+                        "in_progress",
+                        "deferred",
+                        "done"
+                    ]
+                },
+                "team_id": {
+                    "type": "integer"
+                },
+                "team_tag_ids": {
+                    "description": "\u003c\u003c\u003c ДОБАВЛЕНО",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                },
+                "user_tag_ids": {
+                    "description": "\u003c\u003c\u003c ДОБАВЛЕНО",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "task.PatchTaskRequest": {
+            "type": "object",
+            "properties": {
+                "assigned_to_user_id": {
+                    "type": "integer"
+                },
+                "clear_assigned_to": {
+                    "type": "boolean"
+                },
+                "clear_deadline": {
+                    "type": "boolean"
+                },
+                "deadline": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 65535
+                },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 3,
+                    "minimum": 1
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "todo",
+                        "in_progress",
+                        "deferred",
+                        "done"
+                    ]
+                },
+                "team_tag_ids": {
+                    "description": "\u003c\u003c\u003c ДОБАВЛЕНО (указатель)",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                },
+                "user_tag_ids": {
+                    "description": "\u003c\u003c\u003c ДОБАВЛЕНО (указатель)",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "task.TaskResponse": {
+            "type": "object",
+            "properties": {
+                "assigned_to_user_id": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_user_id": {
+                    "type": "integer"
+                },
+                "deadline": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "is_deleted": {
+                    "type": "boolean"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tags": {
+                    "description": "\u003c\u003c\u003c ДОБАВЛЕНО поле для тегов",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/tag.TagResponse"
+                    }
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "team_id": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "task.UpdateTaskRequest": {
+            "type": "object",
+            "required": [
+                "priority",
+                "status",
+                "title"
+            ],
+            "properties": {
+                "assigned_to_user_id": {
+                    "description": "Может быть null для снятия назначения",
+                    "type": "integer"
+                },
+                "deadline": {
+                    "description": "Может быть null для сброса",
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 65535
+                },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 3,
+                    "minimum": 1
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "todo",
+                        "in_progress",
+                        "deferred",
+                        "done"
+                    ]
+                },
+                "team_tag_ids": {
+                    "description": "\u003c\u003c\u003c ДОБАВЛЕНО (указатель)",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "title": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                },
+                "user_tag_ids": {
+                    "description": "\u003c\u003c\u003c ДОБАВЛЕНО (указатель, чтобы отличить отсутствие от пустого массива)",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "team.AddTeamMemberRequest": {
+            "type": "object",
+            "required": [
+                "user_id"
+            ],
+            "properties": {
+                "role": {
+                    "description": "Owner не назначается так",
+                    "enum": [
+                        "admin",
+                        "editor",
+                        "member"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/team.TeamMemberRole"
+                        }
+                    ]
+                },
+                "user_id": {
+                    "description": "Пользователь будет идентифицироваться по UserID или Login/Email.\nПока сделаем UserID, т.к. поиск по логину/email - это отдельная логика.\nЕсли добавляем по логину/email, то нужен будет UseCase пользователя для поиска.\nДля простоты начнем с UserID.",
+                    "type": "integer"
+                }
+            }
+        },
+        "team.CreateTeamRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "color": {
+                    "description": "Валидация цвета",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Max length для TEXT",
+                    "type": "string",
+                    "maxLength": 65535
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "minLength": 1
+                }
+            }
+        },
+        "team.GenerateInviteTokenRequest": {
+            "type": "object",
+            "properties": {
+                "expires_in_hours": {
+                    "description": "Срок действия токена в часах. Если не указан, используется значение по умолчанию.",
+                    "type": "integer",
+                    "maximum": 720,
+                    "minimum": 1
+                },
+                "role_to_assign": {
+                    "description": "Роль, которая будет назначена пользователю при вступлении по этому токену.\nПо умолчанию 'member'. Owner/Admin не могут быть назначены через токен.",
+                    "enum": [
+                        "editor",
+                        "member"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/team.TeamMemberRole"
+                        }
+                    ]
+                }
+            }
+        },
+        "team.JoinTeamByTokenRequest": {
+            "type": "object",
+            "required": [
+                "invite_token"
+            ],
+            "properties": {
+                "invite_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "team.TeamDetailResponse": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_user_id": {
+                    "type": "integer"
+                },
+                "current_user_role": {
+                    "description": "Роль текущего пользователя в этой команде",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/team.TeamMemberRole"
+                        }
+                    ]
+                },
+                "description": {
+                    "type": "string"
+                },
+                "image_url": {
+                    "description": "Полный URL, будет формироваться в UseCase",
+                    "type": "string"
+                },
+                "is_deleted": {
+                    "type": "boolean"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/team.TeamMemberResponse"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "team_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "team.TeamInviteTokenResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "description": "Когда токен перестанет действовать",
+                    "type": "string"
+                },
+                "invite_link": {
+                    "description": "Полная ссылка-приглашение (формируется на фронте или здесь)",
+                    "type": "string"
+                },
+                "invite_token": {
+                    "description": "Сам токен",
+                    "type": "string"
+                },
+                "role_on_join": {
+                    "description": "Роль, которая будет назначена при вступлении",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/team.TeamMemberRole"
+                        }
+                    ]
+                }
+            }
+        },
+        "team.TeamMemberResponse": {
+            "type": "object",
+            "properties": {
+                "joined_at": {
+                    "type": "string"
+                },
+                "role": {
+                    "$ref": "#/definitions/team.TeamMemberRole"
+                },
+                "user": {
+                    "description": "Информация о пользователе",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/team.UserLiteResponse"
+                        }
+                    ]
+                }
+            }
+        },
+        "team.TeamMemberRole": {
+            "type": "string",
+            "enum": [
+                "owner",
+                "admin",
+                "editor",
+                "member"
+            ],
+            "x-enum-comments": {
+                "RoleEditor": "Может управлять задачами команды",
+                "RoleMember": "Может создавать задачи и менять статус назначенных ему"
+            },
+            "x-enum-varnames": [
+                "RoleOwner",
+                "RoleAdmin",
+                "RoleEditor",
+                "RoleMember"
+            ]
+        },
+        "team.TeamResponse": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_user_id": {
+                    "type": "integer"
+                },
+                "current_user_role": {
+                    "description": "Роль текущего пользователя в этой команде",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/team.TeamMemberRole"
+                        }
+                    ]
+                },
+                "description": {
+                    "type": "string"
+                },
+                "image_url": {
+                    "description": "Полный URL, будет формироваться в UseCase",
+                    "type": "string"
+                },
+                "is_deleted": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "team_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "team.UpdateTeamMemberRoleRequest": {
+            "type": "object",
+            "required": [
+                "role"
+            ],
+            "properties": {
+                "role": {
+                    "description": "Owner не изменяется так",
+                    "enum": [
+                        "admin",
+                        "editor",
+                        "member"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/team.TeamMemberRole"
+                        }
+                    ]
+                }
+            }
+        },
+        "team.UserLiteResponse": {
+            "type": "object",
+            "properties": {
+                "avatar_url": {
+                    "type": "string"
+                },
+                "login": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}
