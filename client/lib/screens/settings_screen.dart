@@ -1027,17 +1027,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                   buildSectionTitle("Уведомления о событиях"),
                   buildSwitchSetting(
                       "Упоминания в чатах команд",
-                      "Когда вас упоминают (@login) в командном чате.",
+                      "Когда вас цитируют в командном чате.",
                       _teamChatMentions,
                           (newValue) => setStateSB(() => _teamChatMentions = newValue),
                       "Упоминания в чате"
-                  ),
-                  buildSwitchSetting(
-                      "Новые комментарии к задачам",
-                      "Когда кто-то комментирует задачи, где вы исполнитель или наблюдатель.",
-                      _taskComments,
-                          (newValue) => setStateSB(() => _taskComments = newValue),
-                      "Комментарии к задачам"
                   ),
 
                   buildSectionTitle("Напоминания"),

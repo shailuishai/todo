@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'app_route_path.dart';
 import 'app_pages.dart';
-// import 'app_router_delegate.dart'; // Не используется здесь напрямую
 
 class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
   @override
@@ -10,12 +9,21 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
     final uri = Uri.parse(routeInformation.uri.toString());
     debugPrint("[AppRouteInformationParser] Parsing URI: $uri");
 
-    if (uri.pathSegments.isEmpty) {
-      debugPrint("[AppRouteInformationParser] URI is empty, returning HomePath");
-      return const HomePath(); // Или HomeSubPath(AppRouteSegments.allTasks)
+    // Если путь пустой, это может быть запрос на лендинг или на дефолтную страницу после логина.
+    // AppRouterDelegate решит, что показать, в зависимости от статуса аутентификации.
+    // Пока что, для парсера, пустой путь -> LandingPath.
+    if (uri.pathSegments.isEmpty || uri.path == '/') {
+      debugPrint("[AppRouteInformationParser] URI is empty or root, returning LandingPath");
+      return const LandingPath();
     }
 
     final firstSegment = uri.pathSegments.first;
+
+    // <<< ОБРАБОТКА ПУТИ ЛЕНДИНГА >>>
+    if (firstSegment == AppRouteSegments.landing) {
+      debugPrint("[AppRouteInformationParser] Parsed LandingPath");
+      return const LandingPath();
+    }
 
     if (firstSegment == AppRouteSegments.auth) {
       debugPrint("[AppRouteInformationParser] Parsed AuthPath");
@@ -24,33 +32,28 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
 
     if (firstSegment == AppRouteSegments.home) {
       if (uri.pathSegments.length == 1) {
-        // Для /home по умолчанию показываем allTasks с правым сайдбаром
         debugPrint("[AppRouteInformationParser] Parsed HomeSubPath (default for /home): ${AppRouteSegments.allTasks}");
         return const HomeSubPath(AppRouteSegments.allTasks, showRightSidebar: true);
       }
       if (uri.pathSegments.length == 2) {
         final subRouteSegment = uri.pathSegments[1];
-        bool showRightSidebar = true; // По умолчанию правый сайдбар показываем
+        bool showRightSidebar = true;
 
-        // Определяем, нужно ли скрывать правый сайдбар для определенных подмаршрутов
         if ([
           AppRouteSegments.settings,
           AppRouteSegments.trash,
-          // AppRouteSegments.calendar, // Calendar теперь с правым сайдбаром
         ].contains(subRouteSegment)) {
           showRightSidebar = false;
+        }
+
+        if (subRouteSegment == AppRouteSegments.teams || subRouteSegment == AppRouteSegments.calendar) {
+          showRightSidebar = true;
         }
 
         final validHomeSubRoutes = [
           AppRouteSegments.settings, AppRouteSegments.allTasks, AppRouteSegments.personalTasks,
           AppRouteSegments.teams, AppRouteSegments.trash, AppRouteSegments.calendar,
         ];
-
-        // Особое правило для /home/teams и /home/calendar - всегда показывать правый сайдбар
-        if (subRouteSegment == AppRouteSegments.teams || subRouteSegment == AppRouteSegments.calendar) {
-          showRightSidebar = true;
-        }
-
 
         if (validHomeSubRoutes.contains(subRouteSegment)) {
           debugPrint("[AppRouteInformationParser] Parsed HomeSubPath: $subRouteSegment, showRightSidebar: $showRightSidebar");
@@ -71,7 +74,7 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
       }
     }
 
-    if (firstSegment == AppRouteSegments.team) { // Это для /team/:id
+    if (firstSegment == AppRouteSegments.team) {
       if (uri.pathSegments.length == 2) {
         final teamId = uri.pathSegments[1];
         debugPrint("[AppRouteInformationParser] Parsed TeamDetailPath with ID: $teamId");
@@ -79,7 +82,6 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
       }
     }
 
-    // <<< ОБРАБОТКА ССЫЛКИ-ПРИГЛАШЕНИЯ >>>
     if (firstSegment == AppRouteSegments.joinTeam) {
       if (uri.pathSegments.length == 2) {
         final token = uri.pathSegments[1];
@@ -88,23 +90,24 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
           return JoinTeamByTokenPath(token);
         }
       }
-      // Если URL не соответствует /join-team/TOKEN, считаем это невалидным и отправляем на главную
-      debugPrint("[AppRouteInformationParser] Invalid JoinTeamByTokenPath, token missing or malformed URI: $uri. Returning HomePath.");
-      return const HomePath(); // Или UnknownPath, если это предпочтительнее
+      debugPrint("[AppRouteInformationParser] Invalid JoinTeamByTokenPath, token missing or malformed URI: $uri. Returning LandingPath.");
+      return const LandingPath();
     }
 
-    // <<< ОБРАБОТКА ПУТИ К ЭКРАНУ ЗАГЛУШКЕ >>>
     if (firstSegment == AppRouteSegments.processingInvite) {
       debugPrint("[AppRouteInformationParser] Parsed JoinTeamProcessingPath");
       return const JoinTeamProcessingPath();
     }
 
-    debugPrint("[AppRouteInformationParser] URI not matched, returning UnknownPath for $uri");
-    return const UnknownPath();
+    debugPrint("[AppRouteInformationParser] URI not matched ($uri), returning LandingPath as default for unknown.");
+    return const LandingPath(); // Для всех неопознанных путей показываем лендинг
   }
 
   @override
   RouteInformation? restoreRouteInformation(AppRoutePath configuration) {
+    if (configuration is LandingPath) { // <<< ВОССТАНОВЛЕНИЕ ДЛЯ ЛЕНДИНГА >>>
+      return RouteInformation(uri: Uri.parse(AppRoutes.landing));
+    }
     if (configuration is AuthPath) {
       return RouteInformation(uri: Uri.parse(AppRoutes.auth));
     }
@@ -120,21 +123,16 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
     if (configuration is TeamDetailPath) {
       return RouteInformation(uri: Uri.parse(AppRoutes.teamDetail(configuration.teamId)));
     }
-    if (configuration is JoinTeamByTokenPath) { // <<< ВОССТАНОВЛЕНИЕ URL ДЛЯ ССЫЛКИ-ПРИГЛАШЕНИЯ >>>
+    if (configuration is JoinTeamByTokenPath) {
       return RouteInformation(uri: Uri.parse(AppRoutes.joinTeamByToken(configuration.token)));
     }
-    if (configuration is JoinTeamProcessingPath) { // <<< ВОССТАНОВЛЕНИЕ URL ДЛЯ ЭКРАНА-ЗАГЛУШКИ >>>
+    if (configuration is JoinTeamProcessingPath) {
       return RouteInformation(uri: Uri.parse(AppRoutes.processingInvite));
     }
     if (configuration is UnknownPath) {
-      // Можно редиректить на дефолтный HomeSubPath, если пользователь залогинен, или на AuthPath.
-      // Пока оставим AuthPath, т.к. UnknownPath обычно означает ошибку в URL.
-      return RouteInformation(uri: Uri.parse(AppRoutes.auth));
+      return RouteInformation(uri: Uri.parse(AppRoutes.landing)); // Неизвестные пути ведут на лендинг
     }
-    // if (configuration is LoadingPath) { // LoadingPath не должен восстанавливаться как URL
-    //   return null;
-    // }
     debugPrint("[AppRouteInformationParser] restoreRouteInformation: Unknown configuration type: ${configuration.runtimeType}");
-    return null; // Для LoadingPath и других неизвестных
+    return null;
   }
 }

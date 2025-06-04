@@ -6,7 +6,6 @@
 .pub/
 **/doc/api/
 **/ios/Flutter/.last_build_id
-/build/
 
 # Symbolication & Obfuscation
 app.*.symbols

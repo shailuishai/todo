@@ -47,7 +47,7 @@ class LoginForm extends StatelessWidget {
             },
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
-                return 'Введите email или логин';
+                return 'Введите email';
               }
               return null;
             },

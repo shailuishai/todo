@@ -133,7 +133,7 @@ ThemeData _buildThemeData(ColorScheme colorScheme, Brightness brightness, Color 
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
     dialogBackgroundColor: colorScheme.surfaceContainerLow,
-    dialogTheme: DialogTheme(
+    dialogTheme: DialogThemeData(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       backgroundColor: colorScheme.surfaceContainerLow,
       titleTextStyle: TextStyle(color: colorScheme.onSurface, fontSize: 20, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
