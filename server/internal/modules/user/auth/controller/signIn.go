@@ -65,8 +65,9 @@ func (c *AuthController) SignIn(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Now().Add(c.jwtCfg.RefreshExpire),
 		HttpOnly: true,
 		Path:     "/",
-		Domain:   c.jwtCfg.CookieDomain, // "localhost" из вашего config.yml
-		Secure:   c.jwtCfg.SecureCookie, // false из вашего config.yml для http
+		Domain:   c.jwtCfg.CookieDomain,
+		Secure:   true, // Должно быть true для HTTPS
+		SameSite: http.SameSiteNoneMode,
 	}
 
 	if !cookie.Secure {
