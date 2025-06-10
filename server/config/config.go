@@ -87,30 +87,20 @@ type OAuthConfig struct {
 }
 
 func MustLoad() *Config {
-	ConfigPath := os.Getenv("CONFIG_PATH")
-	if ConfigPath == "" {
-		defaultPath := "./config/dev.yaml"
-		if _, err := os.Stat(defaultPath); err == nil {
-			ConfigPath = defaultPath
-			log.Printf("CONFIG_PATH environment variable not set, using default: %s", ConfigPath)
-		} else {
-			configPathFromRoot := "app/config/dev.yaml"
-			if _, errRoot := os.Stat(configPathFromRoot); errRoot == nil {
-				ConfigPath = configPathFromRoot
-				log.Printf("CONFIG_PATH environment variable not set, using default relative to root: %s", ConfigPath)
-			} else {
-				log.Fatalf("CONFIG_PATH environment variable not set and default config file not found at %s or %s", defaultPath, configPathFromRoot)
-			}
-		}
+	configPath := os.Getenv("CONFIG_PATH")
+	if configPath == "" {
+		// Если переменная не установлена, по умолчанию ищем local.yaml.
+		// Render будет использовать prod.yaml через переменную, а локально будет работать dev.yaml
+		configPath = "config/dev.yaml"
 	}
 
-	if _, err := os.Stat(ConfigPath); os.IsNotExist(err) {
-		log.Fatalf("config file does not exist: %s", ConfigPath)
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		log.Fatalf("config file does not exist: %s", configPath)
 	}
 
 	var cfg Config
-	if err := cleanenv.ReadConfig(ConfigPath, &cfg); err != nil {
-		log.Fatalf("error reading config file: %s. Error: %v", ConfigPath, err)
+	if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
+		log.Fatalf("error reading config file: %s. Error: %v", configPath, err)
 	}
 
 	JwtConfig = cfg.JWTConfig
