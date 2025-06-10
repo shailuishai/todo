@@ -123,14 +123,17 @@ class TokenRefreshedException implements Exception {
 }
 
 class ApiService {
-  static final String _baseUrl = kIsWeb
+  // <<< ИЗМЕНЕНИЕ: Базовый URL теперь зависит от режима сборки >>>
+  static const String _prodBaseUrl = 'https://todo-vd2m.onrender.com';
+  static final String _devBaseUrl = kIsWeb
       ? 'https://localhost:8080'
       : (Platform.isAndroid ? 'https://10.0.2.2:8080' : 'https://localhost:8080');
+
+  static final String _baseUrl = kDebugMode ? _devBaseUrl : _prodBaseUrl;
 
   final String _baseApiUrl = '$_baseUrl/v1';
 
 
-  // ... (остальные поля и конструктор без изменений) ...
   static const String _accessTokenKeyPrefs = 'auth_access_token_prefs_v1';
   static const String _refreshTokenKeySecure = 'app_refresh_token_secure_v1';
 
@@ -142,6 +145,7 @@ class ApiService {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   ApiService() : _httpClient = httpClientFactory.createHttpClient(){
+    debugPrint("ApiService: Initialized with base URL: $_baseUrl");
     debugPrint("ApiService: Initialized with client type: ${_httpClient.runtimeType}");
   }
 
@@ -176,12 +180,11 @@ class ApiService {
     return headers;
   }
 
-  // <<< ИСПРАВЛЕНИЕ: _handleResponse теперь ищет `data.messages` для чата >>>
   Future<T> _handleResponse<T>(
       http.Response response,
       T Function(Map<String, dynamic> json) fromJson, {
         bool isList = false,
-        bool isChatHistory = false, // <<< НОВЫЙ ФЛАГ
+        bool isChatHistory = false,
         bool directData = false,
       }) async {
     final String responseBodyString = utf8.decode(response.bodyBytes);
@@ -212,19 +215,16 @@ class ApiService {
         } else {
           throw ApiException(response.statusCode, "Неверный формат ответа (directData, не Map): $responseBodyString");
         }
-      } else if (responseBody.containsKey('data')) { // Стандартный ответ с полем 'data'
+      } else if (responseBody.containsKey('data')) {
         final dataField = responseBody['data'];
 
-        // <<< НОВАЯ ЛОГИКА для истории чата >>>
         if (isChatHistory) {
           if (dataField is Map<String, dynamic> && dataField.containsKey('messages') && dataField['messages'] is List) {
-            // Возвращаем объект `{'items': [...], 'has_more': ...}` для унификации
             return fromJson({'items': dataField['messages'], 'has_more': dataField['has_more']});
           } else {
             throw ApiException(response.statusCode, "Неверный формат истории чата в 'data'.");
           }
         }
-        // <<< КОНЕЦ НОВОЙ ЛОГИКИ >>>
 
         if (isList) {
           if (dataField is List) {
@@ -259,7 +259,6 @@ class ApiService {
     }
   }
 
-  // --- _tryRefreshTokenInternal, _platformTryRefreshToken... _retryRequest - без изменений ---
   Future<Map<String, String?>?> _tryRefreshTokenInternal() async {
     if (_isRefreshingToken) {
       await _refreshTokenCompleter?.future;
@@ -334,7 +333,7 @@ class ApiService {
     }
   }
 
-  // --- Chat ---
+  // ... [ОСТАЛЬНАЯ ЧАСТЬ ФАЙЛА БЕЗ ИЗМЕНЕНИЙ] ...
   Future<Map<String, dynamic>> getChatHistory(String teamId, {String? beforeMessageId, int limit = 50}) async {
     return _retryRequest(() async {
       final queryParams = <String, String>{'limit': limit.toString()};
@@ -381,8 +380,6 @@ class ApiService {
     }
   }
 
-
-  // --- UserProfile, Auth, Tags, Teams etc. ---
   Future<void> saveAccessTokenForNative(String accessToken) async {
     await _saveAccessToken(accessToken);
   }
@@ -559,7 +556,6 @@ class ApiService {
     }
   }
 
-  // --- TASKS ---
   Future<Task> createTask(Task taskData) async {
     return _retryRequest(() async {
       final response = await _httpClient.post(
@@ -617,26 +613,22 @@ class ApiService {
     });
   }
 
-  // <<< НОВЫЙ МЕТОД: Восстановление задачи >>>
   Future<Task> restoreTask(String taskId) async {
     return _retryRequest(() async {
       final response = await _httpClient.post(
         Uri.parse('$_baseApiUrl/tasks/$taskId/restore'),
         headers: await _getHeaders(),
       );
-      // Ожидаем 200 OK с телом задачи
       return _handleResponse(response, Task.fromJson);
     });
   }
 
-  // <<< НОВЫЙ МЕТОД: Перманентное удаление задачи >>>
   Future<void> deleteTaskPermanently(String taskId) async {
     return _retryRequest(() async {
       final response = await _httpClient.delete(
         Uri.parse('$_baseApiUrl/tasks/$taskId/permanent'),
         headers: await _getHeaders(),
       );
-      // Ожидаем 204 No Content
       if (response.statusCode != 204) {
         String errMsg = 'Ошибка полного удаления задачи (status: ${response.statusCode})';
         try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
@@ -645,7 +637,6 @@ class ApiService {
     });
   }
 
-  // --- TAGS & TEAMS etc. ---
   Future<ApiTag> createUserTag({required String name, String? colorHex}) async {
     return _retryRequest(() async {
       final Map<String, dynamic> body = {'name': name};
