@@ -53,3 +53,5 @@ smtp:
 jwt:
   access_expire: 8m
   refresh_expire: 128h
+  secure_cookie: true
+  cookie_domain: "todo-vd2m.onrender.com"
