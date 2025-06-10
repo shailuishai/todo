@@ -10,14 +10,16 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# Копируем go.mod и go.sum из папки server для кэширования зависимостей
-COPY server/go.mod server/go.sum ./
+# <<< ИСПРАВЛЕНИЕ: Удален префикс 'server/' >>>
+# Копируем go.mod и go.sum для кэширования зависимостей
+COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 
-# Копируем весь исходный код бэкенда
-COPY server/. .
+# <<< ИСПРАВЛЕНИЕ: Удален префикс 'server/' >>>
+# Копируем весь исходный код проекта
+COPY . .
 
-# Собираем приложение
+# Собираем приложение. Путь к main.go теперь относительный.
 # CGO_ENABLED=1 нужен для libwebp
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o main ./cmd/todo
 
@@ -35,7 +37,6 @@ WORKDIR /app
 COPY --from=builder /app/main .
 
 # Копируем статические ассеты, которые нужны приложению для работы
-# Важно: эти пути должны соответствовать тем, что приложение ожидает найти
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/docs ./docs
 COPY --from=builder /app/todo-80b1b-firebase-adminsdk-fbsvc-6f38d4c04c.json .
