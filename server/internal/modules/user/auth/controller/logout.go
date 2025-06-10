@@ -30,7 +30,9 @@ func (c *AuthController) Logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Expires:  time.Now().Add(-time.Hour),
 		HttpOnly: true,
-		Path:     "/",
+		Domain:   c.jwtCfg.CookieDomain,
+		Secure:   true, // Должно быть true для HTTPS
+		SameSite: http.SameSiteNoneMode,
 	})
 
 	w.WriteHeader(http.StatusNoContent)
