@@ -1,55 +1,64 @@
+# server/config/prod.yaml
 env: "dev"
+
 http_server:
-  address: "0.0.0.0:8080"
-  timeout: 4s
-  idle_timeout: 60s
+  address: "0.0.0.0:8080" # Render ожидает, что приложение будет слушать на этом адресе
+  timeout: 10s
+  idle_timeout: 120s
+  allowed_origins:
+    # <<< ИЗМЕНЕНИЕ: URL вашего фронтенда на Vercel >>>
+    - "https://todo-rho-sage.vercel.app"
+  tls:
+    # <<< ИЗМЕНЕНИЕ: TLS/HTTPS будет обрабатывать Render >>>
+    enabled: false
+    # cert_file и key_file не нужны
+
+fcm_config:
+  project_id: "todo-80b1b"
+  service_account_key_json_path: "/app/todo-80b1b-firebase-adminsdk-fbsvc-6f38d4c04c.json"
+
 db:
+  # <<< ИЗМЕНЕНИЕ: Данные из вашего PostgreSQL на Render >>>
   username: "user"
-  host: "dpg-cu0kkc3tq21c73csdjl0-a"
+  host: "dpg-d13vft8gjchc73fk5sqg-a.oregon-postgres.render.com" # Внешний хост для Render
   port: "5432"
-  dbname: "film_32q6"
-  ssl_mode: "disable"
+  dbname: "todo_uk2f"
+  ssl_mode: "require" # Render требует SSL
+
 cache:
-  address: "red-cu0kic3v2p9s73dhu8ig:6379"
+  # <<< ИЗМЕНЕНИЕ: Адрес из вашего Redis на Render >>>
+  address: "red-d13vg3e3jp1c73dgeb20.redis.cache.windows.net:6380" # Внешний хост для Redis Render. Используйте его, если внутренний не работает.
+  # Если сервисы в одном регионе, можно попробовать внутренний: red-d13vg3e3jp1c73dgeb20:6379
   db: 0
-  state_expiration: 4m
+  state_expiration: 5m
   email_confirmed_code_expiration: 16m
+  default_task_cache_ttl: 5m
+  default_team_cache_ttl: 15m
+  default_team_list_cache_ttl: 5m
+
 s3:
-  endpoint: "storage-173.s3hoster.by"
+  endpoint: "storage-321.s3hoster.by"
   region: "BTC"
-  buckets:
-    - name: "useravatar"
-      default_file:
-        path:
-          - "./server/defaultAvatars/userAvatar512Dark.webp"
-          - "./server/defaultAvatars/userAvatar64Dark.webp"
-          - "./server/defaultAvatars/userAvatar512Light.webp"
-          - "./server/defaultAvatars/userAvatar64Light.webp"
-        keys:
-          - "default/512x512_Dark.webp"
-          - "default/64x64_Dark.webp"
-          - "default/512x512_Light.webp"
-          - "default/64x64_Light.webp"
-    - name: "filmposter"
-      default_file:
-        path:
-          - "./server/defaultAvatars/filmPosterDark.webp"
-          - "./server/defaultAvatars/filmPosterLight.webp"
-        keys:
-          - "default/800x1200_Dark.webp"
-          - "default/800x1200_Light.webp"
-    - name: "actoravatar"
-      default_file:
-        path:
-          - "./server/defaultAvatars/actorAvatarDark.webp"
-          - "./server/defaultAvatars/actorAvatarLight.webp"
-        keys:
-          - "default/512x512_Dark.webp"
-          - "default/512x512_Light.webp"
+  bucket_user_avatars: "useravatar"
+  bucket_team_images: "teamimages"
+  max_team_image_size_bytes: 5242880
+
 smtp:
   host: "smtp.yandex.ru"
-  port: 465
-  username: "OfflinerMen@yandex.by"
+  port: 587
+  username: "ToDoAppResp@yandex.by"
+
 jwt:
-  access_expire: 8m
-  refresh_expire: 128h
+  access_expire: 12h
+  refresh_expire: 168h
+  # <<< ИЗМЕНЕНИЕ: Настройки cookie для продакшена >>>
+  secure_cookie: true
+  cookie_domain: "todo-vd2m.onrender.com" # Домен вашего бэкенда
+
+oauth:
+  # <<< ИЗМЕНЕНИЕ: URL колбэков для вашего бэкенда на Render >>>
+  google_redirect_url: "https://todo-vd2m.onrender.com/v1/auth/google/callback"
+  yandex_redirect_url: "https://todo-vd2m.onrender.com/v1/auth/yandex/callback"
+  # <<< ИЗМЕНЕНИЕ: URL редиректов на ваш фронтенд на Vercel >>>
+  frontend_redirect_success_url: "https://todo-rho-sage.vercel.app/oauth-callback-success"
+  frontend_redirect_error_url: "https://todo-rho-sage.vercel.app/oauth-callback-error"
