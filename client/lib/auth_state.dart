@@ -326,19 +326,44 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> handleOAuthCallback(Uri uri) async {
-    debugPrint("AuthState (handleOAuthCallback Web): Received URI: $uri. Will re-check auth status.");
+    debugPrint("AuthState (handleOAuthCallback Web): Received URI: $uri. Attempting to complete OAuth flow.");
     _isLoading = true;
     _oauthErrorMessage = null;
     notifyListeners();
 
-    await _checkInitialAuthStatus();
+    // Задержка в 100 миллисекунд. Это небольшой хак, который дает браузеру
+    // гарантированное время на обработку Set-Cookie из заголовка редиректа.
+    // В большинстве случаев это не нужно, но это надежный способ избежать race condition.
+    await Future.delayed(const Duration(milliseconds: 100));
 
-    if (!_isLoggedIn) {
-      _oauthErrorMessage = _errorMessage ?? "Не удалось завершить OAuth авторизацию.";
-      debugPrint("AuthState (handleOAuthCallback Web): OAuth failed or cookies not set properly. Error: $_oauthErrorMessage");
+    // Явно вызываем метод для обмена refresh_token (cookie) на access_token.
+    final newAccessToken = await _apiService.exchangeRefreshTokenForAccessToken();
+
+    if (newAccessToken != null) {
+      debugPrint("AuthState (handleOAuthCallback Web): Successfully got a new access token. Finalizing login...");
+      // Теперь, когда у нас есть access_token, мы можем получить профиль пользователя.
+      // _checkInitialAuthStatus здесь идеально подходит, так как он уже умеет
+      // получать профиль и обновлять состояние.
+      await _checkInitialAuthStatus();
+
+      if (!_isLoggedIn) {
+        // Это странный случай: токен получили, а профиль нет.
+        _oauthErrorMessage = _errorMessage ?? "Не удалось получить данные пользователя после успешной авторизации.";
+        debugPrint("AuthState (handleOAuthCallback Web): Got token, but failed to get user profile.");
+      }
+    } else {
+      _isLoggedIn = false;
+      _currentUser = null;
+      _oauthErrorMessage = "Не удалось завершить OAuth авторизацию. Не удалось получить токен доступа из cookie.";
+      debugPrint("AuthState (handleOAuthCallback Web): Failed to exchange refresh token cookie for an access token.");
     }
-    _isLoading = false;
-    notifyListeners();
+
+    // Если мы не успешно залогинились, нужно убрать индикатор загрузки и обновить UI
+    if (!_isLoggedIn) {
+      _isLoading = false;
+      notifyListeners();
+    }
+    // Если залогинились, _checkInitialAuthStatus уже вызвал notifyListeners().
   }
 
   Future<bool> sendConfirmationEmail(String email) async {

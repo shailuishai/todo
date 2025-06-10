@@ -9,9 +9,6 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
     final uri = Uri.parse(routeInformation.uri.toString());
     debugPrint("[AppRouteInformationParser] Parsing URI: $uri");
 
-    // Если путь пустой, это может быть запрос на лендинг или на дефолтную страницу после логина.
-    // AppRouterDelegate решит, что показать, в зависимости от статуса аутентификации.
-    // Пока что, для парсера, пустой путь -> LandingPath.
     if (uri.pathSegments.isEmpty || uri.path == '/') {
       debugPrint("[AppRouteInformationParser] URI is empty or root, returning LandingPath");
       return const LandingPath();
@@ -19,7 +16,17 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
 
     final firstSegment = uri.pathSegments.first;
 
-    // <<< ОБРАБОТКА ПУТИ ЛЕНДИНГА >>>
+    // ИЗМЕНЕНИЕ: Добавлена обработка OAuth коллбэков
+    if (firstSegment == AppRouteSegments.oauthCallbackSuccess) {
+      debugPrint("[AppRouteInformationParser] Parsed OAuthSuccessPath");
+      return const OAuthSuccessPath();
+    }
+    if (firstSegment == AppRouteSegments.oauthCallbackError) {
+      final error = uri.queryParameters['error_description'];
+      debugPrint("[AppRouteInformationParser] Parsed OAuthErrorPath with error: $error");
+      return OAuthErrorPath(error: error);
+    }
+
     if (firstSegment == AppRouteSegments.landing) {
       debugPrint("[AppRouteInformationParser] Parsed LandingPath");
       return const LandingPath();
@@ -99,13 +106,13 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
       return const JoinTeamProcessingPath();
     }
 
-    debugPrint("[AppRouteInformationParser] URI not matched ($uri), returning LandingPath as default for unknown.");
-    return const LandingPath(); // Для всех неопознанных путей показываем лендинг
+    debugPrint("[AppRouteInformationParser] URI not matched ($uri), returning UnknownPath.");
+    return const UnknownPath(); // Для всех неопознанных путей
   }
 
   @override
   RouteInformation? restoreRouteInformation(AppRoutePath configuration) {
-    if (configuration is LandingPath) { // <<< ВОССТАНОВЛЕНИЕ ДЛЯ ЛЕНДИНГА >>>
+    if (configuration is LandingPath) {
       return RouteInformation(uri: Uri.parse(AppRoutes.landing));
     }
     if (configuration is AuthPath) {
@@ -128,6 +135,13 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
     }
     if (configuration is JoinTeamProcessingPath) {
       return RouteInformation(uri: Uri.parse(AppRoutes.processingInvite));
+    }
+    // ИЗМЕНЕНИЕ: Добавлена обработка OAuth путей
+    if (configuration is OAuthSuccessPath) {
+      return RouteInformation(uri: Uri.parse(AppRoutes.oauthCallbackSuccess));
+    }
+    if (configuration is OAuthErrorPath) {
+      return RouteInformation(uri: Uri.parse(AppRoutes.oauthCallbackError));
     }
     if (configuration is UnknownPath) {
       return RouteInformation(uri: Uri.parse(AppRoutes.landing)); // Неизвестные пути ведут на лендинг

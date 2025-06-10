@@ -23,6 +23,9 @@ class AppRouteSegments {
   static const String task = 'task';
   static const String joinTeam = 'join-team';
   static const String processingInvite = 'processing-invite';
+  // ИЗМЕНЕНИЕ: ДОБАВЛЕНЫ СЕГМЕНТЫ ДЛЯ OAUTH
+  static const String oauthCallbackSuccess = 'oauth-callback-success';
+  static const String oauthCallbackError = 'oauth-callback-error';
 }
 
 class AppRoutes {
@@ -43,6 +46,9 @@ class AppRoutes {
 
   static String joinTeamByToken(String token) => '/${AppRouteSegments.joinTeam}/$token';
   static const String processingInvite = '/${AppRouteSegments.processingInvite}';
+  // ИЗМЕНЕНИЕ: ДОБАВЛЕНЫ РОУТЫ ДЛЯ OAUTH
+  static const String oauthCallbackSuccess = '/${AppRouteSegments.oauthCallbackSuccess}';
+  static const String oauthCallbackError = '/${AppRouteSegments.oauthCallbackError}';
 }
 
 
@@ -53,6 +59,13 @@ List<Page<dynamic>> buildPagesForPath(AppRoutePath path, AuthState authState) {
   // Кейс 1: LoadingPath - всегда только страница загрузки
   if (path is LoadingPath || !authState.initialAuthCheckCompleted) {
     pages.add(_createPage(const Scaffold(body: Center(child: CircularProgressIndicator())), const ValueKey('InitialLoadingPage'), '/app-loading'));
+    return pages;
+  }
+
+  // ИЗМЕНЕНИЕ: Добавлена обработка OAuth путей, чтобы показывать страницу загрузки
+  // во время завершения аутентификации.
+  if (path is OAuthSuccessPath || path is OAuthErrorPath) {
+    pages.add(_createPage(const Scaffold(body: Center(child: CircularProgressIndicator())), const ValueKey('OAuthCallbackPage'), '/oauth-callback'));
     return pages;
   }
 

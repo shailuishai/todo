@@ -123,7 +123,6 @@ class TokenRefreshedException implements Exception {
 }
 
 class ApiService {
-  // <<< ИЗМЕНЕНИЕ: Базовый URL теперь зависит от режима сборки >>>
   static const String _prodBaseUrl = 'https://todo-vd2m.onrender.com';
   static final String _devBaseUrl = kIsWeb
       ? 'https://todo-vd2m.onrender.com'
@@ -149,7 +148,6 @@ class ApiService {
     debugPrint("ApiService: Initialized with client type: ${_httpClient.runtimeType}");
   }
 
-  // --- Методы _loadAccessToken, _saveAccessToken, clearLocalAccessToken, _getHeaders - без изменений ---
   Future<void> _loadAccessToken() async {
     if (_cachedAccessToken != null) return;
     final prefs = await SharedPreferences.getInstance();
@@ -325,6 +323,26 @@ class ApiService {
     } catch (e) { /* ignore */ }
     return null;
   }
+
+  /// Exchanges the httpOnly refresh token cookie for a new access token.
+  /// This is the final step in the web OAuth flow.
+  /// Returns the new access token on success, or null on failure.
+  Future<String?> exchangeRefreshTokenForAccessToken() async {
+    debugPrint("ApiService: Attempting to exchange refresh_token cookie for access_token.");
+    // Мы можем просто вызвать внутренний метод, который делает всю работу.
+    // Нам не нужно обрабатывать здесь TokenRefreshedException, так как это первая попытка.
+    final newTokens = await _tryRefreshTokenInternal();
+    if (newTokens != null && newTokens['access_token'] != null) {
+      final newAccessToken = newTokens['access_token']!;
+      // Сохраняем полученный токен в памяти и SharedPreferences
+      await _saveAccessToken(newAccessToken);
+      debugPrint("ApiService: Successfully exchanged cookie for a new access token.");
+      return newAccessToken;
+    }
+    debugPrint("ApiService: Failed to exchange cookie for access token. _tryRefreshTokenInternal returned null.");
+    return null;
+  }
+
   Future<T> _retryRequest<T>(Future<T> Function() requestFunction) async {
     try {
       return await requestFunction();
@@ -333,7 +351,6 @@ class ApiService {
     }
   }
 
-  // ... [ОСТАЛЬНАЯ ЧАСТЬ ФАЙЛА БЕЗ ИЗМЕНЕНИЙ] ...
   Future<Map<String, dynamic>> getChatHistory(String teamId, {String? beforeMessageId, int limit = 50}) async {
     return _retryRequest(() async {
       final queryParams = <String, String>{'limit': limit.toString()};

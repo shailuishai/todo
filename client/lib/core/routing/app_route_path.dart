@@ -3,11 +3,9 @@ abstract class AppRoutePath {
   const AppRoutePath();
 }
 
-// <<< НОВЫЙ КЛАСС ДЛЯ ПУТИ ЛЕНДИНГА >>>
 class LandingPath extends AppRoutePath {
   const LandingPath();
 }
-// <<< КОНЕЦ НОВОГО КЛАССА >>>
 
 class AuthPath extends AppRoutePath {
   const AuthPath();
@@ -49,4 +47,14 @@ class UnknownPath extends AppRoutePath {
 
 class LoadingPath extends AppRoutePath {
   const LoadingPath();
+}
+
+// ИЗМЕНЕНИЕ: ДОБАВЛЕНЫ КЛАССЫ ДЛЯ ПУТЕЙ OAUTH
+class OAuthSuccessPath extends AppRoutePath {
+  const OAuthSuccessPath();
+}
+
+class OAuthErrorPath extends AppRoutePath {
+  final String? error;
+  const OAuthErrorPath({this.error});
 }
