@@ -27,8 +27,7 @@ db:
 
 cache:
   # <<< ИЗМЕНЕНИЕ: Адрес из вашего Redis на Render >>>
-  address: "red-d13vg3e3jp1c73dgeb20.redis.cache.windows.net:6380" # Внешний хост для Redis Render. Используйте его, если внутренний не работает.
-  # Если сервисы в одном регионе, можно попробовать внутренний: red-d13vg3e3jp1c73dgeb20:6379
+  address: "red-d13vg3e3jp1c73dgeb20:6379" # Внутренний адрес Render
   db: 0
   state_expiration: 5m
   email_confirmed_code_expiration: 16m
