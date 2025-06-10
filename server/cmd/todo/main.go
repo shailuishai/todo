@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"server/pkg/lib/pushsender"
+	"server/pkg/lib/pushsender/fcm"
 	"strings"
 	"syscall"
 	"time"
@@ -17,54 +18,63 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
+	"github.com/go-playground/validator/v10" // Добавлен импорт
 	"github.com/robfig/cron/v3"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
+
 	"server/config"
 	"server/docs"
-
 	"server/internal/init/cache"
 	"server/internal/init/database"
 	s3init "server/internal/init/s3"
 
+	// Chat Module
+	chatEntity "server/internal/modules/chat" // Для интерфейсов и DTO
+	chatCtrl "server/internal/modules/chat/controller"
+	chatDB "server/internal/modules/chat/repo/database"
+	chatUC "server/internal/modules/chat/usecase"
+	"server/internal/modules/chat/ws"
+
 	// User submodules
 	authC "server/internal/modules/user/auth/controller"
-	authRp "server/internal/modules/user/auth/repo"
+	authRepo "server/internal/modules/user/auth/repo" // Изменено имя импорта для authRp
 	authCache "server/internal/modules/user/auth/repo/cache"
 	authDb "server/internal/modules/user/auth/repo/database"
 	authUC "server/internal/modules/user/auth/usecase"
 
 	emailC "server/internal/modules/user/email/controller"
-	emailRp "server/internal/modules/user/email/repo"
+	emailRepo "server/internal/modules/user/email/repo" // Изменено имя импорта для emailRp
 	emailCache "server/internal/modules/user/email/repo/cache"
 	emailDb "server/internal/modules/user/email/repo/database"
 	emailUC "server/internal/modules/user/email/usecase"
 
 	profileC "server/internal/modules/user/profile/controller"
-	profileRp "server/internal/modules/user/profile/repo"
+	profileRepo "server/internal/modules/user/profile/repo" // Изменено имя импорта для profileRp
 	profileDb "server/internal/modules/user/profile/repo/database"
 	profileS3 "server/internal/modules/user/profile/repo/s3"
 	profileUC "server/internal/modules/user/profile/usecase"
 
 	// Task module
 	taskC "server/internal/modules/task/controller"
-	taskRp "server/internal/modules/task/repo"
+	taskRepo "server/internal/modules/task/repo" // Изменено имя импорта для taskRp
 	taskCacheRepo "server/internal/modules/task/repo/cache"
 	taskDbRepo "server/internal/modules/task/repo/database"
 	taskUC "server/internal/modules/task/usecase"
 
 	// Team module
 	teamC "server/internal/modules/team/controller"
-	teamRp "server/internal/modules/team/repo"
+	teamRepo "server/internal/modules/team/repo" // Изменено имя импорта для teamRp
 	teamCacheRepo "server/internal/modules/team/repo/cache"
 	teamDbRepo "server/internal/modules/team/repo/database"
 	teamS3Repo "server/internal/modules/team/repo/s3"
 	teamUC "server/internal/modules/team/usecase"
 
 	// Tag module
-	tagC "server/internal/modules/tag/controller"         // <<< НОВЫЙ ИМПОРТ
-	tagRp "server/internal/modules/tag/repo"              // <<< НОВЫЙ ИМПОРТ
-	tagCacheRepo "server/internal/modules/tag/repo/cache" // <<< НОВЫЙ ИМПОРТ
-	tagDbRepo "server/internal/modules/tag/repo/database" // <<< НОВЫЙ ИМПОРТ
-	tagUC "server/internal/modules/tag/usecase"           // <<< НОВЫЙ ИМПОРТ
+	tagC "server/internal/modules/tag/controller"
+	tagRepo "server/internal/modules/tag/repo" // Изменено имя импорта для tagRp
+	tagCacheRepo "server/internal/modules/tag/repo/cache"
+	tagDbRepo "server/internal/modules/tag/repo/database"
+	tagUC "server/internal/modules/tag/usecase"
 
 	"server/pkg/lib/TaskService"
 	"server/pkg/lib/emailsender"
@@ -72,17 +82,18 @@ import (
 	"server/pkg/middleware/logger"
 )
 
-// App struct and NewApp, Start methods ... (без изменений) ...
 type App struct {
-	Storage     *database.Storage
-	Cache       *cache.Cache
-	S3          *s3init.S3Storage
-	EmailSender *emailsender.EmailSender
-	Router      chi.Router
-	Log         *slog.Logger
-	Cfg         *config.Config
-	Cron        *cron.Cron
-	TS          *TaskService.TaskService
+	Storage                *database.Storage
+	Cache                  *cache.Cache
+	S3                     *s3init.S3Storage
+	EmailSender            *emailsender.EmailSender
+	Router                 chi.Router
+	Log                    *slog.Logger
+	Cfg                    *config.Config
+	Cron                   *cron.Cron
+	TS                     *TaskService.TaskService
+	ChatHub                *ws.Hub
+	PushNotificationSender *pushsender.Sender
 }
 
 func NewApp(cfg *config.Config, log *slog.Logger) (*App, error) {
@@ -101,16 +112,55 @@ func NewApp(cfg *config.Config, log *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("s3 init failed: %w", err)
 	}
 
-	eSender, err := emailsender.New(cfg.SMTPConfig)
+	eSender, err := emailsender.New(cfg.SMTPConfig, log)
 	if err != nil {
 		return nil, fmt.Errorf("email sender init failed: %w", err)
 	}
 
+	var pushNotificationSvc pushsender.Sender
+	if cfg.FCMConfig.ProjectID != "" { // Инициализируем FCM только если есть ProjectID
+		var fcmServiceAccountJSON []byte
+		var errFcmKey error
+
+		// ServiceAccountKeyJSONPath теперь указывает на путь внутри контейнера
+		if cfg.FCMConfig.ServiceAccountKeyJSONPath != "" {
+			log.Info("Loading FCM service account key from path specified in config", "path", cfg.FCMConfig.ServiceAccountKeyJSONPath)
+			fcmServiceAccountJSON, errFcmKey = os.ReadFile(cfg.FCMConfig.ServiceAccountKeyJSONPath)
+			if errFcmKey != nil {
+				log.Error("Failed to read FCM service account key JSON file", "path", cfg.FCMConfig.ServiceAccountKeyJSONPath, "error", errFcmKey)
+				// Можно решить, является ли это фатальной ошибкой. Если Push критичны, то да.
+				// return nil, fmt.Errorf("read FCM key file %s: %w", cfg.FCMConfig.ServiceAccountKeyJSONPath, errFcmKey)
+			}
+		} else {
+			log.Info("FCM service account key path not provided in config; if ProjectID is set, FCM will attempt to use Application Default Credentials.")
+		}
+
+		if errFcmKey == nil { // Продолжаем инициализацию, только если ключ успешно прочитан (или не указан путь, и мы полагаемся на ADC)
+			fcmSender, errFCM := fcm.NewFCMSender(context.Background(), fcmServiceAccountJSON, cfg.FCMConfig.ProjectID, log)
+			if errFCM != nil {
+				log.Error("Failed to initialize FCMSender", "error", errFCM)
+				// Опять же, решить, фатально ли это.
+			} else {
+				pushNotificationSvc = fcmSender
+				log.Info("FCMSender initialized.")
+				// Опциональный пинг при старте
+				if errPing := pushNotificationSvc.Ping(context.Background()); errPing != nil {
+					log.Error("FCMSender Ping failed on startup", "error", errPing)
+				} else {
+					log.Info("FCMSender Ping successful on startup.")
+				}
+			}
+		}
+	} else {
+		log.Warn("FCMConfig.ProjectID is not set. Push notifications via FCM will be disabled.")
+	}
+
 	router := chi.NewRouter()
-	bgTaskService := TaskService.NewTaskService(storage.Db, log)
+	bgTaskService := TaskService.NewTaskService(storage.Db, log) // Передаем storage.Db вместо app.Storage.Db
 	cronScheduler := cron.New()
-	_, err = cronScheduler.AddFunc("0 0 * * *", func() {
+	_, err = cronScheduler.AddFunc("0 0 * * *", func() { // Ежедневно в полночь
 		bgTaskService.CleanUnverifiedUsers()
+		// Можно добавить другие задачи, например, bgTaskService.ArchiveOldTasks()
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cron init failed: %w", err)
@@ -118,19 +168,21 @@ func NewApp(cfg *config.Config, log *slog.Logger) (*App, error) {
 	cronScheduler.Start()
 
 	return &App{
-		Storage:     storage,
-		Cache:       appCache,
-		S3:          s3s,
-		EmailSender: eSender,
-		Router:      router,
-		Log:         log,
-		Cfg:         cfg,
-		Cron:        cronScheduler,
-		TS:          bgTaskService,
+		Storage:                storage,
+		Cache:                  appCache,
+		S3:                     s3s,
+		EmailSender:            eSender,
+		Router:                 router,
+		Log:                    log,
+		Cfg:                    cfg,
+		Cron:                   cronScheduler,
+		TS:                     bgTaskService,
+		PushNotificationSender: &pushNotificationSvc,
 	}, nil
 }
 
 func (app *App) Start() error {
+	// ... (код Start без изменений, как в предыдущем ответе) ...
 	srv := &http.Server{
 		Addr:         app.Cfg.HttpServerConfig.Address,
 		Handler:      app.Router,
@@ -139,7 +191,7 @@ func (app *App) Start() error {
 		IdleTimeout:  app.Cfg.HttpServerConfig.IdleTimeout,
 	}
 
-	protocol := "https" // По умолчанию http
+	protocol := "http" // По умолчанию http
 	if app.Cfg.HttpServerConfig.TLS.Enabled {
 		protocol = "https"
 	}
@@ -151,13 +203,13 @@ func (app *App) Start() error {
 	}
 
 	docs.SwaggerInfo.Host = swaggerHost
-	docs.SwaggerInfo.Schemes = []string{protocol}
+	docs.SwaggerInfo.Schemes = []string{protocol} // Обновляем схемы
 
 	var swaggerSchemeForLog string
 	if len(docs.SwaggerInfo.Schemes) > 0 {
 		swaggerSchemeForLog = docs.SwaggerInfo.Schemes[0]
 	} else {
-		swaggerSchemeForLog = "http"
+		swaggerSchemeForLog = "http" // Фоллбэк, если схемы не установились
 		app.Log.Warn("docs.SwaggerInfo.Schemes is empty, defaulting to http for logging Swagger URL")
 	}
 
@@ -197,7 +249,7 @@ func (app *App) Start() error {
 			serverShutdown <- err
 		} else if err == http.ErrServerClosed {
 			app.Log.Info(fmt.Sprintf("%s server closed", serverType))
-			serverShutdown <- nil
+			serverShutdown <- nil // Сигнализируем об успешном закрытии
 		}
 	}()
 
@@ -212,11 +264,12 @@ func (app *App) Start() error {
 	case err := <-serverShutdown:
 		if err != nil {
 			app.Log.Error("Server failed to start or encountered a fatal error", slog.String("error", err.Error()))
-			if app.Cron != nil {
+			if app.Cron != nil { // Убедимся, что Cron не nil перед вызовом Stop
 				app.Cron.Stop()
 			}
 			return fmt.Errorf("server runtime error: %w", err)
 		}
+		// Если err == nil, сервер закрылся штатно (например, из-за http.ErrServerClosed)
 		app.Log.Info("Server shutdown initiated by server itself.")
 	case sig := <-quit:
 		app.Log.Info("Received OS signal, initiating graceful shutdown...", slog.String("signal", sig.String()))
@@ -224,11 +277,11 @@ func (app *App) Start() error {
 
 	if app.Cron != nil {
 		app.Log.Info("Stopping cron scheduler...")
-		cronCtx := app.Cron.Stop()
+		cronCtx := app.Cron.Stop() // Stop возвращает контекст, который завершается, когда все задачи остановлены
 		select {
 		case <-cronCtx.Done():
 			app.Log.Info("Cron scheduler stopped.")
-		case <-time.After(3 * time.Second):
+		case <-time.After(3 * time.Second): // Таймаут на остановку cron
 			app.Log.Warn("Cron scheduler stop timed out.")
 		}
 	}
@@ -260,39 +313,42 @@ func (app *App) SetupRoutes() {
 		}),
 	)
 
-	// Используем динамический URL для Swagger JSON, если ты исправил docs.SwaggerInfo.Host и docs.SwaggerInfo.Schemes в app.Start()
-	// Либо оставляем фиксированный, если swagger.json генерируется с ним
 	var swaggerJSONURL string
 	if len(docs.SwaggerInfo.Schemes) > 0 && docs.SwaggerInfo.Host != "" && docs.SwaggerInfo.BasePath != "" {
 		swaggerJSONURL = fmt.Sprintf("%s://%s%s/swagger/doc.json", docs.SwaggerInfo.Schemes[0], docs.SwaggerInfo.Host, docs.SwaggerInfo.BasePath)
 	} else {
-		// Фоллбэк на случай, если SwaggerInfo не полностью инициализирован
-		// Ты указал https://localhost:8080/swagger/doc.json, так что можно использовать его
-		swaggerJSONURL = "https://localhost:8080/swagger/doc.json" // или http, если TLS выключен
-		if !app.Cfg.HttpServerConfig.TLS.Enabled {
-			swaggerJSONURL = "http://localhost:8080/swagger/doc.json"
-			if strings.HasPrefix(app.Cfg.HttpServerConfig.Address, "0.0.0.0:") {
-				swaggerJSONURL = "http://localhost" + app.Cfg.HttpServerConfig.Address[len("0.0.0.0"):] + "/swagger/doc.json"
-			} else if strings.HasPrefix(app.Cfg.HttpServerConfig.Address, ":") {
-				swaggerJSONURL = "http://localhost" + app.Cfg.HttpServerConfig.Address + "/swagger/doc.json"
-			} else {
-				swaggerJSONURL = "http://" + app.Cfg.HttpServerConfig.Address + "/swagger/doc.json"
-			}
+		swaggerJSONURL = "http://localhost:8080/swagger/doc.json"
+		if app.Cfg.HttpServerConfig.TLS.Enabled {
+			swaggerJSONURL = "https://localhost:8080/swagger/doc.json"
 		}
-		app.Log.Warn("Using fallback Swagger JSON URL", "url", swaggerJSONURL)
+		// Более точное формирование URL для Swagger JSON
+		var hostPort string
+		if strings.HasPrefix(app.Cfg.HttpServerConfig.Address, ":") { // e.g. ":8080"
+			hostPort = "localhost" + app.Cfg.HttpServerConfig.Address
+		} else if strings.HasPrefix(app.Cfg.HttpServerConfig.Address, "0.0.0.0:") { // e.g. "0.0.0.0:8080"
+			hostPort = "localhost" + app.Cfg.HttpServerConfig.Address[len("0.0.0.0"):]
+		} else { // e.g. "localhost:8080" or "someservice:8080"
+			hostPort = app.Cfg.HttpServerConfig.Address
+		}
+		scheme := "http"
+		if app.Cfg.HttpServerConfig.TLS.Enabled {
+			scheme = "https"
+		}
+		swaggerJSONURL = fmt.Sprintf("%s://%s/swagger/doc.json", scheme, hostPort)
+		app.Log.Warn("Using fallback Swagger JSON URL generation", "url", swaggerJSONURL)
 	}
 	app.Router.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL(swaggerJSONURL)))
 
 	apiVersion := "/v1"
 	AuthUserMiddleware := appMiddleware.NewUserAuth(app.Log)
+	validate := validator.New() // Глобальный валидатор для контроллеров
 
 	// --- Email Module ---
 	emailDBImpl := emailDb.NewEmailDatabase(app.Storage.Db, app.Log)
 	emailCacheImpl := emailCache.NewEmailCache(app.Cache)
-	emailRepoImpl := emailRp.NewEmailRepo(emailDBImpl, emailCacheImpl)
+	emailRepoImpl := emailRepo.NewEmailRepo(emailDBImpl, emailCacheImpl)
 	emailUseCaseImpl := emailUC.NewEmailUseCase(app.Log, emailRepoImpl, app.EmailSender)
 	emailCtrl := emailC.NewEmailController(app.Log, emailUseCaseImpl)
-
 	app.Router.Route(apiVersion+"/email", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(httprate.Limit(1, 1*time.Minute, httprate.WithKeyFuncs(httprate.KeyByIP)))
@@ -304,25 +360,25 @@ func (app *App) SetupRoutes() {
 	// --- Profile Module ---
 	profileDBImpl := profileDb.NewProfileDatabase(app.Storage.Db, app.Log, app.Cfg.S3Config.Endpoint, app.Cfg.S3Config.BucketUserAvatars)
 	profileS3Impl := profileS3.NewProfileS3(app.Log, app.S3)
-	profileRepoImpl := profileRp.NewRepo(profileDBImpl, profileS3Impl)
-	profileUseCaseImpl := profileUC.NewProfileUseCase(app.Log, profileRepoImpl, app.Cfg.S3Config.BucketUserAvatars, app.Cfg.S3Config.Endpoint)
+	profileRepoImpl := profileRepo.NewRepo(profileDBImpl, profileS3Impl)
+	profileUseCaseImpl := profileUC.NewProfileUseCase(app.Log, profileRepoImpl, app.Cfg.S3Config.BucketUserAvatars, app.Cfg.S3Config.Endpoint) // Тип *profileUC.ProfileUseCase
 	profileCtrl := profileC.NewProfileController(app.Log, profileUseCaseImpl, app.Cfg.JWTConfig)
-
 	app.Router.Route(apiVersion+"/profile", func(r chi.Router) {
 		r.Use(AuthUserMiddleware)
 		r.Get("/", profileCtrl.GetUser)
 		r.Put("/", profileCtrl.UpdateUser)
 		r.Patch("/", profileCtrl.PatchUser)
 		r.Delete("/", profileCtrl.DeleteUser)
+		r.Post("/device-tokens", profileCtrl.RegisterDeviceToken)
+		r.Delete("/device-tokens", profileCtrl.UnregisterDeviceToken)
 	})
 
 	// --- Auth Module ---
 	authDBImpl := authDb.NewAuthDatabase(app.Storage.Db, app.Log)
 	authCacheImpl := authCache.NewAuthCache(app.Cache)
-	authRepoImpl := authRp.NewRepo(authDBImpl, authCacheImpl)
-	authUseCaseImpl := authUC.NewAuthUseCase(app.Log, authRepoImpl, app.Cfg, profileUseCaseImpl)
+	authRepoImpl := authRepo.NewRepo(authDBImpl, authCacheImpl)
+	authUseCaseImpl := authUC.NewAuthUseCase(app.Log, authRepoImpl, app.Cfg, profileUseCaseImpl) // profileUseCaseImpl здесь типа profileEntity.UseCase
 	authCtrl := authC.NewAuthController(app.Log, authUseCaseImpl, app.Cfg.OAuthConfig, app.Cfg.JWTConfig)
-
 	app.Router.Route(apiVersion+"/auth", func(r chi.Router) {
 		r.Post("/sign-up", authCtrl.SignUp)
 		r.Post("/sign-in", authCtrl.SignIn)
@@ -333,69 +389,42 @@ func (app *App) SetupRoutes() {
 		r.With(AuthUserMiddleware).Post("/logout", authCtrl.Logout)
 	})
 
-	// --- UserRepoForTeamModule (реализация для TeamUseCase) ---
-	// s3UserAvatarBaseURL формируется из PublicURL (который должен быть https://endpoint) и бакета аватаров
-	// s3UserAvatarBaseURL := fmt.Sprintf("%s%s/%s", "https://", strings.TrimSuffix(app.Cfg.S3Config.Endpoint, "/"), strings.TrimPrefix(app.Cfg.S3Config.BucketUserAvatars, "/"))
 	// --- Team Module ---
 	teamDBImpl := teamDbRepo.NewTeamDatabase(app.Storage.Db, app.Log, app.Cfg.S3Config)
 	teamCacheImpl := teamCacheRepo.NewTeamCache(app.Cache, app.Log, app.Cfg.CacheConfig)
-	// s3BaseURLForTeamImages - это полный URL до бакета изображений команд
-	s3BaseURLForTeamImages := fmt.Sprintf("%s%s/%s", "https://", strings.TrimSuffix(app.Cfg.S3Config.Endpoint, "/"), strings.TrimPrefix(app.Cfg.S3Config.BucketTeamImages, "/"))
-	teamS3Impl := teamS3Repo.NewTeamS3(app.Log, app.S3, app.Cfg.S3Config) // Endpoint здесь - это хост S3
-	teamRepoImpl := teamRp.NewRepo(teamDBImpl, teamCacheImpl, teamS3Impl, app.Log, app.Cfg.S3Config.BucketTeamImages, s3BaseURLForTeamImages)
-
-	teamUseCaseImpl := teamUC.NewTeamUseCase(
-		teamRepoImpl,
-		app.Log,
-		*app.Cfg,
-	)
+	s3BaseURLForTeamImages := fmt.Sprintf("https://%s/%s", strings.TrimSuffix(app.Cfg.S3Config.Endpoint, "/"), strings.TrimPrefix(app.Cfg.S3Config.BucketTeamImages, "/"))
+	teamS3Impl := teamS3Repo.NewTeamS3(app.Log, app.S3, app.Cfg.S3Config)
+	teamRepoImpl := teamRepo.NewRepo(teamDBImpl, teamCacheImpl, teamS3Impl, app.Log, app.Cfg.S3Config.BucketTeamImages, s3BaseURLForTeamImages)
+	teamUseCaseImpl := teamUC.NewTeamUseCase(teamRepoImpl, app.Log, *app.Cfg) // Тип *teamUC.TeamUseCase
 	teamCtrl := teamC.NewTeamController(teamUseCaseImpl, app.Log, app.Cfg)
-
 	app.Router.Route(apiVersion+"/teams", func(r chi.Router) {
 		r.Use(AuthUserMiddleware)
 		r.Post("/", teamCtrl.CreateTeam)
 		r.Get("/my", teamCtrl.GetMyTeams)
 		r.Route("/{teamID}", func(r chi.Router) {
 			r.Get("/", teamCtrl.GetTeam)
-			r.Put("/", teamCtrl.UpdateTeam)    // Обновление деталей команды
-			r.Delete("/", teamCtrl.DeleteTeam) // Удаление команды
-
-			// Участники
+			r.Put("/", teamCtrl.UpdateTeam)
+			r.Delete("/", teamCtrl.DeleteTeam)
 			r.Get("/members", teamCtrl.GetTeamMembers)
 			r.Post("/members", teamCtrl.AddTeamMember)
-			r.Route("/members/{userID}", func(r chi.Router) { // userID здесь - это targetUserID
+			r.Route("/members/{userID}", func(r chi.Router) {
 				r.Put("/role", teamCtrl.UpdateTeamMemberRole)
 				r.Delete("/", teamCtrl.RemoveTeamMember)
 			})
-			r.Post("/leave", teamCtrl.LeaveTeam) // Пользователь покидает команду
-
-			// Приглашения
+			r.Post("/leave", teamCtrl.LeaveTeam)
 			r.Post("/invites", teamCtrl.GenerateInviteToken)
-
-			// Командные теги
-			r.Route("/tags", func(r chi.Router) { // <<< НАЧАЛО МАРШРУТОВ ДЛЯ TEAM TAGS
-				// tagCtrl будет инициализирован ниже
-				// r.Post("/", tagCtrl.CreateTeamTag)
-				// r.Get("/", tagCtrl.GetTeamTags)
-				// r.Put("/{tagID}", tagCtrl.UpdateTeamTag)
-				// r.Delete("/{tagID}", tagCtrl.DeleteTeamTag)
-			}) // <<< КОНЕЦ МАРШРУТОВ ДЛЯ TEAM TAGS
+			// Маршруты для командных тегов будут ниже, после инициализации TagController
 		})
 	})
 	app.Router.With(AuthUserMiddleware).Post(apiVersion+"/teams/join", teamCtrl.JoinTeamByToken)
 
 	// --- Tag Module ---
 	tagDBImpl := tagDbRepo.NewTagDatabase(app.Storage.Db, app.Log)
-	tagCacheImpl := tagCacheRepo.NewTagCache(app.Cache, app.Log, app.Cfg.CacheConfig.DefaultTeamListCacheTtl) // TTL для списков тегов
-	tagRepoImpl := tagRp.NewRepo(tagDBImpl, tagCacheImpl, app.Log)
-
-	// TeamServiceForTag для TagUseCase (используем teamUseCaseImpl)
-	var teamServiceProviderForTag tagUC.TeamServiceForTag = teamUseCaseImpl
-
+	tagCacheImpl := tagCacheRepo.NewTagCache(app.Cache, app.Log, app.Cfg.CacheConfig.DefaultTeamListCacheTtl)
+	tagRepoImpl := tagRepo.NewRepo(tagDBImpl, tagCacheImpl, app.Log)
+	var teamServiceProviderForTag tagUC.TeamServiceForTag = teamUseCaseImpl // Приведение типа
 	tagUseCaseImpl := tagUC.NewTagUseCase(tagRepoImpl, teamServiceProviderForTag, app.Log)
 	tagCtrl := tagC.NewTagController(tagUseCaseImpl, app.Log)
-
-	// Пользовательские теги
 	app.Router.Route(apiVersion+"/user-tags", func(r chi.Router) {
 		r.Use(AuthUserMiddleware)
 		r.Post("/", tagCtrl.CreateUserTag)
@@ -403,11 +432,8 @@ func (app *App) SetupRoutes() {
 		r.Put("/{tagID}", tagCtrl.UpdateUserTag)
 		r.Delete("/{tagID}", tagCtrl.DeleteUserTag)
 	})
-
-	// Командные теги (уже вложены в /teams/{teamID}/tags)
-	// Обновляем существующую группу маршрутов для команд
 	app.Router.Route(apiVersion+"/teams/{teamID}/tags", func(r chi.Router) {
-		r.Use(AuthUserMiddleware) // Middleware уже должен быть применен к /teams/{teamID}
+		r.Use(AuthUserMiddleware)
 		r.Post("/", tagCtrl.CreateTeamTag)
 		r.Get("/", tagCtrl.GetTeamTags)
 		r.Put("/{tagID}", tagCtrl.UpdateTeamTag)
@@ -417,13 +443,10 @@ func (app *App) SetupRoutes() {
 	// --- Task Module ---
 	taskDBImpl := taskDbRepo.NewTaskDatabase(app.Storage.Db, app.Log)
 	taskCacheImpl := taskCacheRepo.NewTaskCache(app.Cache, app.Log, app.Cfg.CacheConfig)
-	taskRepoImpl := taskRp.NewRepo(taskDBImpl, taskCacheImpl)
-
-	var teamServiceProviderForTask taskUC.TeamService = teamUseCaseImpl
-
+	taskRepoImpl := taskRepo.NewRepo(taskDBImpl, taskCacheImpl)
+	var teamServiceProviderForTask taskUC.TeamService = teamUseCaseImpl // Приведение типа
 	taskUseCaseImpl := taskUC.NewTaskUseCase(taskRepoImpl, tagUseCaseImpl, tagRepoImpl, teamServiceProviderForTask, app.Log, app.Cfg.CacheConfig.DefaultTaskCacheTtl)
 	taskCtrl := taskC.NewTaskController(taskUseCaseImpl, app.Log)
-
 	app.Router.Route(apiVersion+"/tasks", func(r chi.Router) {
 		r.Use(AuthUserMiddleware)
 		r.Post("/", taskCtrl.CreateTask)
@@ -432,10 +455,44 @@ func (app *App) SetupRoutes() {
 		r.Put("/{taskID}", taskCtrl.UpdateTask)
 		r.Patch("/{taskID}", taskCtrl.PatchTask)
 		r.Delete("/{taskID}", taskCtrl.DeleteTask)
+		r.Post("/{taskID}/restore", taskCtrl.RestoreTask)
+		r.Delete("/{taskID}/permanent", taskCtrl.DeleteTaskPermanently)
+	})
+
+	// --- Chat Module ---
+	chatLog := app.Log.With(slog.String("module", "chat"))
+	chatDatabaseRepo := chatDB.NewDBRepo(app.Storage.Db, chatLog.With(slog.String("layer", "db_repo")))
+
+	// Убедимся, что teamUseCaseImpl и profileUseCaseImpl реализуют нужные интерфейсы
+	var teamCheckerForChat chatEntity.TeamChecker = teamUseCaseImpl
+	var userInfoProviderForChat chatEntity.UserInfoProvider = profileUseCaseImpl
+
+	chatUseCaseInstance := chatUC.NewUseCase(
+		chatLog.With(slog.String("layer", "usecase")),
+		chatDatabaseRepo,
+		teamCheckerForChat,
+		userInfoProviderForChat,
+	)
+	chatHubInstance := ws.NewHub(chatLog.With(slog.String("component", "hub")), chatUseCaseInstance)
+	app.ChatHub = chatHubInstance // Сохраняем хаб в App
+
+	chatControllerInstance := chatCtrl.NewController(
+		chatLog.With(slog.String("layer", "controller")),
+		chatUseCaseInstance,
+		app.ChatHub,
+		teamCheckerForChat, // Передаем teamUseCaseImpl, который реализует chatEntity.TeamChecker
+		validate,           // Передаем глобальный валидатор
+	)
+
+	app.Router.Route(apiVersion+"/chat", func(r chi.Router) {
+		r.Use(AuthUserMiddleware)
+		// WebSocket эндпоинт для команды
+		r.Get("/ws/teams/{teamID}", chatControllerInstance.ServeWs)
+		// HTTP эндпоинт для получения истории сообщений команды
+		r.Get("/teams/{teamID}/messages", chatControllerInstance.GetChatHistory)
 	})
 }
 
-// main and SetupLogger ... (без изменений) ...
 // @title ToDoApp API
 // @version 1.0.0
 // @description API for ToDoApp
@@ -443,9 +500,9 @@ func (app *App) SetupRoutes() {
 // @contact.name Evdokimov Igor
 // @contact.url https://t.me/epelptic
 
-// @host localhost:8080 // Динамически обновляется
+// @host localhost:8080
 // @BasePath /v1
-// @Schemes http https   // Динамически обновляется (остается одна схема)
+// @schemes http https
 
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
@@ -453,19 +510,29 @@ func (app *App) SetupRoutes() {
 func main() {
 	cfg := config.MustLoad()
 	log := SetupLogger(cfg.Env)
-	slog.SetDefault(log)
+	slog.SetDefault(log) // Устанавливаем глобальный логгер
 
-	app, err := NewApp(cfg, log)
+	currentApp, err := NewApp(cfg, log)
 	if err != nil {
 		log.Error("app init failed", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
-	app.SetupRoutes()
+	currentApp.SetupRoutes() // Инициализация ChatHub теперь происходит здесь
 
-	if err := app.Start(); err != nil {
+	// Запуск Chat Hub в отдельной горутине, если он был инициализирован
+	if currentApp.ChatHub != nil {
+		go currentApp.ChatHub.Run()
+		log.Info("Chat Hub worker started")
+	} else {
+		// Этого не должно произойти, если SetupRoutes вызывается после NewApp
+		log.Error("Chat Hub is nil after SetupRoutes, cannot start worker. Check initialization logic.")
+		// os.Exit(1) // Возможно, стоит завершить приложение, если ChatHub критичен
+	}
+
+	if err := currentApp.Start(); err != nil {
 		log.Error("application terminated with error", slog.String("error", err.Error()))
-		os.Exit(1)
+		os.Exit(1) // Явно выходим, если Start вернул ошибку
 	}
 }
 
@@ -478,9 +545,10 @@ func SetupLogger(env string) *slog.Logger {
 		log = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level, AddSource: true}))
 	case "prod", "production":
 		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level, AddSource: true}))
-	default:
-		level = slog.LevelDebug
+	default: // По умолчанию, если env не распознан
+		level = slog.LevelDebug // Безопасный дефолт
 		log = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level, AddSource: true}))
+		// Используем стандартный slog для предупреждения, т.к. наш 'log' еще не инициализирован полностью
 		slog.Warn("Unknown environment in SetupLogger, defaulting to 'local' text debug logger", slog.String("env", env))
 	}
 	return log

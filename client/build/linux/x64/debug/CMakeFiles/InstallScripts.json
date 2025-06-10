@@ -1,0 +1,13 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/user/Documents/todo/client/build/linux/x64/debug/cmake_install.cmake",
+		"/home/user/Documents/todo/client/build/linux/x64/debug/flutter/cmake_install.cmake",
+		"/home/user/Documents/todo/client/build/linux/x64/debug/runner/cmake_install.cmake",
+		"/home/user/Documents/todo/client/build/linux/x64/debug/plugins/emoji_picker_flutter/cmake_install.cmake",
+		"/home/user/Documents/todo/client/build/linux/x64/debug/plugins/file_selector_linux/cmake_install.cmake",
+		"/home/user/Documents/todo/client/build/linux/x64/debug/plugins/flutter_secure_storage_linux/cmake_install.cmake",
+		"/home/user/Documents/todo/client/build/linux/x64/debug/plugins/url_launcher_linux/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

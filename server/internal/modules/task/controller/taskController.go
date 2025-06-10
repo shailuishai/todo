@@ -179,7 +179,15 @@ func (c *TaskController) GetTasks(w http.ResponseWriter, r *http.Request) {
 
 	var reqParams task.GetTasksRequest
 
-	// Парсинг view_type
+	// <<< ПАРСИНГ is_deleted >>>
+	if isDeletedStr := r.URL.Query().Get("is_deleted"); isDeletedStr != "" {
+		isDeleted, err := strconv.ParseBool(isDeletedStr)
+		if err == nil {
+			reqParams.IsDeleted = &isDeleted
+		} else {
+			log.Warn("invalid is_deleted query param", "value", isDeletedStr, "error", err)
+		}
+	}
 	if viewTypeStr := r.URL.Query().Get("view_type"); viewTypeStr != "" {
 		// Проверка на допустимые значения view_type (валидатор это тоже сделает)
 		switch task.GetTasksViewType(viewTypeStr) {
@@ -422,7 +430,8 @@ func isEmptyPatchRequest(req task.PatchTaskRequest) bool {
 		req.Status == nil &&
 		req.Priority == nil &&
 		req.AssignedToUserID == nil &&
-		req.ClearAssignedTo == nil
+		req.ClearAssignedTo == nil &&
+		req.IsDeleted == nil // <<< ДОБАВЛЕНО
 }
 
 // DeleteTask
@@ -474,4 +483,108 @@ func (c *TaskController) DeleteTask(w http.ResponseWriter, r *http.Request) {
 
 	log.Info("task deleted successfully")
 	resp.SendOK(w, r, http.StatusNoContent) // 204 No Content для успешного удаления
+}
+
+// <<< НОВЫЙ МЕТОД >>>
+// RestoreTask
+// @Summary Restore a deleted task
+// @Tags tasks
+// @Description Restores a logically deleted task by its ID, making it active again.
+// @Produce json
+// @Param taskID path int true "Task ID"
+// @Success 200 {object} task.TaskResponse "Task restored successfully"
+// @Failure 400 {object} response.ErrorResponse "Invalid Task ID"
+// @Failure 401 {object} response.ErrorResponse "Unauthorized"
+// @Failure 403 {object} response.ErrorResponse "Access denied"
+// @Failure 404 {object} response.ErrorResponse "Task not found"
+// @Failure 500 {object} response.ErrorResponse "Internal server error"
+// @Router /tasks/{taskID}/restore [post]
+// @Security ApiKeyAuth
+func (c *TaskController) RestoreTask(w http.ResponseWriter, r *http.Request) {
+	op := "TaskController.RestoreTask"
+	log := c.log.With(slog.String("op", op))
+
+	userID, ok := r.Context().Value("userId").(uint)
+	if !ok {
+		resp.SendError(w, r, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	log = log.With(slog.Uint64("userID", uint64(userID)))
+
+	taskIDStr := chi.URLParam(r, "taskID")
+	taskID, err := strconv.ParseUint(taskIDStr, 10, 32)
+	if err != nil {
+		resp.SendError(w, r, http.StatusBadRequest, "Invalid Task ID")
+		return
+	}
+	log = log.With(slog.Uint64("taskID", taskID))
+
+	taskResponse, err := c.useCase.RestoreTask(uint(taskID), userID)
+	if err != nil {
+		log.Error("usecase RestoreTask failed", "error", err)
+		switch {
+		case errors.Is(err, task.ErrTaskNotFound):
+			resp.SendError(w, r, http.StatusNotFound, err.Error())
+		case errors.Is(err, task.ErrTaskAccessDenied):
+			resp.SendError(w, r, http.StatusForbidden, err.Error())
+		case errors.Is(err, task.ErrTaskInvalidInput):
+			resp.SendError(w, r, http.StatusUnprocessableEntity, err.Error())
+		default:
+			resp.SendError(w, r, http.StatusInternalServerError, "Failed to restore task")
+		}
+		return
+	}
+	log.Info("task restored successfully")
+	resp.SendSuccess(w, r, http.StatusOK, taskResponse)
+}
+
+// <<< НОВЫЙ МЕТОД >>>
+// DeleteTaskPermanently
+// @Summary Permanently delete a task
+// @Tags tasks
+// @Description Permanently deletes a task from the database. This action is irreversible.
+// @Produce json
+// @Param taskID path int true "Task ID"
+// @Success 204 "Task permanently deleted successfully"
+// @Failure 400 {object} response.ErrorResponse "Invalid Task ID"
+// @Failure 401 {object} response.ErrorResponse "Unauthorized"
+// @Failure 403 {object} response.ErrorResponse "Access denied"
+// @Failure 404 {object} response.ErrorResponse "Task not found"
+// @Failure 500 {object} response.ErrorResponse "Internal server error"
+// @Router /tasks/{taskID}/permanent [delete]
+// @Security ApiKeyAuth
+func (c *TaskController) DeleteTaskPermanently(w http.ResponseWriter, r *http.Request) {
+	op := "TaskController.DeleteTaskPermanently"
+	log := c.log.With(slog.String("op", op))
+
+	userID, ok := r.Context().Value("userId").(uint)
+	if !ok {
+		resp.SendError(w, r, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	log = log.With(slog.Uint64("userID", uint64(userID)))
+
+	taskIDStr := chi.URLParam(r, "taskID")
+	taskID, err := strconv.ParseUint(taskIDStr, 10, 32)
+	if err != nil {
+		resp.SendError(w, r, http.StatusBadRequest, "Invalid Task ID")
+		return
+	}
+	log = log.With(slog.Uint64("taskID", taskID))
+
+	err = c.useCase.DeleteTaskPermanently(uint(taskID), userID)
+	if err != nil {
+		log.Error("usecase DeleteTaskPermanently failed", "error", err)
+		switch {
+		case errors.Is(err, task.ErrTaskNotFound):
+			resp.SendError(w, r, http.StatusNotFound, err.Error())
+		case errors.Is(err, task.ErrTaskAccessDenied):
+			resp.SendError(w, r, http.StatusForbidden, err.Error())
+		default:
+			resp.SendError(w, r, http.StatusInternalServerError, "Failed to permanently delete task")
+		}
+		return
+	}
+	log.Info("task permanently deleted successfully")
+	resp.SendOK(w, r, http.StatusNoContent)
 }

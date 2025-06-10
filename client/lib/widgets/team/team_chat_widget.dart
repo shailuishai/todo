@@ -1,11 +1,11 @@
 // lib/widgets/team/team_chat_widget.dart
-import 'dart:async'; // Для Timer (для сброса подсветки)
-import 'package:client/auth_state.dart';
+import 'dart:async';
+import 'package:client/chat_provider.dart';
 import 'package:client/models/chat_model.dart';
 import 'package:client/models/team_model.dart';
 import 'package:client/widgets/common/user_avatar.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Для Clipboard
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -13,17 +13,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:context_menus/context_menus.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 
-import '../../services/api_service.dart';
-
-
 class TeamChatWidget extends StatefulWidget {
   final String teamId;
-  final String currentUserId;
 
   const TeamChatWidget({
     Key? key,
     required this.teamId,
-    required this.currentUserId,
   }) : super(key: key);
 
   @override
@@ -34,43 +29,47 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _inputFocusNode = FocusNode();
-  List<ChatMessage> _messages = [];
-  UserProfile? _currentUserProfile;
 
-  bool _isEditing = false;
   String? _editingMessageId;
+  String _editingMessageOriginalText = '';
   ChatMessage? _replyingToMessage;
+  bool get _isEditing => _editingMessageId != null;
 
   Timer? _highlightTimer;
   String? _highlightedMessageId;
-
   bool _showEmojiPicker = false;
 
   @override
   void initState() {
     super.initState();
-    _currentUserProfile = Provider.of<AuthState>(context, listen: false).currentUser;
-    _loadDummyMessages();
-    _inputFocusNode.addListener(() {
-      if (!_inputFocusNode.hasFocus && _showEmojiPicker) {
-        // setState(() {
-        //   _showEmojiPicker = false;
-        // });
-      }
-    });
+    _connectToChat();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _connectToChat() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scrollToBottom(animated: false);
+      if (mounted) {
+        Provider.of<ChatProvider>(context, listen: false).connect(widget.teamId);
+      }
     });
   }
 
-  void _scrollToBottom({bool animated = true, double? specificPosition}) {
+  @override
+  void didUpdateWidget(covariant TeamChatWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.teamId != widget.teamId) {
+      _connectToChat();
+    }
+  }
+
+  void _onScroll() {
     if (!_scrollController.hasClients) return;
-    final position = specificPosition ?? _scrollController.position.maxScrollExtent;
-    _scrollController.animateTo(
-      position,
-      duration: Duration(milliseconds: animated ? 300 : 0),
-      curve: Curves.easeOut,
-    );
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+      if (chatProvider.hasMoreHistory(widget.teamId) && !chatProvider.isLoadingHistory(widget.teamId)) {
+        chatProvider.fetchHistory(widget.teamId, loadMore: true);
+      }
+    }
   }
 
   void _scrollToMessageAndHighlight(GlobalKey messageKey, String messageId) {
@@ -81,30 +80,14 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOutCubic,
         alignment: 0.3,
-        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
       ).then((_) {
         Future.delayed(const Duration(milliseconds: 50), () {
           if (mounted) {
-            setState(() {
-              for (var msg in _messages) {
-                msg.isHighlighted = false;
-              }
-              final targetMsgIndex = _messages.indexWhere((m) => m.id == messageId);
-              if (targetMsgIndex != -1) {
-                _messages[targetMsgIndex].isHighlighted = true;
-                _highlightedMessageId = messageId;
-              }
-            });
+            setState(() => _highlightedMessageId = messageId);
             _highlightTimer?.cancel();
             _highlightTimer = Timer(const Duration(seconds: 2), () {
               if (mounted && _highlightedMessageId == messageId) {
-                setState(() {
-                  final targetMsgIndex = _messages.indexWhere((m) => m.id == messageId);
-                  if (targetMsgIndex != -1) {
-                    _messages[targetMsgIndex].isHighlighted = false;
-                  }
-                  _highlightedMessageId = null;
-                });
+                setState(() => _highlightedMessageId = null);
               }
             });
           }
@@ -113,124 +96,22 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
     }
   }
 
-  void _loadDummyMessages() {
-    final userAlice = UserLite(userId: 1, login: "Alice Wonderland", accentColor: "#E91E63", avatarUrl: null);
-    final userYou = UserLite(
-        userId: int.tryParse(widget.currentUserId) ?? 0,
-        login: _currentUserProfile?.login ?? "You",
-        accentColor: _currentUserProfile?.accentColor ?? "#4CAF50",
-        avatarUrl: _currentUserProfile?.avatarUrl);
-    final userBob = UserLite(userId: 3, login: "Bob The Builder", accentColor: "#2196F3", avatarUrl: null);
-    final userCharlie = UserLite(userId: 4, login: "Charlie Brown", accentColor: "#FF9800", avatarUrl: null);
-
-    List<ChatMessage> dummyMessagesSource = [
-      ChatMessage(id: '1', text: 'Всем привет! 👋', sender: userAlice, timestamp: DateTime.now().subtract(const Duration(minutes: 20)), status: MessageStatus.read),
-      ChatMessage(id: '2', text: 'Я начала работу над новой задачей по UI. Уже есть первые наброски. Это очень длинное сообщение, чтобы проверить как оно будет переноситься и выглядеть в несколько строк, а также как будет работать группировка.', sender: userAlice, timestamp: DateTime.now().subtract(const Duration(minutes: 19, seconds: 30)), status: MessageStatus.read),
-      ChatMessage(id: '2a', text: 'Второе сообщение от Alice подряд.', sender: userAlice, timestamp: DateTime.now().subtract(const Duration(minutes: 19)), status: MessageStatus.read),
-
-      ChatMessage(id: 'msg_you_1', text: 'Привет, Alice! Отлично! Это мой ответ, он может быть достаточно длинным, чтобы проверить, как он будет отображаться в цитате.', sender: userYou, timestamp: DateTime.now().subtract(const Duration(minutes: 18)), status: MessageStatus.read),
-      ChatMessage(id: 'msg_you_2', text: 'Последний коммит посмотрел, все ок.', sender: userYou, timestamp: DateTime.now().subtract(const Duration(minutes: 17)), status: MessageStatus.read),
-      ChatMessage(id: 'msg_you_3', text: '```dart\nvoid main() {\n  print("Hello, team!");\n}\n```', sender: userYou, timestamp: DateTime.now().subtract(const Duration(minutes: 16, seconds: 30)), status: MessageStatus.read),
-
-      ChatMessage(id: '6', text: 'Здорово! Бэкенд готовлю.', sender: userBob, timestamp: DateTime.now().subtract(const Duration(minutes: 15)), status: MessageStatus.read),
-      ChatMessage(id: '6a', text: 'Первое сообщение Боба в группе', sender: userBob, timestamp: DateTime.now().subtract(const Duration(minutes: 14, seconds: 50)), status: MessageStatus.read),
-      ChatMessage(id: '7', text: 'Добавил эндпоинт `/api/v1/stats`. Отвечаю на твое длинное сообщение.', sender: userBob, timestamp: DateTime.now().subtract(const Duration(minutes: 14)), status: MessageStatus.read, replyToMessageId: 'msg_you_1', replyToText: 'Привет, Alice! Отлично! Это мой ответ, он может быть достаточно длинным, чтобы проверить, как он будет отображаться в цитате. И еще немного текста, чтобы цитата стала многострочной и мы могли это протестировать.', replyToSenderLogin: userYou.login),
-
-      ChatMessage(id: '8', text: 'Всем хай! Я Чарли.', sender: userCharlie, timestamp: DateTime.now().subtract(const Duration(minutes: 10)), status: MessageStatus.read),
-      ChatMessage(id: '9', text: '`docker-compose up` падает иногда.', sender: userCharlie, timestamp: DateTime.now().subtract(const Duration(minutes: 9)), status: MessageStatus.read),
-
-      ChatMessage(id: '10', text: 'Charlie, попробуй `docker-compose down && docker-compose up --build`.', sender: userAlice, timestamp: DateTime.now().subtract(const Duration(minutes: 8)), status: MessageStatus.read, editedAt: DateTime.now().subtract(const Duration(minutes: 7, seconds: 50))),
-
-      ChatMessage(id: '11', text: 'Bob, спасибо за инфу по бэку!', sender: userYou, timestamp: DateTime.now().subtract(const Duration(minutes: 7)), status: MessageStatus.sent),
-
-      ChatMessage(id: '12', text: 'Всегда пожалуйста!', sender: userBob, timestamp: DateTime.now().subtract(const Duration(minutes: 5)), status: MessageStatus.read),
-      ChatMessage(id: '13', text: 'Готовьтесь к тестированию бэка завтра!', sender: userBob, timestamp: DateTime.now().subtract(const Duration(minutes: 4, seconds: 30)), status: MessageStatus.read),
-      ChatMessage(id: '14', text: 'Основные изменения:\n- Улучшена производительность\n- Добавлены новые метрики\n- Исправлены мелкие баги', sender: userBob, timestamp: DateTime.now().subtract(const Duration(minutes: 4)), status: MessageStatus.read),
-
-      ChatMessage(id: '15', text: 'Ок, будем готовы!', sender: userCharlie, timestamp: DateTime.now().subtract(const Duration(minutes: 2)), status: MessageStatus.read, replyToMessageId: '13', replyToText: 'Готовьтесь к тестированию бэка завтра!', replyToSenderLogin: userBob.login),
-      ChatMessage(id: '16', text: 'Это сообщение для проверки группировки аватара Чарли.', sender: userCharlie, timestamp: DateTime.now().subtract(const Duration(minutes: 1, seconds: 50)), status: MessageStatus.sent),
-      ChatMessage(id: '17', text: 'И еще одно от Чарли, чтобы он был последним в группе. Проверяем хвостик и аватар.    \n   ', sender: userCharlie, timestamp: DateTime.now().subtract(const Duration(minutes: 1, seconds: 40)), status: MessageStatus.sent),
-    ];
-
-    setState(() {
-      _messages = dummyMessagesSource.map((msg) {
-        MessageStatus finalStatus = msg.status;
-        if (!msg.isCurrentUser && DateTime.now().difference(msg.timestamp).inMinutes > 2 && finalStatus == MessageStatus.sent) {
-          finalStatus = MessageStatus.read;
-        }
-        return ChatMessage(
-          id: msg.id,
-          text: msg.text,
-          sender: msg.sender,
-          timestamp: msg.timestamp,
-          isCurrentUser: msg.sender.userId.toString() == widget.currentUserId,
-          status: finalStatus,
-          replyToMessageId: msg.replyToMessageId,
-          replyToText: msg.replyToText,
-          replyToSenderLogin: msg.replyToSenderLogin,
-          editedAt: msg.editedAt,
-        );
-      }).toList();
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) {
-          _markAsReadByOthers();
-        }
-      });
-    });
-  }
-
-  void _markAsReadByOthers() {
-    setState(() {
-      for (var msg in _messages) {
-        if (!msg.isCurrentUser && msg.status == MessageStatus.sent) {
-          msg.status = MessageStatus.read;
-        }
-      }
-    });
-  }
-
   void _sendMessage() {
-    final String newText = _textController.text.trimRight();
-
-    if (newText.isEmpty) {
+    final text = _textController.text.trim();
+    if (text.isEmpty) {
       _cancelReplyAndEdit();
       return;
     }
 
-    if (_isEditing && _editingMessageId != null) {
-      int msgIndex = _messages.indexWhere((m) => m.id == _editingMessageId);
-      if (msgIndex != -1) {
-        setState(() {
-          _messages[msgIndex].text = newText;
-          _messages[msgIndex].editedAt = DateTime.now();
-        });
-      }
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    if (_isEditing) {
+      chatProvider.editMessage(_editingMessageId!, text);
     } else {
-      final senderUser = UserLite(
-          userId: _currentUserProfile?.userId ?? 0,
-          login: _currentUserProfile?.login ?? "You",
-          accentColor: _currentUserProfile?.accentColor,
-          avatarUrl: _currentUserProfile?.avatarUrl);
-      final newMessage = ChatMessage(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        text: newText,
-        sender: senderUser,
-        timestamp: DateTime.now(),
-        isCurrentUser: true,
-        status: MessageStatus.sent,
-        replyToMessageId: _replyingToMessage?.id,
-        replyToText: _replyingToMessage?.text,
-        replyToSenderLogin: _replyingToMessage?.sender.login,
-      );
-      setState(() {
-        _messages.add(newMessage);
-      });
+      chatProvider.sendMessage(text, replyToId: _replyingToMessage?.id);
     }
+
     _textController.clear();
     _cancelReplyAndEdit();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToBottom();
-    });
     if (!_showEmojiPicker) {
       _inputFocusNode.requestFocus();
     }
@@ -239,7 +120,6 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
   void _startReply(ChatMessage message) {
     _resetHighlight();
     setState(() {
-      _isEditing = false;
       _editingMessageId = null;
       _replyingToMessage = message;
       _showEmojiPicker = false;
@@ -251,8 +131,8 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
     if (!message.isCurrentUser) return;
     _resetHighlight();
     setState(() {
-      _isEditing = true;
       _editingMessageId = message.id;
+      _editingMessageOriginalText = message.text;
       _replyingToMessage = null;
       _textController.text = message.text;
       _textController.selection = TextSelection.fromPosition(TextPosition(offset: _textController.text.length));
@@ -263,93 +143,55 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
 
   void _resetHighlight() {
     if (_highlightedMessageId != null) {
-      final currentlyHighlightedIndex = _messages.indexWhere((m) => m.id == _highlightedMessageId);
-      if (currentlyHighlightedIndex != -1 && _messages[currentlyHighlightedIndex].isHighlighted) {
-        setState(() {
-          _messages[currentlyHighlightedIndex].isHighlighted = false;
-        });
-      }
-      _highlightedMessageId = null;
+      setState(() => _highlightedMessageId = null);
       _highlightTimer?.cancel();
-    } else {
-      bool changed = false;
-      for(var msg in _messages) {
-        if (msg.isHighlighted) {
-          msg.isHighlighted = false;
-          changed = true;
-        }
-      }
-      if (changed && mounted) {
-        setState(() {});
-      }
     }
   }
 
-
   void _deleteMessage(ChatMessage message) {
     _resetHighlight();
-    setState(() {
-      _messages.removeWhere((m) => m.id == message.id);
-      if (_replyingToMessage?.id == message.id) _cancelReplyAndEdit();
-      if (_editingMessageId == message.id) _cancelReplyAndEdit();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Сообщение \"${message.text.substring(0, (message.text.length > 20) ? 20 : message.text.length)}...\" удалено.")));
+    Provider.of<ChatProvider>(context, listen: false).deleteMessage(message.id);
   }
 
   void _copyMessageText(ChatMessage message) {
     Clipboard.setData(ClipboardData(text: message.text));
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Текст сообщения скопирован.")));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Текст сообщения скопирован.")));
   }
 
   void _cancelReplyAndEdit() {
     setState(() {
-      _isEditing = false;
       _editingMessageId = null;
+      _editingMessageOriginalText = '';
       _replyingToMessage = null;
-      if (_textController.text.isNotEmpty && !_inputFocusNode.hasFocus && !_showEmojiPicker) {
-        // не очищаем
-      } else {
-        _textController.clear();
-      }
+      _textController.clear();
     });
   }
 
   void _onEmojiSelected(Emoji emoji) {
     _textController
       ..text += emoji.emoji
-      ..selection = TextSelection.fromPosition(
-          TextPosition(offset: _textController.text.length));
+      ..selection = TextSelection.fromPosition(TextPosition(offset: _textController.text.length));
   }
 
   void _onBackspacePressed() {
     _textController
       ..text = _textController.text.characters.skipLast(1).toString()
-      ..selection = TextSelection.fromPosition(
-          TextPosition(offset: _textController.text.length));
+      ..selection = TextSelection.fromPosition(TextPosition(offset: _textController.text.length));
   }
 
   void _toggleEmojiPicker() {
+    final isKeyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
     if (_showEmojiPicker) {
-      if (mounted) {
-        FocusScope.of(context).requestFocus(_inputFocusNode);
-      }
+      _inputFocusNode.requestFocus();
     } else {
-      if (mounted) {
-        FocusScope.of(context).unfocus();
-      }
+      if (isKeyboardVisible) _inputFocusNode.unfocus();
     }
-    if (mounted) {
-      setState(() {
-        _showEmojiPicker = !_showEmojiPicker;
-      });
-    }
+    setState(() => _showEmojiPicker = !_showEmojiPicker);
   }
-
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _textController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
@@ -357,86 +199,36 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
     super.dispose();
   }
 
-  GlobalKey? _findMessageKeyById(String? messageId) {
-    if (messageId == null) return null;
-    try {
-      return _messages.firstWhere((msg) => msg.id == messageId).messageKey;
-    } catch (e) {
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final double avatarSize = 16.0 * 2;
-    final double avatarPadding = 8.0;
-    final double avatarSpaceWidth = avatarSize + avatarPadding;
-
+    // <<< НАЧАЛО: ИСПРАВЛЕНИЕ - ДОБАВЛЕНА ОБЕРТКА ContextMenuOverlay >>>
     return ContextMenuOverlay(
       child: Column(
         children: [
           Expanded(
-            child: GestureDetector(
-              onTap: (){
-                if (_showEmojiPicker && mounted) {
-                  setState(() { _showEmojiPicker = false; });
-                }
-                _resetHighlight();
-              },
-              child: _messages.isEmpty
-                  ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.chat_rounded, size: 64, color: colorScheme.onSurfaceVariant.withOpacity(0.5)),
-                    const SizedBox(height: 16),
-                    Text(
-                      "В этом чате пока нет сообщений.",
-                      style: theme.textTheme.titleMedium?.copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              )
-                  : ListView.builder(
-                controller: _scrollController,
-                padding: EdgeInsets.only(
-                    left: 8.0,
-                    right: 8.0,
-                    top: 12.0,
-                    bottom: 12.0 + (_replyingToMessage != null || _isEditing || _showEmojiPicker ? 0 : MediaQuery.of(context).padding.bottom)),
-                itemCount: _messages.length,
-                itemBuilder: (context, index) {
-                  final message = _messages[index];
-                  final bool isFirstInGroup = index == 0 ||
-                      _messages[index - 1].sender.userId != message.sender.userId ||
-                      message.timestamp.difference(_messages[index - 1].timestamp).inMinutes >= 5 ||
-                      _messages[index - 1].isCurrentUser != message.isCurrentUser;
-                  final bool isLastInGroup = index == _messages.length - 1 ||
-                      _messages[index + 1].sender.userId != message.sender.userId ||
-                      _messages[index + 1].timestamp.difference(message.timestamp).inMinutes >= 5 ||
-                      _messages[index + 1].isCurrentUser != message.isCurrentUser;
+            child: Consumer<ChatProvider>(
+              builder: (context, chatProvider, child) {
+                final messages = chatProvider.messagesForTeam(widget.teamId);
+                final isLoading = chatProvider.isLoadingHistory(widget.teamId);
+                final hasMore = chatProvider.hasMoreHistory(widget.teamId);
 
-                  return ChatMessageBubble(
-                    key: message.messageKey,
-                    message: message,
-                    isFirstInGroup: isFirstInGroup,
-                    isLastInGroup: isLastInGroup,
-                    avatarSpace: avatarSpaceWidth,
-                    onReply: () => _startReply(message),
-                    onEdit: message.isCurrentUser ? () => _startEdit(message) : null,
-                    onDelete: () => _deleteMessage(message),
-                    onCopy: () => _copyMessageText(message),
-                    onQuotedMessageTap: (replyToId) {
-                      final key = _findMessageKeyById(replyToId);
-                      if (key != null) {
-                        _scrollToMessageAndHighlight(key, replyToId);
-                      }
-                    },
+                if (isLoading && messages.isEmpty) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (messages.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline_rounded, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5)),
+                        const SizedBox(height: 16),
+                        Text("В этом чате пока нет сообщений.", style: Theme.of(context).textTheme.titleMedium),
+                      ],
+                    ),
                   );
-                },
-              ),
+                }
+                return _buildMessagesList(context, messages, hasMore);
+              },
             ),
           ),
           if (_replyingToMessage != null || _isEditing) _buildReplyOrEditHeader(context),
@@ -445,54 +237,104 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
         ],
       ),
     );
+    // <<< КОНЕЦ: ИСПРАВЛЕНИЕ >>>
+  }
+
+  Widget _buildMessagesList(BuildContext context, List<ChatMessage> messages, bool hasMore) {
+    const double avatarSize = 16.0 * 2;
+    const double avatarPadding = 8.0;
+    final double avatarSpace = avatarSize + avatarPadding;
+
+    return GestureDetector(
+      onTap: () {
+        if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
+        _resetHighlight();
+        FocusScope.of(context).unfocus();
+      },
+      child: ListView.builder(
+        reverse: true,
+        controller: _scrollController,
+        itemCount: messages.length + (hasMore ? 1 : 0),
+        padding: const EdgeInsets.all(8.0),
+        itemBuilder: (context, index) {
+          if (hasMore && index == messages.length) {
+            return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()));
+          }
+
+          final reversedIndex = messages.length - 1 - index;
+          final message = messages[reversedIndex];
+
+          final prevMessage = (reversedIndex > 0) ? messages[reversedIndex - 1] : null;
+          final nextMessage = (reversedIndex < messages.length - 1) ? messages[reversedIndex + 1] : null;
+
+          final bool isFirstInGroup = prevMessage == null ||
+              prevMessage.sender.userId != message.sender.userId ||
+              message.timestamp.difference(prevMessage.timestamp).inMinutes.abs() >= 5 ||
+              prevMessage.isCurrentUser != message.isCurrentUser;
+
+          final bool isLastInGroup = nextMessage == null ||
+              nextMessage.sender.userId != message.sender.userId ||
+              nextMessage.timestamp.difference(message.timestamp).inMinutes.abs() >= 5 ||
+              nextMessage.isCurrentUser != message.isCurrentUser;
+
+          return ChatMessageBubble(
+            key: message.messageKey,
+            message: message,
+            isFirstInGroup: isFirstInGroup,
+            isLastInGroup: isLastInGroup,
+            isHighlighted: _highlightedMessageId == message.id,
+            avatarSpace: avatarSpace,
+            onReply: () => _startReply(message),
+            onEdit: message.isCurrentUser ? () => _startEdit(message) : null,
+            onDelete: message.isCurrentUser ? () => _deleteMessage(message) : null,
+            onCopy: () => _copyMessageText(message),
+            onQuotedMessageTap: (replyToId) {
+              try {
+                final key = messages.firstWhere((m) => m.id == replyToId).messageKey;
+                _scrollToMessageAndHighlight(key, replyToId);
+              } catch (_) {}
+            },
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildReplyOrEditHeader(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final messages = context.watch<ChatProvider>().messagesForTeam(widget.teamId);
 
     String title;
     String content;
-    ChatMessage? targetMessage = _isEditing
-        ? _messages.firstWhere((m) => m.id == _editingMessageId, orElse: () => _replyingToMessage!)
-        : _replyingToMessage;
+    ChatMessage? targetMessage;
 
-    if (targetMessage == null) return const SizedBox.shrink();
-
-
-    if (_isEditing && _editingMessageId != null) {
-      final editingMsg = _messages.firstWhere((m) => m.id == _editingMessageId, orElse: () => targetMessage);
+    if (_isEditing) {
       title = "Редактирование сообщения";
-      content = editingMsg.text;
+      content = _editingMessageOriginalText;
+      try {
+        targetMessage = messages.firstWhere((m) => m.id == _editingMessageId, orElse: () => _replyingToMessage!);
+      } catch (e) {
+        targetMessage = null;
+      }
     } else if (_replyingToMessage != null) {
       title = "Ответ на ${ _replyingToMessage!.isCurrentUser ? 'ваше сообщение' : _replyingToMessage!.sender.login}";
       content = _replyingToMessage!.text;
+      targetMessage = _replyingToMessage;
     } else {
       return const SizedBox.shrink();
     }
 
     Widget headerRow = Row(
       children: [
-        Icon(
-          _isEditing ? Icons.edit_outlined : Icons.reply_rounded,
-          color: colorScheme.primary,
-          size: 20,
-        ),
+        Icon( _isEditing ? Icons.edit_outlined : Icons.reply_rounded, color: colorScheme.primary, size: 20, ),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: theme.textTheme.labelMedium?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                content,
-                style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              Text(title, style: theme.textTheme.labelMedium?.copyWith(color: colorScheme.primary, fontWeight: FontWeight.bold)),
+              Text(content, style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
             ],
           ),
         ),
@@ -506,11 +348,9 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
     );
 
     Widget tappableHeader = headerRow;
-    if (_replyingToMessage != null && _replyingToMessage!.messageKey != null) {
+    if (targetMessage != null) {
       tappableHeader = InkWell(
-        onTap: () {
-          _scrollToMessageAndHighlight(_replyingToMessage!.messageKey, _replyingToMessage!.id);
-        },
+        onTap: () => _scrollToMessageAndHighlight(targetMessage!.messageKey, targetMessage.id),
         child: headerRow,
       );
     }
@@ -528,25 +368,19 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
   Widget _buildMessageInputField(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     return Material(
       elevation: 8.0,
       color: colorScheme.surface,
       child: Padding(
         padding: EdgeInsets.only(
-          left: 8.0,
-          right: 8.0,
-          top: 8.0,
-          bottom: 8.0 + (_showEmojiPicker ? 0 : (MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom)),
+          left: 8.0, right: 8.0, top: 8.0,
+          bottom: 8.0 + (_showEmojiPicker ? 0 : MediaQuery.of(context).viewInsets.bottom),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             IconButton(
-              icon: Icon(
-                _showEmojiPicker ? Icons.keyboard_rounded : Icons.emoji_emotions_outlined,
-                color: colorScheme.onSurfaceVariant,
-              ),
+              icon: Icon(_showEmojiPicker ? Icons.keyboard_rounded : Icons.emoji_emotions_outlined, color: colorScheme.onSurfaceVariant),
               onPressed: _toggleEmojiPicker,
               tooltip: "Смайлики",
             ),
@@ -560,18 +394,13 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
                 textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   hintText: _isEditing ? "Редактировать..." : _replyingToMessage != null ? "Ответить..." : "Сообщение...",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24.0),
-                    borderSide: BorderSide.none,
-                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(24.0), borderSide: BorderSide.none),
                   filled: true,
                   fillColor: colorScheme.surfaceContainerHighest,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                 ),
                 onTap: () {
-                  if (_showEmojiPicker && mounted) {
-                    setState(() { _showEmojiPicker = false; });
-                  }
+                  if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
                 },
               ),
             ),
@@ -596,9 +425,7 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
     return SizedBox(
       height: 250,
       child: EmojiPicker(
-        onEmojiSelected: (Category? category, Emoji emoji) {
-          _onEmojiSelected(emoji);
-        },
+        onEmojiSelected: (Category? category, Emoji emoji) => _onEmojiSelected(emoji),
         onBackspacePressed: _onBackspacePressed,
         config: Config(
           height: 250,
@@ -616,9 +443,7 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
             iconColor: theme.colorScheme.onSurfaceVariant,
             dividerColor: theme.colorScheme.outlineVariant.withOpacity(0.5),
           ),
-          bottomActionBarConfig: BottomActionBarConfig(
-            enabled: false,
-          ),
+          bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
           searchViewConfig: SearchViewConfig(
             backgroundColor: theme.colorScheme.surfaceContainerLowest,
             buttonIconColor: theme.colorScheme.primary,
@@ -629,12 +454,11 @@ class _TeamChatWidgetState extends State<TeamChatWidget> {
   }
 }
 
-
-// --- ChatMessageBubble ---
 class ChatMessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isFirstInGroup;
   final bool isLastInGroup;
+  final bool isHighlighted;
   final double avatarSpace;
   final VoidCallback? onReply;
   final VoidCallback? onEdit;
@@ -647,6 +471,7 @@ class ChatMessageBubble extends StatelessWidget {
     required this.message,
     required this.isFirstInGroup,
     required this.isLastInGroup,
+    required this.isHighlighted,
     required this.avatarSpace,
     this.onReply,
     this.onEdit,
@@ -661,13 +486,13 @@ class ChatMessageBubble extends StatelessWidget {
     final theme = Theme.of(context);
 
     if (onReply != null) {
-      configs.add(ContextMenuButtonConfig("Ответить", icon: Icon(Icons.reply_rounded, size: 20), onPressed: () => onReply!()));
+      configs.add(ContextMenuButtonConfig("Ответить", icon: const Icon(Icons.reply_rounded, size: 20), onPressed: () => onReply!()));
     }
-    if (onEdit != null && message.isCurrentUser) {
-      configs.add(ContextMenuButtonConfig("Редактировать", icon: Icon(Icons.edit_outlined, size: 20), onPressed: () => onEdit!()));
+    if (onEdit != null) {
+      configs.add(ContextMenuButtonConfig("Редактировать", icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => onEdit!()));
     }
     if (onCopy != null) {
-      configs.add(ContextMenuButtonConfig("Копировать текст", icon: Icon(Icons.copy_all_rounded, size: 20), onPressed: () => onCopy!()));
+      configs.add(ContextMenuButtonConfig("Копировать текст", icon: const Icon(Icons.copy_all_rounded, size: 20), onPressed: () => onCopy!()));
     }
     if (onDelete != null) {
       configs.add(ContextMenuButtonConfig(
@@ -679,7 +504,6 @@ class ChatMessageBubble extends StatelessWidget {
     return configs;
   }
 
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -690,15 +514,12 @@ class ChatMessageBubble extends StatelessWidget {
       color: byMe ? colorScheme.onPrimaryContainer : colorScheme.onSurface,
       fontSize: 15.5, height: 1.4,
     );
-    final replyMarkdownStyleSheet = MarkdownStyleSheet( // Отдельный стиль для цитаты
-      p: theme.textTheme.bodySmall?.copyWith( // Используем bodySmall для цитаты
-        color: byMe ? colorScheme.onPrimaryContainer.withOpacity(0.9) : colorScheme.onSurfaceVariant.withOpacity(0.9), // Чуть приглушеннее
-        fontSize: 13.5, // Меньше основного текста
+    final replyMarkdownStyleSheet = MarkdownStyleSheet(
+      p: theme.textTheme.bodySmall?.copyWith(
+        color: byMe ? colorScheme.onPrimaryContainer.withOpacity(0.9) : colorScheme.onSurfaceVariant.withOpacity(0.9),
+        fontSize: 13.5,
         height: 1.3,
       ),
-      // Можно определить и другие стили для цитаты если нужно (ссылки, код и т.д.)
-      // Например, если в цитате есть код, он будет отрендерен с этим p-стилем,
-      // либо нужно будет определить для него code: стиль здесь.
     );
 
     final mainMarkdownStyleSheet = MarkdownStyleSheet(
@@ -712,10 +533,10 @@ class ChatMessageBubble extends StatelessWidget {
       strong: defaultPStyle?.copyWith(fontWeight: FontWeight.w600),
       em: defaultPStyle?.copyWith(fontStyle: FontStyle.italic),
       a: defaultPStyle?.copyWith(color: byMe ? colorScheme.secondary : colorScheme.primary, decoration: TextDecoration.underline, decorationColor: byMe ? colorScheme.secondary.withOpacity(0.7) : colorScheme.primary.withOpacity(0.7)),
-      blockquoteDecoration: BoxDecoration(color: (byMe ? colorScheme.primaryContainer : colorScheme.surfaceContainerHighest).withOpacity(0.4), border: Border(left: BorderSide(color: byMe ? colorScheme.primary.withOpacity(0.7) : colorScheme.outline.withOpacity(0.7), width: 4)),),
+      blockquoteDecoration: BoxDecoration(color: (byMe ? colorScheme.primaryContainer : colorScheme.surfaceContainerHighest).withOpacity(0.4), border: Border(left: BorderSide(color: byMe ? colorScheme.primary.withOpacity(0.7) : colorScheme.outline.withOpacity(0.7), width: 4))),
       blockquote: defaultPStyle?.copyWith(color: byMe ? colorScheme.onPrimaryContainer.withOpacity(0.85) : colorScheme.onSurface.withOpacity(0.85), fontSize: 15),
       codeblockPadding: const EdgeInsets.all(12),
-      codeblockDecoration: BoxDecoration(color: (byMe ? colorScheme.primary.withOpacity(0.08) : colorScheme.surface.withOpacity(0.7)), borderRadius: BorderRadius.circular(8), border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.4)),),
+      codeblockDecoration: BoxDecoration(color: (byMe ? colorScheme.primary.withOpacity(0.08) : colorScheme.surface.withOpacity(0.7)), borderRadius: BorderRadius.circular(8), border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.4))),
       listBullet: defaultPStyle,
       horizontalRuleDecoration: BoxDecoration(border: Border(top: BorderSide(width: 1.5, color: colorScheme.outlineVariant.withOpacity(0.6))),),
     );
@@ -731,10 +552,10 @@ class ChatMessageBubble extends StatelessWidget {
     );
 
     Widget replyContentWidget = const SizedBox.shrink();
-    if (message.isReply && message.replyToMessageId != null) {
+    if (message.isReply) {
       replyContentWidget = InkWell(
         onTap: () {
-          if (onQuotedMessageTap != null) {
+          if (onQuotedMessageTap != null && message.replyToMessageId != null) {
             onQuotedMessageTap!(message.replyToMessageId!);
           }
         },
@@ -747,35 +568,32 @@ class ChatMessageBubble extends StatelessWidget {
               borderRadius: BorderRadius.circular(8.0),
               border: Border(left: BorderSide(color: byMe ? colorScheme.primary : colorScheme.secondary, width: 3))
           ),
-          child: Column( // Используем Column для вертикального расположения
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start, // Имя и иконка выровнены по верху
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded( // Даем Expanded тексту имени, чтобы он мог переноситься, если очень длинный
+                  Expanded(
                     child: Text(
-                      message.replyToSenderLogin!,
+                      message.replyToSenderLogin ?? "Unknown User",
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: byMe ? colorScheme.primary : colorScheme.secondary,
                         fontWeight: FontWeight.bold,
-                        fontSize: 13.5, // Чуть меньше
+                        fontSize: 13.5,
                       ),
-                      // overflow: TextOverflow.ellipsis, // Убираем, чтобы видеть полный текст если он переносится
                     ),
                   ),
-                  const SizedBox(width: 4), // Небольшой отступ
+                  const SizedBox(width: 4),
                   Icon(Icons.reply_rounded, size: 14, color: (byMe ? colorScheme.primary : colorScheme.secondary).withOpacity(0.7))
                 ],
               ),
-              const SizedBox(height: 2), // Маленький отступ между именем и текстом цитаты
-              // MarkdownBody для текста цитаты, чтобы он корректно переносился
+              const SizedBox(height: 2),
               MarkdownBody(
                 data: message.replyToText!,
                 styleSheet: replyMarkdownStyleSheet,
-                // selectable: false, // Обычно текст цитаты не делают выделяемым
               ),
             ],
           ),
@@ -784,28 +602,13 @@ class ChatMessageBubble extends StatelessWidget {
     }
 
     final bool showEditedMark = message.isEdited;
-    final bool showStatusAndTime = byMe || (!byMe && !showEditedMark) || (!byMe && showEditedMark); // Показываем время всегда, если не свои - то и "изм."
+    final bool showStatusAndTime = byMe || (!byMe && !showEditedMark) || (!byMe && showEditedMark);
 
-    // Уменьшаем зарезервированную ширину для времени/статуса
-    // "HH:mm" ~30px, "✓✓" ~16px, "изм." ~20px. Отступы ~2+3=5px
-    // Максимум: изм. + HH:mm + ✓✓ = 20 + 30 + 16 + 5 = 71
-    // Только HH:mm = 30 + 2 = 32
     double timeStatusReservedWidth = 0;
-    double timeStampHorizontalPadding = 0; // Отступ для блока времени/статуса
-
-    if (byMe) { // Свои сообщения
-      timeStatusReservedWidth += 30; // Время
-      timeStatusReservedWidth += 16; // Статус
-      if (showEditedMark) timeStatusReservedWidth += 20; // изм.
-      timeStatusReservedWidth += 5; // Общие отступы (2+3)
-      timeStampHorizontalPadding = 3.0;
-    } else { // Чужие сообщения
-      timeStatusReservedWidth += 30; // Время
-      if (showEditedMark) timeStatusReservedWidth += 20; // изм.
-      timeStatusReservedWidth += 2; // Общий отступ
-      timeStampHorizontalPadding = 0; // Для чужих нет дополнительного отступа
-    }
-    timeStatusReservedWidth = timeStatusReservedWidth.clamp(32.0, 70.0);
+    double timeStampHorizontalPadding = 0;
+    if (byMe) { timeStatusReservedWidth = 71; timeStampHorizontalPadding = 3.0; }
+    else { timeStatusReservedWidth = 52; timeStampHorizontalPadding = 0; }
+    timeStatusReservedWidth = timeStatusReservedWidth.clamp(32.0, 75.0);
 
 
     Widget mainContentColumn = Column(
@@ -829,10 +632,7 @@ class ChatMessageBubble extends StatelessWidget {
           children: [
             Padding(
               padding: EdgeInsets.only(
-                // Отступ справа, чтобы текст не залезал под время/статус
                 right: showStatusAndTime ? timeStatusReservedWidth : 0.0,
-                // Добавляем небольшой отступ снизу, если время/статус будут на новой строке
-                // Это нужно, чтобы текст и время/статус не были слишком близко по вертикали
                 bottom: showStatusAndTime ? 4.0 : 0.0,
               ),
               child: MarkdownBody(
@@ -841,11 +641,11 @@ class ChatMessageBubble extends StatelessWidget {
                 styleSheet: mainMarkdownStyleSheet,
               ),
             ),
-            if (showStatusAndTime) // Показываем блок времени/статуса только если нужно
+            if (showStatusAndTime)
               Positioned(
                 bottom: 0,
                 right: 0,
-                child: Padding( // Добавляем небольшой отступ для всего блока времени/статуса
+                child: Padding(
                   padding: EdgeInsets.only(left: timeStampHorizontalPadding),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -894,7 +694,7 @@ class ChatMessageBubble extends StatelessWidget {
       duration: const Duration(milliseconds: 300),
       padding: const EdgeInsets.only(top: 8.0, left: 12.0, right: 12.0, bottom: 6.0),
       decoration: BoxDecoration(
-        color: message.isHighlighted
+        color: isHighlighted
             ? (byMe ? colorScheme.primaryContainer.withOpacity(0.7) : colorScheme.secondaryContainer.withOpacity(0.5) )
             : (byMe ? colorScheme.primaryContainer : (theme.brightness == Brightness.light ? Colors.white : colorScheme.surfaceVariant)),
         borderRadius: messageBorderRadius,
@@ -905,7 +705,7 @@ class ChatMessageBubble extends StatelessWidget {
             offset: const Offset(1, 2),
           )
         ] : null,
-        border: message.isHighlighted
+        border: isHighlighted
             ? Border.all(color: colorScheme.secondary, width: 1.5)
             : null,
       ),
@@ -927,14 +727,13 @@ class ChatMessageBubble extends StatelessWidget {
             ),
           if (!byMe && !isLastInGroup)
             SizedBox(width: avatarSpace),
-
           Flexible(
             child: Container(
               constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
               margin: EdgeInsets.only(
                 top: isFirstInGroup ? 8.0 : 2.0,
                 bottom: 2.0,
-                left: byMe ? MediaQuery.of(context).size.width * 0.1 - avatarSpace : 0,
+                left: byMe ? avatarSpace : 0,
               ),
               child: bubble,
             ),

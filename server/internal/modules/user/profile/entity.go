@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"context"
 	"mime/multipart"
 	"net/http"
 	gouser "server/internal/modules/user" // GORM модели User и UserSetting
@@ -9,63 +10,65 @@ import (
 
 // UserProfileResponse - DTO для ответа GetUser
 type UserProfileResponse struct {
-	UserID                uint    `json:"user_id"`
-	Login                 string  `json:"login"` // Убрал omitempty, login всегда должен быть
-	Email                 string  `json:"email"` // Убрал omitempty
-	AvatarURL             *string `json:"avatar_url,omitempty"`
-	Theme                 string  `json:"theme"`
-	AccentColor           string  `json:"accent_color"`
-	IsSidebarCollapsed    bool    `json:"is_sidebar_collapsed"`
-	HasMobileDeviceLinked bool    `json:"has_mobile_device_linked"`
-	// Настройки уведомлений
-	NotificationsEmailEnabled     bool `json:"notifications_email_enabled"`
-	NotificationsPushTaskAssigned bool `json:"notifications_push_task_assigned"`
-	NotificationsPushTaskDeadline bool `json:"notifications_push_task_deadline"`
-	NotificationsPushTeamMention  bool `json:"notifications_push_team_mention"`
+	UserID                             uint                              `json:"user_id"`
+	Login                              string                            `json:"login"`
+	Email                              string                            `json:"email"`
+	AvatarURL                          *string                           `json:"avatar_url,omitempty"`
+	Theme                              string                            `json:"theme"`
+	AccentColor                        string                            `json:"accent_color"`
+	IsSidebarCollapsed                 bool                              `json:"is_sidebar_collapsed"`
+	HasMobileDeviceLinked              bool                              `json:"has_mobile_device_linked"`
+	EmailNotificationsLevel            gouser.NotificationLevel          `json:"email_notifications_level"`
+	PushNotificationsTasksLevel        gouser.PushTaskNotificationLevel  `json:"push_notifications_tasks_level"`
+	PushNotificationsChatMentions      bool                              `json:"push_notifications_chat_mentions"`
+	TaskDeadlineRemindersEnabled       bool                              `json:"task_deadline_reminders_enabled"`
+	TaskDeadlineReminderTimePreference gouser.DeadlineReminderPreference `json:"task_deadline_reminder_time_preference"`
 }
 
-// UpdateUserProfileRequest - DTO для PUT запроса на обновление профиля (полное или частичное)
-// Для PUT можно ожидать все поля, которые могут быть изменены.
-// Клиент должен отправлять все текущие значения для полей, которые не меняет.
-// Или мы можем сделать все поля указателями и обрабатывать только не-nil (как для PATCH).
-// Для простоты PUT, оставим как есть - клиент шлет все значения.
 type UpdateUserProfileRequest struct {
-	Login              *string `json:"login,omitempty" validate:"omitempty,min=1,max=50"` // Если не omitempty, то min=1
-	Theme              *string `json:"theme,omitempty" validate:"omitempty,oneof=light dark system"`
-	AccentColor        *string `json:"accent_color,omitempty" validate:"omitempty,hexcolor|rgb|rgba"`
-	IsSidebarCollapsed *bool   `json:"is_sidebar_collapsed,omitempty"`
-	ResetAvatar        *bool   `json:"reset_avatar,omitempty"`
-	// Настройки уведомлений для PUT (если хотим их обновлять через этот же эндпоинт)
-	NotificationsEmailEnabled     *bool `json:"notifications_email_enabled,omitempty"`
-	NotificationsPushTaskAssigned *bool `json:"notifications_push_task_assigned,omitempty"`
-	NotificationsPushTaskDeadline *bool `json:"notifications_push_task_deadline,omitempty"`
-	NotificationsPushTeamMention  *bool `json:"notifications_push_team_mention,omitempty"`
+	Login                              *string                            `json:"login,omitempty" validate:"omitempty,min=1,max=50"`
+	Theme                              *string                            `json:"theme,omitempty" validate:"omitempty,oneof=light dark system"`
+	AccentColor                        *string                            `json:"accent_color,omitempty" validate:"omitempty,hexcolor|rgb|rgba"`
+	IsSidebarCollapsed                 *bool                              `json:"is_sidebar_collapsed,omitempty"`
+	ResetAvatar                        *bool                              `json:"reset_avatar,omitempty"`
+	EmailNotificationsLevel            *gouser.NotificationLevel          `json:"email_notifications_level,omitempty" validate:"omitempty,oneof=all important none"`
+	PushNotificationsTasksLevel        *gouser.PushTaskNotificationLevel  `json:"push_notifications_tasks_level,omitempty" validate:"omitempty,oneof=all my_tasks none"`
+	PushNotificationsChatMentions      *bool                              `json:"push_notifications_chat_mentions,omitempty"`
+	TaskDeadlineRemindersEnabled       *bool                              `json:"task_deadline_reminders_enabled,omitempty"`
+	TaskDeadlineReminderTimePreference *gouser.DeadlineReminderPreference `json:"task_deadline_reminder_time_preference,omitempty" validate:"omitempty,oneof=one_hour one_day two_days"`
 }
 
-// PatchUserProfileRequest - DTO для PATCH запроса
-// Все поля - указатели, чтобы понимать, какие именно поля пришли в запросе.
 type PatchUserProfileRequest struct {
-	Login                         *string `json:"login,omitempty" validate:"omitempty,min=1,max=50"`
-	Theme                         *string `json:"theme,omitempty" validate:"omitempty,oneof=light dark system"`
-	AccentColor                   *string `json:"accent_color,omitempty" validate:"omitempty,hexcolor|rgb|rgba"`
-	IsSidebarCollapsed            *bool   `json:"is_sidebar_collapsed,omitempty"`
-	ResetAvatar                   *bool   `json:"reset_avatar,omitempty"`             // Для PATCH тоже может быть актуально
-	HasMobileDeviceLinked         *bool   `json:"has_mobile_device_linked,omitempty"` // Можно обновлять через PATCH
-	NotificationsEmailEnabled     *bool   `json:"notifications_email_enabled,omitempty"`
-	NotificationsPushTaskAssigned *bool   `json:"notifications_push_task_assigned,omitempty"`
-	NotificationsPushTaskDeadline *bool   `json:"notifications_push_task_deadline,omitempty"`
-	NotificationsPushTeamMention  *bool   `json:"notifications_push_team_mention,omitempty"`
+	Login                              *string                            `json:"login,omitempty" validate:"omitempty,min=1,max=50"`
+	Theme                              *string                            `json:"theme,omitempty" validate:"omitempty,oneof=light dark system"`
+	AccentColor                        *string                            `json:"accent_color,omitempty" validate:"omitempty,hexcolor|rgb|rgba"`
+	IsSidebarCollapsed                 *bool                              `json:"is_sidebar_collapsed,omitempty"`
+	ResetAvatar                        *bool                              `json:"reset_avatar,omitempty"`
+	HasMobileDeviceLinked              *bool                              `json:"has_mobile_device_linked,omitempty"`
+	EmailNotificationsLevel            *gouser.NotificationLevel          `json:"email_notifications_level,omitempty" validate:"omitempty,oneof=all important none"`
+	PushNotificationsTasksLevel        *gouser.PushTaskNotificationLevel  `json:"push_notifications_tasks_level,omitempty" validate:"omitempty,oneof=all my_tasks none"`
+	PushNotificationsChatMentions      *bool                              `json:"push_notifications_chat_mentions,omitempty"`
+	TaskDeadlineRemindersEnabled       *bool                              `json:"task_deadline_reminders_enabled,omitempty"`
+	TaskDeadlineReminderTimePreference *gouser.DeadlineReminderPreference `json:"task_deadline_reminder_time_preference,omitempty" validate:"omitempty,oneof=one_hour one_day two_days"`
+}
+
+type RegisterDeviceTokenRequest struct {
+	DeviceToken string `json:"device_token" validate:"required"`
+	DeviceType  string `json:"device_type" validate:"required,oneof=android ios web"`
+}
+
+// UnregisterDeviceTokenRequest - DTO для удаления токена устройства.
+type UnregisterDeviceTokenRequest struct {
+	DeviceToken string `json:"device_token" validate:"required"`
 }
 
 // --- Конвертеры ---
 
 // ToUserProfileResponse конвертирует GORM модели gouser.User и gouser.UserSetting в DTO UserProfileResponse.
-// s3BaseURLForAvatars это https://{ENDPOINT}/{BUCKET_NAME}
 func ToUserProfileResponse(user *gouser.User, settings *gouser.UserSetting, s3BaseURLForAvatars string) *UserProfileResponse {
-	if user == nil { // Если нет пользователя, то и настроек быть не должно
+	if user == nil {
 		return nil
 	}
-
 	var avatarFinalURL *string
 	if user.AvatarS3Key != nil && *user.AvatarS3Key != "" && s3BaseURLForAvatars != "" {
 		cleanBaseURL := strings.TrimSuffix(s3BaseURLForAvatars, "/")
@@ -73,64 +76,48 @@ func ToUserProfileResponse(user *gouser.User, settings *gouser.UserSetting, s3Ba
 		urlValue := cleanBaseURL + "/" + cleanKey
 		avatarFinalURL = &urlValue
 	}
-
-	// Если settings nil (на случай, если триггер не сработал или данные неполные), используем дефолты
 	theme := "system"
 	accentColor := "#007AFF"
 	sidebarCollapsed := false
-	notificationsEmailEnabled := false // По дефолту false
-	notificationsPushTaskAssigned := false
-	notificationsPushTaskDeadline := false
-	notificationsPushTeamMention := false
+	emailLevel := gouser.NotificationLevelImportant
+	pushTasksLevel := gouser.PushTaskNotificationLevelMyTasks
+	pushChatMentions := true
+	deadlineRemindersEnabled := true
+	deadlinePref := gouser.DeadlineReminderPreferenceOneDay
 
 	if settings != nil {
 		theme = settings.Theme
 		accentColor = settings.AccentColor
 		sidebarCollapsed = settings.SidebarCollapsed
-		notificationsEmailEnabled = settings.NotificationsEmailEnabled
-		notificationsPushTaskAssigned = settings.NotificationsPushTaskAssigned
-		notificationsPushTaskDeadline = settings.NotificationsPushTaskDeadline
-		notificationsPushTeamMention = settings.NotificationsPushTeamMention
+		emailLevel = settings.EmailNotificationsLevel
+		pushTasksLevel = settings.PushNotificationsTasksLevel
+		pushChatMentions = settings.PushNotificationsChatMentions
+		deadlineRemindersEnabled = settings.TaskDeadlineRemindersEnabled
+		deadlinePref = settings.TaskDeadlineReminderTimePreference
 	}
-
 	return &UserProfileResponse{
-		UserID:                        user.UserId,
-		Login:                         user.Login,
-		Email:                         user.Email,
-		AvatarURL:                     avatarFinalURL,
-		Theme:                         theme,
-		AccentColor:                   accentColor,
-		IsSidebarCollapsed:            sidebarCollapsed,
-		HasMobileDeviceLinked:         user.HasMobileDeviceLinked,
-		NotificationsEmailEnabled:     notificationsEmailEnabled,
-		NotificationsPushTaskAssigned: notificationsPushTaskAssigned,
-		NotificationsPushTaskDeadline: notificationsPushTaskDeadline,
-		NotificationsPushTeamMention:  notificationsPushTeamMention,
+		UserID: user.UserId, Login: user.Login, Email: user.Email,
+		AvatarURL: avatarFinalURL, Theme: theme, AccentColor: accentColor,
+		IsSidebarCollapsed: sidebarCollapsed, HasMobileDeviceLinked: user.HasMobileDeviceLinked,
+		EmailNotificationsLevel: emailLevel, PushNotificationsTasksLevel: pushTasksLevel,
+		PushNotificationsChatMentions: pushChatMentions, TaskDeadlineRemindersEnabled: deadlineRemindersEnabled,
+		TaskDeadlineReminderTimePreference: deadlinePref,
 	}
 }
 
-// ApplyUpdateToUserAndSettings применяет изменения из UpdateUserProfileRequest
-// к GORM моделям User и UserSetting.
-// s3KeyForAvatar: ключ нового аватара, или nil для сброса/отсутствия изменений в аватаре.
 func ApplyUpdateToUserAndSettings(
-	existingUser *gouser.User,
-	existingSettings *gouser.UserSetting,
-	req *UpdateUserProfileRequest,
-	s3KeyForAvatar *string,
+	existingUser *gouser.User, existingSettings *gouser.UserSetting,
+	req *UpdateUserProfileRequest, s3KeyForAvatar *string,
 ) (userChanged bool, settingsChanged bool) {
 	if existingUser == nil || existingSettings == nil {
 		return false, false
 	}
-
-	uChanged := false
-	sChanged := false
-
+	uChanged, sChanged := false, false
 	if req.Login != nil && *req.Login != existingUser.Login {
 		existingUser.Login = *req.Login
 		uChanged = true
 	}
-	// Обработка аватара
-	if s3KeyForAvatar != existingUser.AvatarS3Key { // Сравниваем указатели и значения
+	if s3KeyForAvatar != existingUser.AvatarS3Key {
 		if (s3KeyForAvatar == nil && existingUser.AvatarS3Key != nil) ||
 			(s3KeyForAvatar != nil && existingUser.AvatarS3Key == nil) ||
 			(s3KeyForAvatar != nil && existingUser.AvatarS3Key != nil && *s3KeyForAvatar != *existingUser.AvatarS3Key) {
@@ -138,8 +125,6 @@ func ApplyUpdateToUserAndSettings(
 			uChanged = true
 		}
 	}
-
-	// Обновление UserSettings
 	if req.Theme != nil && *req.Theme != existingSettings.Theme {
 		existingSettings.Theme = *req.Theme
 		sChanged = true
@@ -152,66 +137,54 @@ func ApplyUpdateToUserAndSettings(
 		existingSettings.SidebarCollapsed = *req.IsSidebarCollapsed
 		sChanged = true
 	}
-	if req.NotificationsEmailEnabled != nil && *req.NotificationsEmailEnabled != existingSettings.NotificationsEmailEnabled {
-		existingSettings.NotificationsEmailEnabled = *req.NotificationsEmailEnabled
+	if req.EmailNotificationsLevel != nil && *req.EmailNotificationsLevel != existingSettings.EmailNotificationsLevel {
+		existingSettings.EmailNotificationsLevel = *req.EmailNotificationsLevel
 		sChanged = true
 	}
-	if req.NotificationsPushTaskAssigned != nil && *req.NotificationsPushTaskAssigned != existingSettings.NotificationsPushTaskAssigned {
-		existingSettings.NotificationsPushTaskAssigned = *req.NotificationsPushTaskAssigned
+	if req.PushNotificationsTasksLevel != nil && *req.PushNotificationsTasksLevel != existingSettings.PushNotificationsTasksLevel {
+		existingSettings.PushNotificationsTasksLevel = *req.PushNotificationsTasksLevel
 		sChanged = true
 	}
-	if req.NotificationsPushTaskDeadline != nil && *req.NotificationsPushTaskDeadline != existingSettings.NotificationsPushTaskDeadline {
-		existingSettings.NotificationsPushTaskDeadline = *req.NotificationsPushTaskDeadline
+	if req.PushNotificationsChatMentions != nil && *req.PushNotificationsChatMentions != existingSettings.PushNotificationsChatMentions {
+		existingSettings.PushNotificationsChatMentions = *req.PushNotificationsChatMentions
 		sChanged = true
 	}
-	if req.NotificationsPushTeamMention != nil && *req.NotificationsPushTeamMention != existingSettings.NotificationsPushTeamMention {
-		existingSettings.NotificationsPushTeamMention = *req.NotificationsPushTeamMention
+	if req.TaskDeadlineRemindersEnabled != nil && *req.TaskDeadlineRemindersEnabled != existingSettings.TaskDeadlineRemindersEnabled {
+		existingSettings.TaskDeadlineRemindersEnabled = *req.TaskDeadlineRemindersEnabled
 		sChanged = true
 	}
-	// Поле HasMobileDeviceLinked не обновляется через этот DTO для PUT, оно для PATCH или спец. эндпоинта
-
+	if req.TaskDeadlineReminderTimePreference != nil && *req.TaskDeadlineReminderTimePreference != existingSettings.TaskDeadlineReminderTimePreference {
+		existingSettings.TaskDeadlineReminderTimePreference = *req.TaskDeadlineReminderTimePreference
+		sChanged = true
+	}
 	return uChanged, sChanged
 }
 
-// ApplyPatchToUserAndSettings применяет изменения из PatchUserProfileRequest
-// к GORM моделям User и UserSetting.
 func ApplyPatchToUserAndSettings(
-	existingUser *gouser.User,
-	existingSettings *gouser.UserSetting,
-	req *PatchUserProfileRequest, // Для PATCH запроса
-	s3KeyForAvatar *string, // nil если аватар не меняется или сбрасывается (если req.ResetAvatar=true)
+	existingUser *gouser.User, existingSettings *gouser.UserSetting,
+	req *PatchUserProfileRequest, s3KeyForAvatar *string,
 ) (userChanged bool, settingsChanged bool) {
 	if existingUser == nil || existingSettings == nil || req == nil {
 		return false, false
 	}
-
-	uChanged := false
-	sChanged := false
-
+	uChanged, sChanged := false, false
 	if req.Login != nil {
 		if *req.Login != existingUser.Login {
 			existingUser.Login = *req.Login
 			uChanged = true
 		}
 	}
-
-	// Обработка аватара для PATCH:
-	// Если req.ResetAvatar == true, s3KeyForAvatar должен быть nil (устанавливается в UseCase)
-	// Если s3KeyForAvatar не nil, значит загружен новый файл.
-	if req.ResetAvatar != nil && *req.ResetAvatar { // Если пришел флаг сброса
+	if req.ResetAvatar != nil && *req.ResetAvatar {
 		if existingUser.AvatarS3Key != nil {
 			existingUser.AvatarS3Key = nil
 			uChanged = true
 		}
-	} else if s3KeyForAvatar != nil { // Если есть новый ключ (т.е. был загружен файл)
+	} else if s3KeyForAvatar != nil {
 		if existingUser.AvatarS3Key == nil || *s3KeyForAvatar != *existingUser.AvatarS3Key {
 			existingUser.AvatarS3Key = s3KeyForAvatar
 			uChanged = true
 		}
 	}
-	// Если req.ResetAvatar не пришел и s3KeyForAvatar тоже nil, значит аватар не менялся.
-
-	// Обновление UserSettings
 	if req.Theme != nil {
 		if *req.Theme != existingSettings.Theme {
 			existingSettings.Theme = *req.Theme
@@ -230,64 +203,101 @@ func ApplyPatchToUserAndSettings(
 			sChanged = true
 		}
 	}
-	if req.HasMobileDeviceLinked != nil { // Обновление HasMobileDeviceLinked
+	if req.HasMobileDeviceLinked != nil {
 		if *req.HasMobileDeviceLinked != existingUser.HasMobileDeviceLinked {
 			existingUser.HasMobileDeviceLinked = *req.HasMobileDeviceLinked
 			uChanged = true
 		}
 	}
-	if req.NotificationsEmailEnabled != nil {
-		if *req.NotificationsEmailEnabled != existingSettings.NotificationsEmailEnabled {
-			existingSettings.NotificationsEmailEnabled = *req.NotificationsEmailEnabled
+	if req.EmailNotificationsLevel != nil {
+		if *req.EmailNotificationsLevel != existingSettings.EmailNotificationsLevel {
+			existingSettings.EmailNotificationsLevel = *req.EmailNotificationsLevel
 			sChanged = true
 		}
 	}
-	if req.NotificationsPushTaskAssigned != nil {
-		if *req.NotificationsPushTaskAssigned != existingSettings.NotificationsPushTaskAssigned {
-			existingSettings.NotificationsPushTaskAssigned = *req.NotificationsPushTaskAssigned
+	if req.PushNotificationsTasksLevel != nil {
+		if *req.PushNotificationsTasksLevel != existingSettings.PushNotificationsTasksLevel {
+			existingSettings.PushNotificationsTasksLevel = *req.PushNotificationsTasksLevel
 			sChanged = true
 		}
 	}
-	if req.NotificationsPushTaskDeadline != nil {
-		if *req.NotificationsPushTaskDeadline != existingSettings.NotificationsPushTaskDeadline {
-			existingSettings.NotificationsPushTaskDeadline = *req.NotificationsPushTaskDeadline
+	if req.PushNotificationsChatMentions != nil {
+		if *req.PushNotificationsChatMentions != existingSettings.PushNotificationsChatMentions {
+			existingSettings.PushNotificationsChatMentions = *req.PushNotificationsChatMentions
 			sChanged = true
 		}
 	}
-	if req.NotificationsPushTeamMention != nil {
-		if *req.NotificationsPushTeamMention != existingSettings.NotificationsPushTeamMention {
-			existingSettings.NotificationsPushTeamMention = *req.NotificationsPushTeamMention
+	if req.TaskDeadlineRemindersEnabled != nil {
+		if *req.TaskDeadlineRemindersEnabled != existingSettings.TaskDeadlineRemindersEnabled {
+			existingSettings.TaskDeadlineRemindersEnabled = *req.TaskDeadlineRemindersEnabled
 			sChanged = true
 		}
 	}
-
+	if req.TaskDeadlineReminderTimePreference != nil {
+		if *req.TaskDeadlineReminderTimePreference != existingSettings.TaskDeadlineReminderTimePreference {
+			existingSettings.TaskDeadlineReminderTimePreference = *req.TaskDeadlineReminderTimePreference
+			sChanged = true
+		}
+	}
 	return uChanged, sChanged
 }
 
 // --- Интерфейсы для модуля profile ---
+// (Остаются без изменений, т.к. сигнатуры методов контроллера, usecase, repo не меняются из-за этой правки)
 
+type DeviceTokenRepo interface {
+	AddDeviceToken(ctx context.Context, token *gouser.UserDeviceToken) error
+	RemoveDeviceToken(ctx context.Context, userID uint, deviceTokenValue string) error
+	GetDeviceTokensByUserID(ctx context.Context, userID uint) ([]gouser.UserDeviceToken, error)
+	UpdateDeviceTokenLastSeen(ctx context.Context, deviceTokenValue string) error
+	// GetUserDeviceTokens (для UserSettingsProvider) - это GetDeviceTokensByUserID
+}
+
+// Controller (расширяем существующий)
 type Controller interface {
 	GetUser(w http.ResponseWriter, r *http.Request)
-	UpdateUser(w http.ResponseWriter, r *http.Request) // Будет PUT
-	PatchUser(w http.ResponseWriter, r *http.Request)  // <<< НОВЫЙ PATCH
+	UpdateUser(w http.ResponseWriter, r *http.Request)
+	PatchUser(w http.ResponseWriter, r *http.Request)
 	DeleteUser(w http.ResponseWriter, r *http.Request)
+
+	// Новые методы для токенов
+	RegisterDeviceToken(w http.ResponseWriter, r *http.Request)
+	UnregisterDeviceToken(w http.ResponseWriter, r *http.Request)
 }
 
+// UseCase (расширяем существующий)
 type UseCase interface {
 	GetUser(userId uint) (*UserProfileResponse, error)
-	UpdateUser(userID uint, req *UpdateUserProfileRequest, avatarFile *multipart.FileHeader) (*UserProfileResponse, error) // Изменил avatarFile на FileHeader
-	PatchUser(userID uint, req *PatchUserProfileRequest, avatarFile *multipart.FileHeader) (*UserProfileResponse, error)   // <<< НОВЫЙ PATCH
+	UpdateUser(userID uint, req *UpdateUserProfileRequest, avatarFile *multipart.FileHeader) (*UserProfileResponse, error)
+	PatchUser(userID uint, req *PatchUserProfileRequest, avatarFile *multipart.FileHeader) (*UserProfileResponse, error)
 	DeleteUser(userId uint) error
-	// SetMobileDeviceLinked(userID uint, linked bool) error // Может понадобиться отдельный метод
+
+	// Новые методы для токенов
+	RegisterDeviceToken(ctx context.Context, userID uint, tokenValue string, deviceType string) error
+	UnregisterDeviceToken(ctx context.Context, userID uint, tokenValue string) error
+
+	// Методы для UserSettingsProvider (уже часть ProfileUseCase)
+	GetUserNotificationSettings(userID uint) (*gouser.UserSetting, error) // Будет частью GetUser, но можно сделать отдельным
+	GetUserDeviceTokens(userID uint) ([]gouser.UserDeviceToken, error)
+	GetUserEmail(userID uint) (email string, isVerified bool, err error)
 }
 
+// Repo (расширяем существующий)
 type Repo interface {
-	//db
+	// Методы для User и UserSettings
 	GetUserAndSettings(userId uint) (*gouser.User, *gouser.UserSetting, error)
 	UpdateUser(user *gouser.User) error
 	UpdateUserSettings(settings *gouser.UserSetting) error
 	DeleteUser(userId uint) error
-	//s3
+	GetUserEmail(userID uint) (email string, isVerified bool, err error) // Для UserInfoProvider
+
+	// Методы для S3
 	UploadAvatar(bucketName string, s3Key string, avatarBytes []byte, contentType string) (err error)
 	DeleteAvatar(bucketName string, s3Key string) error
+
+	// Методы для Device Tokens (реализуются через DeviceTokenRepo)
+	AddDeviceToken(ctx context.Context, token *gouser.UserDeviceToken) error
+	RemoveDeviceToken(ctx context.Context, userID uint, deviceTokenValue string) error
+	GetDeviceTokensByUserID(ctx context.Context, userID uint) ([]gouser.UserDeviceToken, error)
+	UpdateDeviceTokenLastSeen(ctx context.Context, deviceTokenValue string) error
 }

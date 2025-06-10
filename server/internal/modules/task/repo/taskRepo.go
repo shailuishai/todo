@@ -7,9 +7,11 @@ import (
 type TaskDb interface {
 	CreateTask(taskModel *task.Task) (*task.Task, error)
 	GetTaskByID(taskID uint, userID uint) (*task.Task, error)
-	GetTasks(params task.GetTasksParams) ([]*task.Task, error) // Без totalCount
+	GetTaskByIDIncludingDeleted(taskID uint) (*task.Task, error) // <<< ДОБАВЛЕНО
+	GetTasks(params task.GetTasksParams) ([]*task.Task, error)   // Без totalCount
 	UpdateTask(taskModel *task.Task) (*task.Task, error)
 	DeleteTask(taskID uint, userID uint, isTeamTask bool, deletedByUserID *uint) error
+	DeleteTaskPermanently(taskID uint) error // <<< ДОБАВЛЕНО
 }
 
 type TaskCache interface {
@@ -43,6 +45,10 @@ func (r *repo) GetTaskByID(taskID uint, userID uint) (*task.Task, error) {
 	return r.db.GetTaskByID(taskID, userID)
 }
 
+func (r *repo) GetTaskByIDIncludingDeleted(taskID uint) (*task.Task, error) {
+	return r.db.GetTaskByIDIncludingDeleted(taskID)
+}
+
 func (r *repo) GetTasks(params task.GetTasksParams) ([]*task.Task, error) {
 	return r.db.GetTasks(params)
 }
@@ -53,6 +59,10 @@ func (r *repo) UpdateTask(taskModel *task.Task) (*task.Task, error) {
 
 func (r *repo) DeleteTask(taskID uint, userID uint, isTeamTask bool, deletedByUserID *uint) error {
 	return r.db.DeleteTask(taskID, userID, isTeamTask, deletedByUserID)
+}
+
+func (r *repo) DeleteTaskPermanently(taskID uint) error {
+	return r.db.DeleteTaskPermanently(taskID)
 }
 
 func (r *repo) GetTask(taskID uint) (*task.Task, error) {

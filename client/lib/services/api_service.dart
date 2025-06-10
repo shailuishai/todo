@@ -1,19 +1,20 @@
 // lib/services/api_service.dart
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform, SocketException, HttpException; // Для Platform
-// import 'package:http/browser_client.dart' as http; // <<<< УДАЛИТЕ ЭТУ СТРОКУ
+import 'dart:io' show HttpClient, HttpException, Platform, SecurityContext, SocketException, X509Certificate; // Для Platform и SSL
+import 'package:web_socket_channel/io.dart';
 
+import '../models/chat_model.dart';
 import '../models/task_model.dart';
 import '../models/team_model.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' as http; // Этот импорт содержит http.Client, http.Response и т.д.
+import 'package:http/http.dart' as http;
 import 'http_client_factory_io.dart'
 if (dart.library.html) 'http_client_factory_web.dart' as httpClientFactory;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart' show Uint8List, debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show Uint8List, debugPrint, kIsWeb, kDebugMode;
 
-// --- UserProfile Model (оставляем как есть) ---
+// --- UserProfile Model (без изменений) ---
 class UserProfile {
   final int userId;
   final String login;
@@ -23,10 +24,11 @@ class UserProfile {
   final String? accentColor;
   final bool? isSidebarCollapsed;
   final bool? hasMobileDeviceLinked;
-  final bool? notificationsEmailEnabled;
-  final bool? notificationsPushTaskAssigned;
-  final bool? notificationsPushTaskDeadline;
-  final bool? notificationsPushTeamMention;
+  final String emailNotificationsLevel;
+  final String pushNotificationsTasksLevel;
+  final bool pushNotificationsChatMentions;
+  final bool taskDeadlineRemindersEnabled;
+  final String taskDeadlineReminderTimePreference;
 
   UserProfile({
     required this.userId,
@@ -37,10 +39,11 @@ class UserProfile {
     this.accentColor,
     this.isSidebarCollapsed,
     this.hasMobileDeviceLinked,
-    this.notificationsEmailEnabled,
-    this.notificationsPushTaskAssigned,
-    this.notificationsPushTaskDeadline,
-    this.notificationsPushTeamMention,
+    required this.emailNotificationsLevel,
+    required this.pushNotificationsTasksLevel,
+    required this.pushNotificationsChatMentions,
+    required this.taskDeadlineRemindersEnabled,
+    required this.taskDeadlineReminderTimePreference,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -53,12 +56,14 @@ class UserProfile {
       accentColor: json['accent_color'] as String?,
       isSidebarCollapsed: json['is_sidebar_collapsed'] as bool?,
       hasMobileDeviceLinked: json['has_mobile_device_linked'] as bool?,
-      notificationsEmailEnabled: json['notifications_email_enabled'] as bool?,
-      notificationsPushTaskAssigned: json['notifications_push_task_assigned'] as bool?,
-      notificationsPushTaskDeadline: json['notifications_push_task_deadline'] as bool?,
-      notificationsPushTeamMention: json['notifications_push_team_mention'] as bool?,
+      emailNotificationsLevel: json['email_notifications_level'] as String? ?? 'important',
+      pushNotificationsTasksLevel: json['push_notifications_tasks_level'] as String? ?? 'my_tasks',
+      pushNotificationsChatMentions: json['push_notifications_chat_mentions'] as bool? ?? true,
+      taskDeadlineRemindersEnabled: json['task_deadline_reminders_enabled'] as bool? ?? true,
+      taskDeadlineReminderTimePreference: json['task_deadline_reminder_time_preference'] as String? ?? 'one_day',
     );
   }
+
   Map<String, dynamic> toJson() => {
     'user_id': userId,
     'login': login,
@@ -68,14 +73,15 @@ class UserProfile {
     'accent_color': accentColor,
     'is_sidebar_collapsed': isSidebarCollapsed,
     'has_mobile_device_linked': hasMobileDeviceLinked,
-    'notifications_email_enabled': notificationsEmailEnabled,
-    'notifications_push_task_assigned': notificationsPushTaskAssigned,
-    'notifications_push_task_deadline': notificationsPushTaskDeadline,
-    'notifications_push_team_mention': notificationsPushTeamMention,
+    'email_notifications_level': emailNotificationsLevel,
+    'push_notifications_tasks_level': pushNotificationsTasksLevel,
+    'push_notifications_chat_mentions': pushNotificationsChatMentions,
+    'task_deadline_reminders_enabled': taskDeadlineRemindersEnabled,
+    'task_deadline_reminder_time_preference': taskDeadlineReminderTimePreference,
   };
 }
 
-// --- AuthResponse Model (оставляем как есть) ---
+// --- AuthResponse, Exceptions, ApiService (начало) - без изменений ---
 class AuthResponse {
   final String accessToken;
   final String? refreshToken;
@@ -90,8 +96,6 @@ class AuthResponse {
     );
   }
 }
-
-// --- Exceptions (оставляем как есть) ---
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -99,21 +103,18 @@ class ApiException implements Exception {
   @override
   String toString() => 'ApiException: $statusCode, $message';
 }
-
 class NetworkException implements Exception {
   final String message;
   NetworkException(this.message);
   @override
   String toString() => 'NetworkException: $message';
 }
-
 class EmailNotConfirmedException implements Exception {
   final String message = 'Email не подтвержден. Пожалуйста, проверьте свою почту.';
   EmailNotConfirmedException();
   @override
   String toString() => message;
 }
-
 class TokenRefreshedException implements Exception {
   final String message = 'Access token was refreshed. Please retry the request.';
   TokenRefreshedException();
@@ -122,10 +123,14 @@ class TokenRefreshedException implements Exception {
 }
 
 class ApiService {
-  static String _baseUrl = kIsWeb
-      ? 'https://localhost:8080/v1'
-      : (Platform.isAndroid ? 'https://10.0.2.2:8080/v1' : 'https://localhost:8080/v1');
+  static final String _baseUrl = kIsWeb
+      ? 'https://localhost:8080'
+      : (Platform.isAndroid ? 'https://10.0.2.2:8080' : 'https://localhost:8080');
 
+  final String _baseApiUrl = '$_baseUrl/v1';
+
+
+  // ... (остальные поля и конструктор без изменений) ...
   static const String _accessTokenKeyPrefs = 'auth_access_token_prefs_v1';
   static const String _refreshTokenKeySecure = 'app_refresh_token_secure_v1';
 
@@ -140,25 +145,23 @@ class ApiService {
     debugPrint("ApiService: Initialized with client type: ${_httpClient.runtimeType}");
   }
 
+  // --- Методы _loadAccessToken, _saveAccessToken, clearLocalAccessToken, _getHeaders - без изменений ---
   Future<void> _loadAccessToken() async {
     if (_cachedAccessToken != null) return;
     final prefs = await SharedPreferences.getInstance();
     _cachedAccessToken = prefs.getString(_accessTokenKeyPrefs);
-    // debugPrint("ApiService (_loadAccessToken): Loaded access token from prefs: ${_cachedAccessToken != null ? 'found' : 'not found'}");
   }
 
   Future<void> _saveAccessToken(String token) async {
     _cachedAccessToken = token;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_accessTokenKeyPrefs, token);
-    // debugPrint("ApiService (_saveAccessToken): Access token saved to SharedPreferences.");
   }
 
   Future<void> clearLocalAccessToken() async {
     _cachedAccessToken = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_accessTokenKeyPrefs);
-    // debugPrint("ApiService (clearLocalAccessToken): Access token cleared from SharedPreferences.");
   }
 
   Future<Map<String, String>> _getHeaders({bool includeAuth = true, bool isMultipart = false}) async {
@@ -173,24 +176,22 @@ class ApiService {
     return headers;
   }
 
+  // <<< ИСПРАВЛЕНИЕ: _handleResponse теперь ищет `data.messages` для чата >>>
   Future<T> _handleResponse<T>(
       http.Response response,
       T Function(Map<String, dynamic> json) fromJson, {
         bool isList = false,
+        bool isChatHistory = false, // <<< НОВЫЙ ФЛАГ
         bool directData = false,
       }) async {
     final String responseBodyString = utf8.decode(response.bodyBytes);
     Map<String, dynamic> responseBody;
-
-    // debugPrint("ApiService (_handleResponse) - URL: ${response.request?.url}, Status: ${response.statusCode}, directData: $directData, isList: $isList");
-    // debugPrint("ApiService (_handleResponse) - Raw Body: $responseBodyString");
 
     if (response.statusCode == 204) {
       if (isList) return fromJson({'items': []});
       try {
         return fromJson({});
       } catch (e) {
-        // debugPrint("ApiService (_handleResponse): fromJson failed for empty map on 204. Error: $e");
         if (!isList) {
           throw ApiException(response.statusCode, "Получен пустой ответ (204) там, где ожидались данные объекта.");
         }
@@ -201,92 +202,72 @@ class ApiService {
     try {
       responseBody = json.decode(responseBodyString);
     } catch (e) {
-      // debugPrint("ApiService (_handleResponse): Failed to decode JSON. Status: ${response.statusCode}, Body: $responseBodyString, Error: $e");
       throw ApiException(response.statusCode, "Ошибка сервера: не удалось обработать ответ. Body: $responseBodyString");
     }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (directData) {
-        // debugPrint("ApiService (_handleResponse with directData=true): Passing entire responseBody to fromJson. ResponseBody keys: ${responseBody.keys}");
         if (responseBody is Map<String, dynamic>) {
           return fromJson(responseBody);
         } else {
-          // debugPrint("ApiService (_handleResponse with directData=true): responseBody is not a Map. Body: $responseBodyString");
           throw ApiException(response.statusCode, "Неверный формат ответа (directData, не Map): $responseBodyString");
         }
-      } else {
-        if (responseBody.containsKey('data')) {
-          final dataField = responseBody['data'];
-          if (isList) {
-            if (dataField is List) {
-              return fromJson({'items': dataField});
-            } else if (dataField is Map<String, dynamic> && dataField.containsKey('items') && dataField['items'] is List) {
-              return fromJson(dataField);
-            } else {
-              // debugPrint("ApiService (_handleResponse): Expected list but 'data' is not a list or does not conform. Data: $dataField");
-              throw ApiException(response.statusCode, "Неверный формат ответа: ожидался список в 'data'.");
-            }
+      } else if (responseBody.containsKey('data')) { // Стандартный ответ с полем 'data'
+        final dataField = responseBody['data'];
+
+        // <<< НОВАЯ ЛОГИКА для истории чата >>>
+        if (isChatHistory) {
+          if (dataField is Map<String, dynamic> && dataField.containsKey('messages') && dataField['messages'] is List) {
+            // Возвращаем объект `{'items': [...], 'has_more': ...}` для унификации
+            return fromJson({'items': dataField['messages'], 'has_more': dataField['has_more']});
           } else {
-            if (dataField is Map<String, dynamic>) {
-              return fromJson(dataField);
-            } else if (dataField == null && response.statusCode < 300 ) {
-              // debugPrint("ApiService (_handleResponse): 'data' is null for non-list response. Status: ${response.statusCode}. FromJson might fail.");
-              try {
-                return fromJson({});
-              } catch (e) {
-                throw ApiException(response.statusCode, "Поле 'data' равно null в успешном ответе, но ожидался объект.");
-              }
-            } else {
-              // debugPrint("ApiService (_handleResponse): 'data' field is not a Map for non-list response. Data: $dataField");
-              throw ApiException(response.statusCode, "Неверный формат поля 'data' в ответе (ожидался объект).");
-            }
+            throw ApiException(response.statusCode, "Неверный формат истории чата в 'data'.");
           }
-        } else if (isList && responseBody.containsKey('items') && responseBody['items'] is List) {
-          return fromJson(responseBody);
         }
-        else {
-          // debugPrint("ApiService (_handleResponse): 'data' field (or 'items' for list) missing. ResponseBody: $responseBodyString");
-          throw ApiException(response.statusCode, "Отсутствует поле 'data' (или 'items') в успешном ответе.");
+        // <<< КОНЕЦ НОВОЙ ЛОГИКИ >>>
+
+        if (isList) {
+          if (dataField is List) {
+            return fromJson({'items': dataField});
+          } else {
+            throw ApiException(response.statusCode, "Неверный формат ответа: ожидался список в 'data'.");
+          }
+        } else {
+          if (dataField is Map<String, dynamic>) {
+            return fromJson(dataField);
+          } else {
+            throw ApiException(response.statusCode, "Неверный формат поля 'data' в ответе (ожидался объект).");
+          }
         }
+      } else {
+        throw ApiException(response.statusCode, "Отсутствует поле 'data' в успешном ответе.");
       }
     } else if (response.statusCode == 401) {
-      // debugPrint("ApiService (_handleResponse): Received 401 for ${response.request?.url}. Attempting token refresh.");
       final Map<String, String?>? newTokens = await _tryRefreshTokenInternal();
       if (newTokens != null && newTokens['access_token'] != null) {
         await _saveAccessToken(newTokens['access_token']!);
         if (!kIsWeb && newTokens['refresh_token'] != null && newTokens['refresh_token']!.isNotEmpty) {
           await _secureStorage.write(key: _refreshTokenKeySecure, value: newTokens['refresh_token']!);
-          // debugPrint("ApiService (_handleResponse): Native refresh token updated in secure storage.");
-        } else if (!kIsWeb && (newTokens['refresh_token'] == null || newTokens['refresh_token']!.isEmpty)) {
-          // debugPrint("ApiService (_handleResponse): Native access token refreshed, existing refresh token in secure storage remains.");
         }
-        // debugPrint("ApiService (_handleResponse): Token refresh successful. Throwing TokenRefreshedException.");
         throw TokenRefreshedException();
       }
-      // debugPrint("ApiService (_handleResponse): Token refresh failed. Clearing local access token for ${response.request?.url}.");
       await clearLocalAccessToken();
       String errorMessage = responseBody['error'] as String? ?? 'Ошибка аутентификации. Пожалуйста, войдите снова.';
-      if (response.request?.url.path.endsWith('/auth/refresh-token-native') == true || response.request?.url.path.endsWith('/auth/refresh-token') == true ) {
-        errorMessage = responseBody['error'] as String? ?? 'Сессия истекла или недействительна. Пожалуйста, войдите снова.';
-      }
       throw ApiException(response.statusCode, errorMessage);
     } else {
       throw ApiException(response.statusCode, responseBody['error'] as String? ?? 'Неизвестная ошибка API');
     }
   }
 
+  // --- _tryRefreshTokenInternal, _platformTryRefreshToken... _retryRequest - без изменений ---
   Future<Map<String, String?>?> _tryRefreshTokenInternal() async {
     if (_isRefreshingToken) {
-      // debugPrint("ApiService (_tryRefreshTokenInternal): Refresh already in progress. Awaiting.");
       await _refreshTokenCompleter?.future;
       await _loadAccessToken();
       return _cachedAccessToken != null ? {'access_token': _cachedAccessToken, 'refresh_token': null} : null;
     }
-
     _isRefreshingToken = true;
     _refreshTokenCompleter = Completer<void>();
-    // debugPrint("ApiService (_tryRefreshTokenInternal): Starting token refresh process.");
-
     Map<String, String?>? newTokens;
     try {
       if (kIsWeb) {
@@ -294,14 +275,11 @@ class ApiService {
       } else {
         final storedRefreshToken = await _secureStorage.read(key: _refreshTokenKeySecure);
         if (storedRefreshToken != null) {
-          // debugPrint("ApiService (_tryRefreshTokenInternal): Found native refresh token in secure storage.");
           newTokens = await _platformTryRefreshTokenForNative(storedRefreshToken);
-        } else {
-          // debugPrint("ApiService (_tryRefreshTokenInternal): No native refresh token in secure storage.");
         }
       }
     } catch (e) {
-      // debugPrint("ApiService (_tryRefreshTokenInternal): Exception during platform refresh call: $e");
+      debugPrint("Error during refresh: $e");
     } finally {
       _isRefreshingToken = false;
       if (newTokens != null && newTokens['access_token'] != null) {
@@ -310,43 +288,33 @@ class ApiService {
         if (!(_refreshTokenCompleter?.isCompleted == true)) _refreshTokenCompleter!.completeError(Exception("Refresh token failed in _tryRefreshTokenInternal"));
       }
     }
-
     if (newTokens == null || newTokens['access_token'] == null) {
-      // debugPrint("ApiService (_tryRefreshTokenInternal): Refresh failed, clearing local access token.");
       await clearLocalAccessToken();
     }
     return newTokens;
   }
-
   Future<Map<String, String?>?> _platformTryRefreshTokenForWeb() async {
-    // debugPrint("ApiService (_platformTryRefreshTokenForWeb): Refreshing for web.");
     try {
       final response = await _httpClient.post(
-        Uri.parse('$_baseUrl/auth/refresh-token'),
+        Uri.parse('$_baseApiUrl/auth/refresh-token'),
         headers: await _getHeaders(includeAuth: false),
       );
-      // debugPrint("ApiService (_platformTryRefreshTokenForWeb): Response status: ${response.statusCode}, body: ${response.body}");
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseBody = json.decode(utf8.decode(response.bodyBytes));
         if (responseBody['data']?['access_token'] != null) {
           return {'access_token': responseBody['data']['access_token'], 'refresh_token': null};
         }
       }
-    } catch (e) {
-      // debugPrint("ApiService (_platformTryRefreshTokenForWeb): Error: $e");
-    }
+    } catch (e) { /* ignore */ }
     return null;
   }
-
   Future<Map<String, String?>?> _platformTryRefreshTokenForNative(String currentRefreshToken) async {
-    // debugPrint("ApiService (_platformTryRefreshTokenForNative): Refreshing for native with token: $currentRefreshToken");
     try {
       final response = await _httpClient.post(
-        Uri.parse('$_baseUrl/auth/refresh-token-native'),
+        Uri.parse('$_baseApiUrl/auth/refresh-token-native'),
         headers: await _getHeaders(includeAuth: false),
         body: json.encode({'refresh_token': currentRefreshToken}),
       );
-      // debugPrint("ApiService (_platformTryRefreshTokenForNative): Response status: ${response.statusCode}, body: ${response.body}");
       if (response.statusCode == 200) {
         final Map<String, dynamic> responseBody = json.decode(utf8.decode(response.bodyBytes));
         final newAccessToken = responseBody['data']?['access_token'] as String?;
@@ -355,43 +323,133 @@ class ApiService {
           return {'access_token': newAccessToken, 'refresh_token': newRefreshToken};
         }
       }
-    } catch (e) {
-      // debugPrint("ApiService (_platformTryRefreshTokenForNative): Error: $e");
-    }
+    } catch (e) { /* ignore */ }
     return null;
   }
-
   Future<T> _retryRequest<T>(Future<T> Function() requestFunction) async {
     try {
       return await requestFunction();
     } on TokenRefreshedException {
-      // debugPrint("ApiService (_retryRequest): Token was refreshed. Retrying original request.");
       return await requestFunction();
     }
   }
 
+  // --- Chat ---
+  Future<Map<String, dynamic>> getChatHistory(String teamId, {String? beforeMessageId, int limit = 50}) async {
+    return _retryRequest(() async {
+      final queryParams = <String, String>{'limit': limit.toString()};
+      if (beforeMessageId != null) {
+        queryParams['before_message_id'] = beforeMessageId;
+      }
+      final uri = Uri.parse('$_baseApiUrl/chat/teams/$teamId/messages').replace(queryParameters: queryParams);
+      final response = await _httpClient.get(uri, headers: await _getHeaders());
+
+      return await _handleResponse(response, (jsonMap) => jsonMap, isChatHistory: true);
+    });
+  }
+
+  Future<dynamic> getWebSocketChannel(String teamId) async {
+    await _loadAccessToken();
+    if (_cachedAccessToken == null) {
+      throw Exception("Access token not available for WebSocket connection.");
+    }
+
+    String wsScheme = _baseUrl.startsWith('https') ? 'wss' : 'ws';
+    final authority = Uri.parse(_baseUrl).authority;
+    var wsUrl = '$wsScheme://$authority/v1/chat/ws/teams/$teamId';
+
+    if (kIsWeb) {
+      final finalWsUrl = '$wsUrl?token=$_cachedAccessToken';
+      debugPrint("[ApiService] Correct WebSocket URL for Web: $finalWsUrl");
+      return Uri.parse(finalWsUrl);
+    } else {
+      final headers = {'Authorization': 'Bearer $_cachedAccessToken'};
+      HttpClient client = HttpClient();
+      if (kDebugMode) {
+        client.badCertificateCallback = (X509Certificate cert, String host, int port) {
+          final isAllowedHost = host == '10.0.2.2' || host == 'localhost';
+          debugPrint("[ApiService getWebSocketChannel] SSL cert check: host=$host, port=$port. Is allowed: $isAllowedHost");
+          return isAllowedHost;
+        };
+      }
+      debugPrint("[ApiService] Correct WebSocket URL for Mobile: $wsUrl with headers");
+      return IOWebSocketChannel.connect(
+        Uri.parse(wsUrl),
+        headers: headers,
+        customClient: client,
+      );
+    }
+  }
+
+
+  // --- UserProfile, Auth, Tags, Teams etc. ---
   Future<void> saveAccessTokenForNative(String accessToken) async {
     await _saveAccessToken(accessToken);
   }
 
-  // --- User Profile ---
   Future<UserProfile> getUserProfile() async {
     return _retryRequest(() async {
-      final response = await _httpClient.get(Uri.parse('$_baseUrl/profile'), headers: await _getHeaders());
-      return _handleResponse(response, UserProfile.fromJson, directData: false);
+      final response = await _httpClient.get(Uri.parse('$_baseApiUrl/profile'), headers: await _getHeaders());
+      return _handleResponse(response, UserProfile.fromJson);
     });
   }
 
+  Future<UserProfile> patchUserProfile(Map<String, dynamic> patchData, {Map<String, dynamic>? avatarFile}) async {
+    return _retryRequest(() async {
+      var request = http.MultipartRequest('PATCH', Uri.parse('$_baseApiUrl/profile'));
+      request.headers.addAll(await _getHeaders(isMultipart: true));
+      request.fields['json_data'] = json.encode(patchData);
+      if (avatarFile != null && avatarFile.containsKey('bytes') && avatarFile.containsKey('filename')) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'avatar', avatarFile['bytes'] as Uint8List, filename: avatarFile['filename'] as String,
+        ));
+      }
+      final streamedResponse = await _httpClient.send(request);
+      final response = await http.Response.fromStream(streamedResponse);
+      return _handleResponse(response, UserProfile.fromJson);
+    });
+  }
+
+  Future<void> registerDeviceToken(String deviceToken, String deviceType) async {
+    return _retryRequest(() async {
+      final response = await _httpClient.post(
+        Uri.parse('$_baseApiUrl/profile/device-tokens'),
+        headers: await _getHeaders(),
+        body: json.encode({'device_token': deviceToken, 'device_type': deviceType}),
+      );
+      if (response.statusCode != 204) {
+        String errMsg = 'Ошибка регистрации токена (status: ${response.statusCode})';
+        try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
+        throw ApiException(response.statusCode, errMsg);
+      }
+    });
+  }
+
+  Future<void> unregisterDeviceToken(String deviceToken) async {
+    return _retryRequest(() async {
+      final response = await _httpClient.delete(
+        Uri.parse('$_baseApiUrl/profile/device-tokens'),
+        headers: await _getHeaders(),
+        body: json.encode({'device_token': deviceToken}),
+      );
+      if (response.statusCode != 204) {
+        String errMsg = 'Ошибка удаления токена (status: ${response.statusCode})';
+        try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
+        throw ApiException(response.statusCode, errMsg);
+      }
+    });
+  }
   Future<UserProfile> updateUserProfile({
     String? login, String? theme, String? accentColor, bool? isSidebarCollapsed,
     bool? resetAvatar, Map<String, dynamic>? avatarFile,
-    bool? notificationsEmailEnabled,
-    bool? notificationsPushTaskAssigned,
-    bool? notificationsPushTaskDeadline,
-    bool? notificationsPushTeamMention,
+    String? emailNotificationsLevel,
+    String? pushNotificationsTasksLevel,
+    bool? pushNotificationsChatMentions,
+    bool? taskDeadlineRemindersEnabled,
+    String? taskDeadlineReminderTimePreference,
   }) async {
     return _retryRequest(() async {
-      var request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/profile'));
+      var request = http.MultipartRequest('PUT', Uri.parse('$_baseApiUrl/profile'));
       request.headers.addAll(await _getHeaders(isMultipart: true));
 
       final Map<String, dynamic> jsonData = {};
@@ -399,11 +457,12 @@ class ApiService {
       if (theme != null) jsonData['theme'] = theme;
       if (accentColor != null) jsonData['accent_color'] = accentColor;
       if (isSidebarCollapsed != null) jsonData['is_sidebar_collapsed'] = isSidebarCollapsed;
-      if (notificationsEmailEnabled != null) jsonData['notifications_email_enabled'] = notificationsEmailEnabled;
-      if (notificationsPushTaskAssigned != null) jsonData['notifications_push_task_assigned'] = notificationsPushTaskAssigned;
-      if (notificationsPushTaskDeadline != null) jsonData['notifications_push_task_deadline'] = notificationsPushTaskDeadline;
-      if (notificationsPushTeamMention != null) jsonData['notifications_push_team_mention'] = notificationsPushTeamMention;
       if (resetAvatar != null) jsonData['reset_avatar'] = resetAvatar;
+      if (emailNotificationsLevel != null) jsonData['email_notifications_level'] = emailNotificationsLevel;
+      if (pushNotificationsTasksLevel != null) jsonData['push_notifications_tasks_level'] = pushNotificationsTasksLevel;
+      if (pushNotificationsChatMentions != null) jsonData['push_notifications_chat_mentions'] = pushNotificationsChatMentions;
+      if (taskDeadlineRemindersEnabled != null) jsonData['task_deadline_reminders_enabled'] = taskDeadlineRemindersEnabled;
+      if (taskDeadlineReminderTimePreference != null) jsonData['task_deadline_reminder_time_preference'] = taskDeadlineReminderTimePreference;
 
       request.fields['json_data'] = json.encode(jsonData);
 
@@ -414,12 +473,12 @@ class ApiService {
       }
       final streamedResponse = await _httpClient.send(request);
       final response = await http.Response.fromStream(streamedResponse);
-      return _handleResponse(response, UserProfile.fromJson, directData: false);
+      return _handleResponse(response, UserProfile.fromJson);
     });
   }
   Future<void> deleteUserAccount() async {
     return _retryRequest(() async {
-      final response = await _httpClient.delete( Uri.parse('$_baseUrl/profile'), headers: await _getHeaders());
+      final response = await _httpClient.delete( Uri.parse('$_baseApiUrl/profile'), headers: await _getHeaders());
       if (response.statusCode != 204) {
         String errMsg = 'Ошибка удаления (status: ${response.statusCode})';
         try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
@@ -431,11 +490,9 @@ class ApiService {
       }
     });
   }
-
-  // --- Auth ---
   Future<AuthResponse> signUp({required String email, String? login, required String password}) async {
     final response = await _httpClient.post(
-      Uri.parse('$_baseUrl/auth/sign-up'),
+      Uri.parse('$_baseApiUrl/auth/sign-up'),
       headers: await _getHeaders(includeAuth: false),
       body: json.encode({'email': email, if (login != null && login.isNotEmpty) 'login': login, 'password': password}),
     );
@@ -443,13 +500,12 @@ class ApiService {
     if (response.statusCode == 201) return AuthResponse.fromJson(responseBody);
     throw ApiException(response.statusCode, responseBody['error'] as String? ?? 'Ошибка регистрации');
   }
-
   Future<AuthResponse> signIn({required String password, String? email, String? login}) async {
     if ((email == null || email.isEmpty) && (login == null || login.isEmpty)) {
       throw ArgumentError('Необходимо указать email или login.');
     }
     final response = await _httpClient.post(
-      Uri.parse('$_baseUrl/auth/sign-in'),
+      Uri.parse('$_baseApiUrl/auth/sign-in'),
       headers: await _getHeaders(includeAuth: false),
       body: json.encode({
         if (email != null && email.isNotEmpty) 'email': email,
@@ -461,7 +517,7 @@ class ApiService {
     if (response.statusCode == 200) {
       final authData = AuthResponse.fromJson(responseBody);
       await _saveAccessToken(authData.accessToken);
-      if (!kIsWeb && authData.refreshToken != null && authData.refreshToken!.isNotEmpty) { // Сохраняем RT для нативных клиентов
+      if (!kIsWeb && authData.refreshToken != null && authData.refreshToken!.isNotEmpty) {
         await _secureStorage.write(key: _refreshTokenKeySecure, value: authData.refreshToken!);
       }
       return authData;
@@ -470,10 +526,9 @@ class ApiService {
     }
     throw ApiException(response.statusCode, responseBody['error'] as String? ?? 'Ошибка входа');
   }
-
   Future<void> logout() async {
     try {
-      await _httpClient.post( Uri.parse('$_baseUrl/auth/logout'), headers: await _getHeaders());
+      await _httpClient.post( Uri.parse('$_baseApiUrl/auth/logout'), headers: await _getHeaders());
     } catch (e) { /* ignore */ }
     finally {
       await clearLocalAccessToken();
@@ -482,12 +537,10 @@ class ApiService {
       }
     }
   }
-  String getOAuthUrl(String provider) => '$_baseUrl/auth/$provider';
-
-  // --- Email ---
+  String getOAuthUrl(String provider) => '$_baseApiUrl/auth/$provider';
   Future<void> sendConfirmationEmail(String email) async {
     final response = await _httpClient.post(
-      Uri.parse('$_baseUrl/email/send-code'),
+      Uri.parse('$_baseApiUrl/email/send-code'),
       headers: await _getHeaders(includeAuth: false), body: json.encode({'email': email}),
     );
     if (response.statusCode != 202) {
@@ -497,7 +550,7 @@ class ApiService {
   }
   Future<void> confirmEmail(String email, String code) async {
     final response = await _httpClient.put(
-      Uri.parse('$_baseUrl/email/confirm'),
+      Uri.parse('$_baseApiUrl/email/confirm'),
       headers: await _getHeaders(includeAuth: false), body: json.encode({'email': email, 'code': code}),
     );
     if (response.statusCode != 200) {
@@ -506,60 +559,56 @@ class ApiService {
     }
   }
 
-  // --- Tasks ---
+  // --- TASKS ---
   Future<Task> createTask(Task taskData) async {
     return _retryRequest(() async {
       final response = await _httpClient.post(
-        Uri.parse('$_baseUrl/tasks'),
+        Uri.parse('$_baseApiUrl/tasks'),
         headers: await _getHeaders(),
         body: json.encode(taskData.toJsonForCreate()),
       );
-      return _handleResponse(response, Task.fromJson, directData: false);
+      return _handleResponse(response, Task.fromJson);
     });
   }
-
   Future<List<Task>> getTasks({Map<String, String>? queryParams}) async {
     return _retryRequest(() async {
-      final uri = Uri.parse('$_baseUrl/tasks').replace(queryParameters: queryParams);
+      final uri = Uri.parse('$_baseApiUrl/tasks').replace(queryParameters: queryParams);
       final response = await _httpClient.get(uri, headers: await _getHeaders());
       return _handleResponse(response, (jsonMap) {
-        final items = jsonMap['items'] as List<dynamic>? ?? (jsonMap['data'] as List<dynamic>? ?? []); // Пытаемся обработать оба варианта
+        final items = jsonMap['items'] as List<dynamic>? ?? (jsonMap['data'] as List<dynamic>? ?? []);
         return items.map((item) => Task.fromJson(item as Map<String, dynamic>)).toList();
-      }, isList: true, directData: false);
+      }, isList: true);
     });
   }
-
   Future<Task> getTaskById(String taskId) async {
     return _retryRequest(() async {
-      final response = await _httpClient.get(Uri.parse('$_baseUrl/tasks/$taskId'), headers: await _getHeaders());
-      return _handleResponse(response, Task.fromJson, directData: false);
+      final response = await _httpClient.get(Uri.parse('$_baseApiUrl/tasks/$taskId'), headers: await _getHeaders());
+      return _handleResponse(response, Task.fromJson);
     });
   }
-
   Future<Task> updateTask(String taskId, Task taskData) async {
     return _retryRequest(() async {
       final response = await _httpClient.put(
-        Uri.parse('$_baseUrl/tasks/$taskId'),
+        Uri.parse('$_baseApiUrl/tasks/$taskId'),
         headers: await _getHeaders(),
         body: json.encode(taskData.toJsonForUpdate()),
       );
-      return _handleResponse(response, Task.fromJson, directData: false);
+      return _handleResponse(response, Task.fromJson);
     });
   }
-
   Future<Task> patchTask(String taskId, Map<String, dynamic> patchData) async {
     return _retryRequest(() async {
       final response = await _httpClient.patch(
-        Uri.parse('$_baseUrl/tasks/$taskId'),
+        Uri.parse('$_baseApiUrl/tasks/$taskId'),
         headers: await _getHeaders(),
         body: json.encode(patchData),
       );
-      return _handleResponse(response, Task.fromJson, directData: false);
+      return _handleResponse(response, Task.fromJson);
     });
   }
   Future<void> deleteTask(String taskId) async {
     return _retryRequest(() async {
-      final response = await _httpClient.delete(Uri.parse('$_baseUrl/tasks/$taskId'), headers: await _getHeaders());
+      final response = await _httpClient.delete(Uri.parse('$_baseApiUrl/tasks/$taskId'), headers: await _getHeaders());
       if (response.statusCode != 204) {
         String errMsg = 'Ошибка удаления задачи (status: ${response.statusCode})';
         try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
@@ -568,22 +617,50 @@ class ApiService {
     });
   }
 
-  // --- User Tags ---
+  // <<< НОВЫЙ МЕТОД: Восстановление задачи >>>
+  Future<Task> restoreTask(String taskId) async {
+    return _retryRequest(() async {
+      final response = await _httpClient.post(
+        Uri.parse('$_baseApiUrl/tasks/$taskId/restore'),
+        headers: await _getHeaders(),
+      );
+      // Ожидаем 200 OK с телом задачи
+      return _handleResponse(response, Task.fromJson);
+    });
+  }
+
+  // <<< НОВЫЙ МЕТОД: Перманентное удаление задачи >>>
+  Future<void> deleteTaskPermanently(String taskId) async {
+    return _retryRequest(() async {
+      final response = await _httpClient.delete(
+        Uri.parse('$_baseApiUrl/tasks/$taskId/permanent'),
+        headers: await _getHeaders(),
+      );
+      // Ожидаем 204 No Content
+      if (response.statusCode != 204) {
+        String errMsg = 'Ошибка полного удаления задачи (status: ${response.statusCode})';
+        try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
+        throw ApiException(response.statusCode, errMsg);
+      }
+    });
+  }
+
+  // --- TAGS & TEAMS etc. ---
   Future<ApiTag> createUserTag({required String name, String? colorHex}) async {
     return _retryRequest(() async {
       final Map<String, dynamic> body = {'name': name};
       if (colorHex != null) body['color'] = colorHex;
-      final response = await _httpClient.post(Uri.parse('$_baseUrl/user-tags'), headers: await _getHeaders(), body: json.encode(body));
-      return _handleResponse(response, ApiTag.fromJson, directData: false);
+      final response = await _httpClient.post(Uri.parse('$_baseApiUrl/user-tags'), headers: await _getHeaders(), body: json.encode(body));
+      return _handleResponse(response, ApiTag.fromJson);
     });
   }
   Future<List<ApiTag>> getUserTags() async {
     return _retryRequest(() async {
-      final response = await _httpClient.get(Uri.parse('$_baseUrl/user-tags'), headers: await _getHeaders());
+      final response = await _httpClient.get(Uri.parse('$_baseApiUrl/user-tags'), headers: await _getHeaders());
       return _handleResponse(response, (jsonMap) {
-        final items = jsonMap['items'] as List<dynamic>? ?? [];
+        final items = jsonMap['items'] as List<dynamic>? ?? (jsonMap as List<dynamic>? ?? []);
         return items.map((item) => ApiTag.fromJson(item as Map<String, dynamic>)).toList();
-      }, isList: true, directData: false);
+      }, isList: true);
     });
   }
   Future<ApiTag> updateUserTag(int tagId, {String? name, String? colorHex}) async {
@@ -592,13 +669,13 @@ class ApiService {
       final Map<String, dynamic> body = {};
       if (name != null) body['name'] = name;
       if (colorHex != null) body['color'] = colorHex;
-      final response = await _httpClient.put(Uri.parse('$_baseUrl/user-tags/$tagId'), headers: await _getHeaders(), body: json.encode(body));
-      return _handleResponse(response, ApiTag.fromJson, directData: false);
+      final response = await _httpClient.put(Uri.parse('$_baseApiUrl/user-tags/$tagId'), headers: await _getHeaders(), body: json.encode(body));
+      return _handleResponse(response, ApiTag.fromJson);
     });
   }
   Future<void> deleteUserTag(int tagId) async {
     return _retryRequest(() async {
-      final response = await _httpClient.delete(Uri.parse('$_baseUrl/user-tags/$tagId'), headers: await _getHeaders());
+      final response = await _httpClient.delete(Uri.parse('$_baseApiUrl/user-tags/$tagId'), headers: await _getHeaders());
       if (response.statusCode != 204) {
         String errMsg = 'Ошибка удаления тега (status: ${response.statusCode})';
         try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
@@ -606,23 +683,21 @@ class ApiService {
       }
     });
   }
-
-  // --- Team Tags ---
   Future<List<ApiTag>> getTeamTags(int teamId) async {
     return _retryRequest(() async {
-      final response = await _httpClient.get(Uri.parse('$_baseUrl/teams/$teamId/tags'), headers: await _getHeaders());
+      final response = await _httpClient.get(Uri.parse('$_baseApiUrl/teams/$teamId/tags'), headers: await _getHeaders());
       return _handleResponse(response, (jsonMap) {
-        final items = jsonMap['items'] as List<dynamic>? ?? [];
+        final items = jsonMap['items'] as List<dynamic>? ?? (jsonMap as List<dynamic>? ?? []);
         return items.map((item) => ApiTag.fromJson(item as Map<String, dynamic>)).toList();
-      }, isList: true, directData: false);
+      }, isList: true);
     });
   }
   Future<ApiTag> createTeamTag(int teamId, {required String name, String? colorHex}) async {
     return _retryRequest(() async {
       final Map<String, dynamic> body = {'name': name};
       if (colorHex != null) body['color'] = colorHex;
-      final response = await _httpClient.post(Uri.parse('$_baseUrl/teams/$teamId/tags'), headers: await _getHeaders(), body: json.encode(body));
-      return _handleResponse(response, ApiTag.fromJson, directData: false);
+      final response = await _httpClient.post(Uri.parse('$_baseApiUrl/teams/$teamId/tags'), headers: await _getHeaders(), body: json.encode(body));
+      return _handleResponse(response, ApiTag.fromJson);
     });
   }
   Future<ApiTag> updateTeamTag(int teamId, int tagId, {String? name, String? colorHex}) async {
@@ -631,13 +706,13 @@ class ApiService {
       final Map<String, dynamic> body = {};
       if (name != null) body['name'] = name;
       if (colorHex != null) body['color'] = colorHex;
-      final response = await _httpClient.put(Uri.parse('$_baseUrl/teams/$teamId/tags/$tagId'), headers: await _getHeaders(), body: json.encode(body));
-      return _handleResponse(response, ApiTag.fromJson, directData: false);
+      final response = await _httpClient.put(Uri.parse('$_baseApiUrl/teams/$teamId/tags/$tagId'), headers: await _getHeaders(), body: json.encode(body));
+      return _handleResponse(response, ApiTag.fromJson);
     });
   }
   Future<void> deleteTeamTag(int teamId, int tagId) async {
     return _retryRequest(() async {
-      final response = await _httpClient.delete(Uri.parse('$_baseUrl/teams/$teamId/tags/$tagId'), headers: await _getHeaders());
+      final response = await _httpClient.delete(Uri.parse('$_baseApiUrl/teams/$teamId/tags/$tagId'), headers: await _getHeaders());
       if (response.statusCode != 204) {
         String errMsg = 'Ошибка удаления тега команды (status: ${response.statusCode})';
         try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
@@ -645,45 +720,39 @@ class ApiService {
       }
     });
   }
-
-  // --- Teams ---
   Future<Team> createTeam(CreateTeamRequest requestData) async {
     return _retryRequest(() async {
       final response = await _httpClient.post(
-        Uri.parse('$_baseUrl/teams'),
+        Uri.parse('$_baseApiUrl/teams'),
         headers: await _getHeaders(),
         body: json.encode(requestData.toJson()),
       );
-      return _handleResponse(response, Team.fromJson, directData: false);
+      return _handleResponse(response, Team.fromJson);
     });
   }
-
   Future<List<Team>> getMyTeams({String? search}) async {
     return _retryRequest(() async {
       final queryParams = <String, String>{};
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
       }
-      final uri = Uri.parse('$_baseUrl/teams/my').replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
+      final uri = Uri.parse('$_baseApiUrl/teams/my').replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
       final response = await _httpClient.get(uri, headers: await _getHeaders());
       return _handleResponse(response, (jsonMap) {
-        // Swagger указывает TeamResponse, но это список. Если это обертка {"data": [TeamResponse, ...]}
-        final items = jsonMap['items'] as List<dynamic>? ?? (jsonMap['data'] as List<dynamic>? ?? []);
+        final items = jsonMap['items'] as List<dynamic>? ?? (jsonMap['data'] as List<dynamic>? ?? (jsonMap as List<dynamic>? ?? []));
         return items.map((item) => Team.fromJson(item as Map<String, dynamic>)).toList();
-      }, isList: true, directData: false);
+      }, isList: true);
     });
   }
-
   Future<TeamDetail> getTeamDetails(String teamId) async {
     return _retryRequest(() async {
-      final response = await _httpClient.get(Uri.parse('$_baseUrl/teams/$teamId'), headers: await _getHeaders());
-      return _handleResponse(response, TeamDetail.fromJson, directData: false);
+      final response = await _httpClient.get(Uri.parse('$_baseApiUrl/teams/$teamId'), headers: await _getHeaders());
+      return _handleResponse(response, TeamDetail.fromJson);
     });
   }
-
   Future<Team> updateTeam(String teamId, UpdateTeamDetailsRequest details, {Map<String, dynamic>? imageFile}) async {
     return _retryRequest(() async {
-      var request = http.MultipartRequest('PUT', Uri.parse('$_baseUrl/teams/$teamId'));
+      var request = http.MultipartRequest('PUT', Uri.parse('$_baseApiUrl/teams/$teamId'));
       request.headers.addAll(await _getHeaders(isMultipart: true));
       request.fields['json_data'] = json.encode(details.toJson());
 
@@ -694,13 +763,12 @@ class ApiService {
       }
       final streamedResponse = await _httpClient.send(request);
       final response = await http.Response.fromStream(streamedResponse);
-      return _handleResponse(response, Team.fromJson, directData: false);
+      return _handleResponse(response, Team.fromJson);
     });
   }
-
   Future<void> deleteTeam(String teamId) async {
     return _retryRequest(() async {
-      final response = await _httpClient.delete(Uri.parse('$_baseUrl/teams/$teamId'), headers: await _getHeaders());
+      final response = await _httpClient.delete(Uri.parse('$_baseApiUrl/teams/$teamId'), headers: await _getHeaders());
       if (response.statusCode != 204) {
         String errMsg = 'Ошибка удаления команды (status: ${response.statusCode})';
         try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
@@ -708,93 +776,84 @@ class ApiService {
       }
     });
   }
-
-    Future<Team> joinTeamByToken(String token) async {
-      return _retryRequest(() async {
-        final requestData = JoinTeamByTokenRequest(inviteToken: token);
-        final response = await _httpClient.post(
-          Uri.parse('$_baseUrl/teams/join'),
-          headers: await _getHeaders(),
-          body: json.encode(requestData.toJson()),
-        );
-        return _handleResponse(response, Team.fromJson, directData: false);
-      });
-    }
-
-    Future<void> leaveTeam(String teamId) async {
-      return _retryRequest(() async {
-        final response = await _httpClient.post(Uri.parse('$_baseUrl/teams/$teamId/leave'), headers: await _getHeaders());
-        if (response.statusCode != 204) {
-          String errMsg = 'Ошибка выхода из команды (status: ${response.statusCode})';
-          try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
-          throw ApiException(response.statusCode, errMsg);
-        }
-      });
-    }
-
-    Future<List<TeamMember>> getTeamMembers(String teamId) async {
-      return _retryRequest(() async {
-        final response = await _httpClient.get(Uri.parse('$_baseUrl/teams/$teamId/members'), headers: await _getHeaders());
-        return _handleResponse(response, (jsonMap) {
-          // Swagger: TeamMemberResponse. Это может быть список напрямую в 'data' или 'data.items'
-          final items = jsonMap['items'] as List<dynamic>? ?? (jsonMap['data'] as List<dynamic>? ?? []);
-          return items.map((item) => TeamMember.fromJson(item as Map<String, dynamic>)).toList();
-        }, isList: true, directData: false);
-      });
-    }
-
-    Future<TeamMember> addTeamMember(String teamId, int userId, String role) async {
-      return _retryRequest(() async {
-        final requestData = AddTeamMemberRequest(userId: userId, role: TeamMemberRoleExtension.fromJson(role));
-        final response = await _httpClient.post(
-          Uri.parse('$_baseUrl/teams/$teamId/members'),
-          headers: await _getHeaders(),
-          body: json.encode(requestData.toJson()),
-        );
-        return _handleResponse(response, TeamMember.fromJson, directData: false);
-      });
-    }
-
-    Future<void> removeTeamMember(String teamId, int userId) async {
-      return _retryRequest(() async {
-        final response = await _httpClient.delete(Uri.parse('$_baseUrl/teams/$teamId/members/$userId'), headers: await _getHeaders());
-        if (response.statusCode != 204) {
-          String errMsg = 'Ошибка удаления участника (status: ${response.statusCode})';
-          try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
-          throw ApiException(response.statusCode, errMsg);
-        }
-      });
-    }
-
-    Future<TeamMember> updateTeamMemberRole(String teamId, int userId, String newRole) async {
-      return _retryRequest(() async {
-        final requestData = UpdateTeamMemberRoleRequest(role: TeamMemberRoleExtension.fromJson(newRole));
-        final response = await _httpClient.put(
-          Uri.parse('$_baseUrl/teams/$teamId/members/$userId/role'),
-          headers: await _getHeaders(),
-          body: json.encode(requestData.toJson()),
-        );
-        return _handleResponse(response, TeamMember.fromJson, directData: false);
-      });
-    }
-
-    Future<TeamInviteTokenResponse> generateInviteToken(String teamId, {int? expiresInHours, String? roleToAssign}) async {
-      return _retryRequest(() async {
-        final requestData = GenerateInviteTokenRequest(
-          expiresInHours: expiresInHours,
-          roleToAssign: roleToAssign != null ? TeamMemberRoleExtension.fromJson(roleToAssign) : null,
-        );
-        final response = await _httpClient.post(
-          Uri.parse('$_baseUrl/teams/$teamId/invites'),
-          headers: await _getHeaders(),
-          body: json.encode(requestData.toJson()),
-        );
-        return _handleResponse(response, TeamInviteTokenResponse.fromJson, directData: false);
-      });
-    }
-
-    void dispose() {
-      _httpClient.close();
-      debugPrint("ApiService: HttpClient closed.");
-    }
+  Future<Team> joinTeamByToken(String token) async {
+    return _retryRequest(() async {
+      final requestData = JoinTeamByTokenRequest(inviteToken: token);
+      final response = await _httpClient.post(
+        Uri.parse('$_baseApiUrl/teams/join'),
+        headers: await _getHeaders(),
+        body: json.encode(requestData.toJson()),
+      );
+      return _handleResponse(response, Team.fromJson);
+    });
   }
+  Future<void> leaveTeam(String teamId) async {
+    return _retryRequest(() async {
+      final response = await _httpClient.post(Uri.parse('$_baseApiUrl/teams/$teamId/leave'), headers: await _getHeaders());
+      if (response.statusCode != 204) {
+        String errMsg = 'Ошибка выхода из команды (status: ${response.statusCode})';
+        try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
+        throw ApiException(response.statusCode, errMsg);
+      }
+    });
+  }
+  Future<List<TeamMember>> getTeamMembers(String teamId) async {
+    return _retryRequest(() async {
+      final response = await _httpClient.get(Uri.parse('$_baseApiUrl/teams/$teamId/members'), headers: await _getHeaders());
+      return _handleResponse(response, (jsonMap) {
+        final items = jsonMap['items'] as List<dynamic>? ?? (jsonMap['data'] as List<dynamic>? ?? []);
+        return items.map((item) => TeamMember.fromJson(item as Map<String, dynamic>)).toList();
+      }, isList: true);
+    });
+  }
+  Future<TeamMember> addTeamMember(String teamId, int userId, String role) async {
+    return _retryRequest(() async {
+      final requestData = AddTeamMemberRequest(userId: userId, role: TeamMemberRoleExtension.fromJson(role));
+      final response = await _httpClient.post(
+        Uri.parse('$_baseApiUrl/teams/$teamId/members'),
+        headers: await _getHeaders(),
+        body: json.encode(requestData.toJson()),
+      );
+      return _handleResponse(response, TeamMember.fromJson);
+    });
+  }
+  Future<void> removeTeamMember(String teamId, int userId) async {
+    return _retryRequest(() async {
+      final response = await _httpClient.delete(Uri.parse('$_baseApiUrl/teams/$teamId/members/$userId'), headers: await _getHeaders());
+      if (response.statusCode != 204) {
+        String errMsg = 'Ошибка удаления участника (status: ${response.statusCode})';
+        try {errMsg = json.decode(utf8.decode(response.bodyBytes))['error'] ?? errMsg;} catch (_){}
+        throw ApiException(response.statusCode, errMsg);
+      }
+    });
+  }
+  Future<TeamMember> updateTeamMemberRole(String teamId, int userId, String newRole) async {
+    return _retryRequest(() async {
+      final requestData = UpdateTeamMemberRoleRequest(role: TeamMemberRoleExtension.fromJson(newRole));
+      final response = await _httpClient.put(
+        Uri.parse('$_baseApiUrl/teams/$teamId/members/$userId/role'),
+        headers: await _getHeaders(),
+        body: json.encode(requestData.toJson()),
+      );
+      return _handleResponse(response, TeamMember.fromJson);
+    });
+  }
+  Future<TeamInviteTokenResponse> generateInviteToken(String teamId, {int? expiresInHours, String? roleToAssign}) async {
+    return _retryRequest(() async {
+      final requestData = GenerateInviteTokenRequest(
+        expiresInHours: expiresInHours,
+        roleToAssign: roleToAssign != null ? TeamMemberRoleExtension.fromJson(roleToAssign) : null,
+      );
+      final response = await _httpClient.post(
+        Uri.parse('$_baseApiUrl/teams/$teamId/invites'),
+        headers: await _getHeaders(),
+        body: json.encode(requestData.toJson()),
+      );
+      return _handleResponse(response, TeamInviteTokenResponse.fromJson);
+    });
+  }
+  void dispose() {
+    _httpClient.close();
+    debugPrint("ApiService: HttpClient closed.");
+  }
+}

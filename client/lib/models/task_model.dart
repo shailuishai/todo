@@ -198,7 +198,7 @@ class Task {
   String? teamId;
   String? teamName;
   String? assignedToUserId;
-  String? createdByUserId;
+  final String? createdByUserId;
   String? deletedByUserId;
 
   Task({
@@ -224,14 +224,10 @@ class Task {
   bool get isDeleted => deletedAt != null;
 
   factory Task.fromJson(Map<String, dynamic> json) {
-    // <<<< ИСПРАВЛЕНИЕ ЗДЕСЬ >>>>
-    // Предполагаем, что 'task_id' от API всегда приходит как int.
-    // Если 'task_id' отсутствует или null, используем "0" как фоллбэк,
-    // но это должно быть исключением, а не правилом для существующих задач.
     final int taskIdInt = json['task_id'] as int? ?? (json['id'] as int? ?? 0);
 
     return Task(
-      taskId: taskIdInt.toString(), // Преобразуем в строку
+      taskId: taskIdInt.toString(),
       title: json['title'] as String? ?? 'Без названия',
       description: json['description'] as String?,
       status: KanbanColumnStatusExtension.fromJson(json['status'] as String?),

@@ -664,7 +664,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     }
     return TeamChatWidget(
       teamId: team.teamId,
-      currentUserId: authState.currentUser!.userId.toString(),
     );
   }
 

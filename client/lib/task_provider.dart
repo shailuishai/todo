@@ -2,6 +2,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:collection';
+import 'deleted_tasks_provider.dart';
 import 'models/task_model.dart';
 import 'services/api_service.dart';
 import 'auth_state.dart';
@@ -15,6 +16,7 @@ enum TaskListViewType {
 class TaskProvider with ChangeNotifier {
   final ApiService _apiService;
   final AuthState _authState;
+  final DeletedTasksProvider _deletedTasksProvider;
 
   List<Task> _allFetchedTasks = [];
   bool _isLoadingList = false;
@@ -28,7 +30,7 @@ class TaskProvider with ChangeNotifier {
   TaskListViewType? _currentFetchedViewType;
   String? _currentFetchedTeamId;
 
-  TaskProvider(this._apiService, this._authState) {
+  TaskProvider(this._apiService, this._authState, this._deletedTasksProvider) {
     _authState.addListener(_onAuthStateChanged);
     if (_authState.isLoggedIn) {
       fetchTasks(viewType: TaskListViewType.allAssignedOrCreated);
@@ -388,9 +390,22 @@ class TaskProvider with ChangeNotifier {
   Future<bool> deleteTask(String taskId) async {
     if (!_authState.isLoggedIn) return false;
     _isProcessingTask = true; _error = null; notifyListeners();
+
+    final taskIndex = _allFetchedTasks.indexWhere((t) => t.taskId == taskId);
+    if (taskIndex == -1) {
+      _error = "Задача для удаления не найдена в текущем списке.";
+      _isProcessingTask = false; notifyListeners();
+      return false;
+    }
+    final taskToDelete = _allFetchedTasks[taskIndex];
+
     try {
       await _apiService.deleteTask(taskId);
-      _allFetchedTasks.removeWhere((t) => t.taskId == taskId);
+      _allFetchedTasks.removeAt(taskIndex);
+      _deletedTasksProvider.addDeletedTask(taskToDelete.copyWith(
+        deletedAt: DateTime.now(),
+        deletedByUserId: _authState.currentUser?.userId.toString(),
+      ));
     } catch (e) {
       _error = "Ошибка удаления: $e";
       _isProcessingTask = false; notifyListeners(); return false;

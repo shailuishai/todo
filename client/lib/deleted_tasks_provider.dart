@@ -1,79 +1,123 @@
 // lib/deleted_tasks_provider.dart
 import 'package:flutter/foundation.dart';
 import 'models/task_model.dart';
-// import 'package:shared_preferences/shared_preferences.dart'; // Для сохранения в будущем
-// import 'dart:convert'; // Для сохранения в будущем
+import 'services/api_service.dart';
+import 'auth_state.dart';
 
 class DeletedTasksProvider extends ChangeNotifier {
+  final ApiService _apiService;
+  final AuthState _authState;
   List<Task> _deletedTasks = [];
+  bool _isLoading = false;
+  String? _error;
 
-  // TODO: В будущем загружать из SharedPreferences
-  // DeletedTasksProvider() {
-  //   _loadDeletedTasks();
-  // }
-
-  List<Task> get deletedTasks {
-    // Сортировка по дате удаления (новые вверху)
-    _deletedTasks.sort((a, b) => (b.deletedAt ?? DateTime(0)).compareTo(a.deletedAt ?? DateTime(0)));
-    return List.unmodifiable(_deletedTasks);
+  DeletedTasksProvider(this._apiService, this._authState) {
+    _authState.addListener(_onAuthStateChanged);
+    if (_authState.isLoggedIn) {
+      fetchDeletedTasks();
+    }
   }
 
-  void moveToTrash(Task task, {String? deletedByUserId}) {
-    // Убедимся, что задача еще не в корзине
-    if (_deletedTasks.any((t) => t.taskId == task.taskId)) return;
+  // --- Getters ---
+  List<Task> get deletedTasks => List.unmodifiable(_deletedTasks);
+  bool get isLoading => _isLoading;
+  String? get error => _error;
 
-    final taskForTrash = task.copyWith(
-      deletedAt: DateTime.now(),
-      deletedByUserId: deletedByUserId,
-    );
-    _deletedTasks.add(taskForTrash);
-    // _saveDeletedTasks(); // TODO: Сохранять в SharedPreferences
-    notifyListeners();
-  }
-
-  void restoreFromTrash(String taskId) {
-    final taskToRestore = _deletedTasks.firstWhere((t) => t.taskId == taskId, orElse: () => throw Exception("Task not found in trash"));
-    _deletedTasks.removeWhere((t) => t.taskId == taskId);
-
-    // Здесь в реальном приложении нужно будет уведомить другой провайдер (например, TaskProvider)
-    // чтобы он добавил задачу обратно в активные списки.
-    // Пока что задача просто удаляется из корзины.
-    // Для восстановления в UI, экран, который отображает активные задачи,
-    // должен будет ее снова добавить (например, если TaskProvider будет управлять всеми задачами).
-
-    // _saveDeletedTasks(); // TODO: Сохранять в SharedPreferences
-    notifyListeners();
-
-    // Возвращаем восстановленную задачу, чтобы ее можно было обработать дальше
-    // (например, добавить обратно в список активных задач в UI, если нет центрального TaskProvider)
-    // return taskToRestore.copyWith(deletedAtIsNull: true, deletedByUserIdIsNull: true);
-  }
-
-  Task getTaskById(String taskId) {
-    return _deletedTasks.firstWhere((t) => t.taskId == taskId, orElse: () => throw Exception("Task not found in trash with ID: $taskId"));
-  }
-
-  void deletePermanently(String taskId) {
-    _deletedTasks.removeWhere((t) => t.taskId == taskId);
-    // _saveDeletedTasks(); // TODO: Сохранять в SharedPreferences
-    notifyListeners();
-  }
-
-// Примерные методы для сохранения/загрузки (нужно доработать Task.toJson/fromJson)
-/*
-  Future<void> _saveDeletedTasks() async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String> tasksJson = _deletedTasks.map((task) => jsonEncode(task.toJson())).toList(); // Предполагая, что есть toJson()
-    await prefs.setStringList('deleted_tasks', tasksJson);
-  }
-
-  Future<void> _loadDeletedTasks() async {
-    final prefs = await SharedPreferences.getInstance();
-    List<String>? tasksJson = prefs.getStringList('deleted_tasks');
-    if (tasksJson != null) {
-      _deletedTasks = tasksJson.map((json) => Task.fromJson(jsonDecode(json))).toList(); // Предполагая, что есть fromJson()
+  void _onAuthStateChanged() {
+    if (_authState.isLoggedIn) {
+      fetchDeletedTasks();
+    } else {
+      _deletedTasks = [];
+      _error = null;
+      _isLoading = false;
       notifyListeners();
     }
   }
-  */
+
+  Future<void> fetchDeletedTasks() async {
+    if (!_authState.isLoggedIn) return;
+
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      // Используем существующий метод getTasks с новым query-параметром
+      final tasks = await _apiService.getTasks(queryParams: {'is_deleted': 'true'});
+      _deletedTasks = tasks;
+    } on ApiException catch (e) {
+      _error = "Ошибка API: ${e.message}";
+    } on NetworkException catch (e) {
+      _error = "Сетевая ошибка: ${e.message}";
+    } catch (e) {
+      _error = "Неизвестная ошибка: $e";
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // Вызывается из TaskProvider после успешного логического удаления
+  void addDeletedTask(Task task) {
+    // Добавляем задачу в начало списка, чтобы она сразу появилась в UI
+    if (!_deletedTasks.any((t) => t.taskId == task.taskId)) {
+      _deletedTasks.insert(0, task);
+      notifyListeners();
+    }
+  }
+
+  Future<Task?> restoreFromTrash(String taskId) async {
+    if (!_authState.isLoggedIn) return null;
+
+    final originalIndex = _deletedTasks.indexWhere((t) => t.taskId == taskId);
+    if (originalIndex == -1) return null;
+
+    final taskToRestore = _deletedTasks[originalIndex];
+    _deletedTasks.removeAt(originalIndex);
+    notifyListeners();
+
+    try {
+      final restoredTask = await _apiService.restoreTask(taskId);
+      return restoredTask;
+    } catch (e) {
+      // Возвращаем задачу обратно в список, если произошла ошибка
+      _deletedTasks.insert(originalIndex, taskToRestore);
+      _error = "Не удалось восстановить задачу: $e";
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> deletePermanently(String taskId) async {
+    if (!_authState.isLoggedIn) return false;
+
+    final originalIndex = _deletedTasks.indexWhere((t) => t.taskId == taskId);
+    if (originalIndex == -1) return false;
+
+    final taskToDelete = _deletedTasks[originalIndex];
+    _deletedTasks.removeAt(originalIndex);
+    notifyListeners();
+
+    try {
+      await _apiService.deleteTaskPermanently(taskId);
+      return true;
+    } catch (e) {
+      // Возвращаем задачу обратно, если ошибка
+      _deletedTasks.insert(originalIndex, taskToDelete);
+      _error = "Не удалось окончательно удалить задачу: $e";
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authState.removeListener(_onAuthStateChanged);
+    super.dispose();
+  }
 }

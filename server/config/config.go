@@ -16,6 +16,7 @@ type Config struct {
 	JWTConfig        JWTConfig        `yaml:"jwt" env-required:"true"`
 	S3Config         S3Config         `yaml:"s3" env-required:"true"`
 	OAuthConfig      OAuthConfig      `yaml:"oauth" env-required:"true"`
+	FCMConfig        FCMConfig        `yaml:"fcm_config"`
 }
 
 type CacheConfig struct {
@@ -40,6 +41,11 @@ type HttpServerConfig struct {
 	IdleTimeout    time.Duration `yaml:"idle_timeout" env-required:"true"`
 	AllowedOrigins []string      `yaml:"allowed_origins"`
 	TLS            TLSConfig     `yaml:"tls"`
+}
+
+type FCMConfig struct {
+	ProjectID                 string `yaml:"project_id"`                    // Project ID из Firebase Console
+	ServiceAccountKeyJSONPath string `yaml:"service_account_key_json_path"` // Путь к файлу JSON или сам JSON как строка
 }
 
 type DbConfig struct {
@@ -83,12 +89,12 @@ type OAuthConfig struct {
 func MustLoad() *Config {
 	ConfigPath := os.Getenv("CONFIG_PATH")
 	if ConfigPath == "" {
-		defaultPath := "./server/config/local.yaml"
+		defaultPath := "./config/local.yaml"
 		if _, err := os.Stat(defaultPath); err == nil {
 			ConfigPath = defaultPath
 			log.Printf("CONFIG_PATH environment variable not set, using default: %s", ConfigPath)
 		} else {
-			configPathFromRoot := "server/config/local.yaml"
+			configPathFromRoot := "app/config/local.yaml"
 			if _, errRoot := os.Stat(configPathFromRoot); errRoot == nil {
 				ConfigPath = configPathFromRoot
 				log.Printf("CONFIG_PATH environment variable not set, using default relative to root: %s", ConfigPath)

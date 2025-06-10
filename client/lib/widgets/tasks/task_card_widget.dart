@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../models/task_model.dart';
+import '../../models/team_model.dart';
 import '../../tag_provider.dart';
+import '../../team_provider.dart';
 import '../../theme_provider.dart';
 import '../../core/routing/app_router_delegate.dart';
 import '../../core/routing/app_route_path.dart';
@@ -381,21 +383,31 @@ class TeamTaskCard extends BaseTaskCard {
   Widget _buildSpecificInfo(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    if (task.teamName == null || task.teamName!.isEmpty) {
-      if (task.teamId != null && task.teamId!.isNotEmpty) {
-        return _buildTeamInfoDisplay(context, 'Команда: ID ${task.teamId}', colorScheme, theme);
-      }
+    final teamProvider = context.watch<TeamProvider>();
+
+    if (task.teamId == null || task.teamId!.isEmpty) {
       return const SizedBox.shrink();
     }
-    return _buildTeamInfoDisplay(context, task.teamName!, colorScheme, theme);
+
+    Team? team;
+    try {
+      team = teamProvider.myTeams.firstWhere((t) => t.teamId == task.teamId);
+    } catch (e) {
+      // Команда не найдена в списке, используем данные из задачи
+    }
+
+    final String teamName = team?.name ?? task.teamName ?? 'Команда ID: ${task.teamId}';
+    final String? teamImageUrl = team?.imageUrl;
+
+    return _buildTeamInfoDisplay(context, teamName, teamImageUrl, colorScheme, theme);
   }
 
-  Widget _buildTeamInfoDisplay(BuildContext context, String displayText, ColorScheme colorScheme, ThemeData theme){
+  Widget _buildTeamInfoDisplay(BuildContext context, String displayText, String? imageUrl, ColorScheme colorScheme, ThemeData theme){
+    final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
+
     return GestureDetector(
       onTap: task.teamId != null ? () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Переход к команде ${task.teamName ?? task.teamId} (в разработке)')),
-        );
+        routerDelegate.navigateTo(TeamDetailPath(task.teamId!));
       } : null,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -407,7 +419,14 @@ class TeamTaskCard extends BaseTaskCard {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.group_work_outlined, size: 13, color: colorScheme.onSecondaryContainer),
+            if (imageUrl != null && imageUrl.isNotEmpty)
+              CircleAvatar(
+                backgroundImage: NetworkImage(imageUrl),
+                radius: 8,
+                backgroundColor: colorScheme.secondaryContainer,
+              )
+            else
+              Icon(Icons.group_work_outlined, size: 13, color: colorScheme.onSecondaryContainer),
             const SizedBox(width: 5),
             Flexible(
               child: Text(

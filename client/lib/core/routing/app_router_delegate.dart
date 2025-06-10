@@ -1,18 +1,10 @@
-// lib/core/routing/app_router_delegate.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../models/team_model.dart'; // Используется в _handleJoinTeamByTokenPath
-import '../../screens/auth_screen.dart';
-import '../../screens/landing_screen.dart';
+import '../../models/team_model.dart';
 import 'app_route_path.dart';
-import 'app_pages.dart'; // buildPagesForPath теперь здесь
+import 'app_pages.dart';
 import '../../auth_state.dart';
 import '../../team_provider.dart';
-// Экраны импортируются в app_pages.dart или используются через buildPagesForPath
-
-class LoadingPath extends AppRoutePath {
-  const LoadingPath();
-}
 
 class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     with ChangeNotifier, PopNavigatorRouterDelegateMixin<AppRoutePath> {
@@ -23,131 +15,87 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
 
   AppRoutePath _currentPathConfig;
   AppRoutePath? _previousPathBeforeTaskDetail;
-  AppRoutePath? _parsedPathFromUrlDuringLoading;
+  AppRoutePath? _parsedPathFromUrlWhileLoading;
 
   AppRouterDelegate({required this.authState, required this.teamProvider})
       : navigatorKey = GlobalKey<NavigatorState>(),
         _currentPathConfig = const LoadingPath() {
     authState.addListener(_onAuthStateChanged);
-    debugPrint("AppRouterDelegate Initialized: currentPathConfig=LoadingPath. Waiting for authState.initialAuthCheckCompleted.");
+    debugPrint("[RouterDelegate] Initialized. Current path: LoadingPath.");
+
+    // Если к моменту инициализации делегата, authState уже все проверил.
     if (authState.initialAuthCheckCompleted) {
-      _currentPathConfig = _determineAppropriatePath(null); // Передаем null, т.к. _parsedPathFromUrlDuringLoading еще не установлен
-      debugPrint("AppRouterDelegate Constructor: Auth already completed. Initial path set to: ${_currentPathConfig.runtimeType}");
+      _currentPathConfig = _getAppropriatePathForCurrentState(null)!;
+      debugPrint("[RouterDelegate] Constructor: Auth already completed. Initial path set to: ${_currentPathConfig.runtimeType}");
       if (_currentPathConfig is JoinTeamByTokenPath && authState.isLoggedIn) {
         Future.microtask(() => _handleJoinTeamByTokenPath(_currentPathConfig as JoinTeamByTokenPath));
       }
     }
   }
 
-  AppRoutePath _determineAppropriatePath(AppRoutePath? parsedPathFromUrl) {
-    // Если parsedPathFromUrl не null, используем его, иначе _parsedPathFromUrlDuringLoading
-    final AppRoutePath? pathFromUrl = parsedPathFromUrl ?? _parsedPathFromUrlDuringLoading;
-    debugPrint("AppRouterDelegate._determineAppropriatePath: Determining path. Current _currentPathConfig: ${_currentPathConfig.runtimeType}, isLoggedIn: ${authState.isLoggedIn}, pathFromUrl: ${pathFromUrl?.runtimeType}, pendingInviteToken: ${authState.pendingInviteToken}");
+  // Главная функция принятия решений о пути на основе текущего состояния.
+  AppRoutePath? _getAppropriatePathForCurrentState(AppRoutePath? intendedPath) {
+    debugPrint("[RouterDelegate] _getAppropriatePathForCurrentState: Intended: ${intendedPath?.runtimeType}, Current: ${_currentPathConfig.runtimeType}, isLoggedIn: ${authState.isLoggedIn}");
 
-    AppRoutePath determinedPath;
-
-    if (pathFromUrl != null) {
-      debugPrint("AppRouterDelegate._determineAppropriatePath: Processing pathFromUrl: ${pathFromUrl.runtimeType}");
-      if (pathFromUrl is LandingPath && kIsWeb) {
-        determinedPath = pathFromUrl;
-      } else if (pathFromUrl is LandingPath && !kIsWeb) {
-        determinedPath = const AuthPath();
-      } else if (!authState.isLoggedIn) {
-        if (pathFromUrl is AuthPath || pathFromUrl is JoinTeamByTokenPath) {
-          if (pathFromUrl is JoinTeamByTokenPath) authState.setPendingInviteToken(pathFromUrl.token);
-          determinedPath = const AuthPath();
-        } else {
-          determinedPath = kIsWeb ? const LandingPath() : const AuthPath();
-        }
-      } else { // Пользователь залогинен
-        if (pathFromUrl is AuthPath || (pathFromUrl is LandingPath && kIsWeb)) {
-          determinedPath = const HomeSubPath(AppRouteSegments.allTasks, showRightSidebar: true);
-        } else if (authState.pendingInviteToken != null && pathFromUrl is! JoinTeamByTokenPath && pathFromUrl is! JoinTeamProcessingPath) {
-          determinedPath = JoinTeamByTokenPath(authState.pendingInviteToken!);
-        } else {
-          determinedPath = pathFromUrl; // Используем парсенный путь
-        }
+    // Если пользователь залогинен
+    if (authState.isLoggedIn) {
+      // 1. Обрабатываем токен приглашения в приоритете
+      if (authState.pendingInviteToken != null) {
+        return JoinTeamByTokenPath(authState.pendingInviteToken!);
       }
-    } else { // pathFromUrl is null, _parsedPathFromUrlDuringLoading тоже был null
-      if (authState.isLoggedIn) {
-        if (authState.pendingInviteToken != null && _currentPathConfig is! JoinTeamProcessingPath && _currentPathConfig is! JoinTeamByTokenPath) {
-          determinedPath = JoinTeamByTokenPath(authState.pendingInviteToken!);
-        } else if ((_currentPathConfig is AuthPath) || (_currentPathConfig is LandingPath && kIsWeb) || _currentPathConfig is LoadingPath || _currentPathConfig is UnknownPath) {
-          determinedPath = const HomeSubPath(AppRouteSegments.allTasks, showRightSidebar: true);
-        } else {
-          determinedPath = _currentPathConfig;
-        }
-      } else {
-        if ((_currentPathConfig is AuthPath) || (_currentPathConfig is LandingPath && kIsWeb)) {
-          determinedPath = _currentPathConfig;
-        } else {
-          determinedPath = kIsWeb ? const LandingPath() : const AuthPath();
-        }
+      // 2. Если пытаются попасть на страницы для неавторизованных, редиректим на home
+      if (intendedPath is AuthPath || (intendedPath is LandingPath && kIsWeb)) {
+        return const HomeSubPath(AppRouteSegments.allTasks);
       }
+      // 3. Если это валидный путь для залогиненного, используем его
+      if (intendedPath is HomePath || intendedPath is HomeSubPath || intendedPath is TeamDetailPath || intendedPath is TaskDetailPath || intendedPath is JoinTeamProcessingPath) {
+        return intendedPath;
+      }
+      // 4. Если мы пришли с Loading, Auth или Landing, но intendedPath не задан - идем на home
+      if (_currentPathConfig is LoadingPath || _currentPathConfig is AuthPath || _currentPathConfig is LandingPath) {
+        return const HomeSubPath(AppRouteSegments.allTasks);
+      }
+      // 5. В остальных случаях, если intendedPath невалиден, остаемся на текущем пути
+      return _currentPathConfig;
     }
-    debugPrint("AppRouterDelegate._determineAppropriatePath: Path resolved to: ${determinedPath.runtimeType}");
-    return determinedPath;
+    // Если пользователь НЕ залогинен
+    else {
+      // 1. Если пришли с токеном, сохраняем его и идем на Auth
+      if (intendedPath is JoinTeamByTokenPath) {
+        authState.setPendingInviteToken(intendedPath.token);
+        return const AuthPath();
+      }
+      // 2. Разрешаем только Auth и Landing (для веба)
+      if (intendedPath is AuthPath || (intendedPath is LandingPath && kIsWeb)) {
+        return intendedPath;
+      }
+      // 3. Все остальные пути ведут на Landing (веб) или Auth (мобильные)
+      return kIsWeb ? const LandingPath() : const AuthPath();
+    }
   }
 
+
   void _onAuthStateChanged() {
-    debugPrint("AppRouterDelegate._onAuthStateChanged: AuthState changed. initialAuthCheckCompleted=${authState.initialAuthCheckCompleted}, isLoggedIn=${authState.isLoggedIn}, pendingInviteToken=${authState.pendingInviteToken}, currentPathConfig before: ${_currentPathConfig.runtimeType}");
+    debugPrint("[RouterDelegate] Auth state changed. LoggedIn: ${authState.isLoggedIn}, CheckCompleted: ${authState.initialAuthCheckCompleted}");
 
     if (!authState.initialAuthCheckCompleted) {
-      if (_currentPathConfig is! LoadingPath) {
-        _currentPathConfig = const LoadingPath();
-        notifyListeners();
-        debugPrint("AppRouterDelegate._onAuthStateChanged: Auth not complete. Set to LoadingPath.");
-      }
+      // Если по какой-то причине проверка сбросилась, показываем загрузку
+      _currentPathConfig = const LoadingPath();
+      notifyListeners();
       return;
     }
 
-    AppRoutePath newPathDetermined = _determineAppropriatePath(null); // Передаем null, т.к. URL не менялся, а только authState
-    if (_parsedPathFromUrlDuringLoading != null && newPathDetermined.runtimeType == _parsedPathFromUrlDuringLoading.runtimeType) {
-      // Если _determineAppropriatePath вернул _parsedPathFromUrlDuringLoading, очищаем его.
-      // Это для случая, когда _onAuthStateChanged вызывается после того, как URL был запарсен, но до того, как _parsedPathFromUrlDuringLoading был использован.
-      _parsedPathFromUrlDuringLoading = null;
-    }
+    // Если был запарсен URL пока шла проверка, используем его
+    final pathFromUrl = _parsedPathFromUrlWhileLoading;
+    _parsedPathFromUrlWhileLoading = null; // Используем его только один раз
 
+    _currentPathConfig = _getAppropriatePathForCurrentState(pathFromUrl)!;
 
-    if (_currentPathConfig is LandingPath && newPathDetermined is LandingPath && kIsWeb) {
-      debugPrint("AppRouterDelegate._onAuthStateChanged: Staying on LandingPage (web) as new path is also LandingPath.");
-      if (_currentPathConfig is LoadingPath) {
-        _currentPathConfig = newPathDetermined;
-        notifyListeners();
-      }
-      return;
-    }
-
-    bool pathActuallyNeedsUpdate = _currentPathConfig.runtimeType != newPathDetermined.runtimeType;
-    if (!pathActuallyNeedsUpdate) {
-      // ... (логика сравнения содержимого pathActuallyNeedsUpdate остается той же)
-      if (newPathDetermined is HomeSubPath && _currentPathConfig is HomeSubPath) {
-        pathActuallyNeedsUpdate = !((newPathDetermined).subRoute == (_currentPathConfig as HomeSubPath).subRoute &&
-            (newPathDetermined).showRightSidebar == (_currentPathConfig as HomeSubPath).showRightSidebar);
-      } else if (newPathDetermined is TaskDetailPath && _currentPathConfig is TaskDetailPath) {
-        pathActuallyNeedsUpdate = (newPathDetermined).taskId != (_currentPathConfig as TaskDetailPath).taskId;
-      } else if (newPathDetermined is TeamDetailPath && _currentPathConfig is TeamDetailPath) {
-        pathActuallyNeedsUpdate = (newPathDetermined).teamId != (_currentPathConfig as TeamDetailPath).teamId;
-      } else if (newPathDetermined is JoinTeamByTokenPath && _currentPathConfig is JoinTeamByTokenPath) {
-        pathActuallyNeedsUpdate = (newPathDetermined).token != (_currentPathConfig as JoinTeamByTokenPath).token;
-      }
-    }
-
-    if (pathActuallyNeedsUpdate) {
-      debugPrint("AppRouterDelegate._onAuthStateChanged: Path effectively changing from ${_currentPathConfig.runtimeType} to ${newPathDetermined.runtimeType}");
-      _currentPathConfig = newPathDetermined;
-
-      if ((_currentPathConfig is AuthPath || _currentPathConfig is LandingPath) && _previousPathBeforeTaskDetail != null) {
-        _previousPathBeforeTaskDetail = null;
-      }
-
-      if (_currentPathConfig is JoinTeamByTokenPath && authState.isLoggedIn) {
-        _handleJoinTeamByTokenPath(_currentPathConfig as JoinTeamByTokenPath);
-      } else {
-        notifyListeners();
-      }
+    if (_currentPathConfig is JoinTeamByTokenPath && authState.isLoggedIn) {
+      // Немедленно начинаем обработку токена
+      _handleJoinTeamByTokenPath(_currentPathConfig as JoinTeamByTokenPath);
     } else {
-      debugPrint("AppRouterDelegate._onAuthStateChanged: Path effectively not changed. Current is ${_currentPathConfig.runtimeType}, proposed new was ${newPathDetermined.runtimeType}");
+      notifyListeners();
     }
   }
 
@@ -156,254 +104,108 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
 
   @override
   Widget build(BuildContext context) {
-    List<Page<dynamic>> pages;
-    // Этот debugPrint очень важен для отладки стека страниц
-    debugPrint("AppRouterDelegate.build: START. currentPathConfig=${_currentPathConfig.runtimeType}, authState.isLoggedIn=${authState.isLoggedIn}, authState.initialAuthCheckCompleted=${authState.initialAuthCheckCompleted}");
-
-    // ВАЖНО: Передаем _currentPathConfig, который УЖЕ должен быть актуализирован через _onAuthStateChanged или setNewRoutePath
-    pages = buildPagesForPath(_currentPathConfig, authState);
-
-    if (pages.isEmpty) {
-      debugPrint("AppRouterDelegate.build: CRITICAL - pages list was empty. Defaulting to ${kIsWeb ? 'Landing' : 'Auth'}. Current path: ${_currentPathConfig.runtimeType}");
-      pages.add(_createPage(
-          kIsWeb ? const LandingScreen() : AuthScreen(pendingInviteToken: authState.pendingInviteToken),
-          ValueKey(kIsWeb ? 'FallbackLandingPage' : 'FallbackAuthPage'),
-          kIsWeb ? AppRoutes.landing : AppRoutes.auth
-      ));
-    }
-    debugPrint("AppRouterDelegate.build: END. Pages count: ${pages.length}. Last page key: ${pages.last.key}, Current URL config from path: ${_currentPathConfig.runtimeType}");
+    debugPrint("[RouterDelegate.build] Building navigator for path: ${_currentPathConfig.runtimeType}");
+    final pages = buildPagesForPath(_currentPathConfig, authState);
 
     return Navigator(
       key: navigatorKey,
-      pages: List.unmodifiable(pages),
+      pages: pages,
       onPopPage: (route, result) {
-        // ... (логика onPopPage) ...
         if (!route.didPop(result)) {
           return false;
         }
-        debugPrint("AppRouterDelegate.onPopPage: Popping page ${route.settings.name}. Current path before pop: ${_currentPathConfig.runtimeType}");
-
-        AppRoutePath newPathAfterPop;
-
-        if (pages.length == 1) { // Была единственная страница, и мы ее "убрали" (хотя Navigator этого не позволит, если canPop false)
-          if ((_currentPathConfig is LandingPath && kIsWeb) ||
-              (_currentPathConfig is AuthPath && !kIsWeb && !authState.isLoggedIn) ||
-              ((_currentPathConfig is HomeSubPath || _currentPathConfig is HomePath) && authState.isLoggedIn)
-          ) {
-            debugPrint("AppRouterDelegate.onPopPage: Attempting to pop the only/root page (${_currentPathConfig.runtimeType}). Denied by framework or custom canPop.");
-            return false;
-          }
-        }
 
         if (_currentPathConfig is TaskDetailPath) {
-          newPathAfterPop = _previousPathBeforeTaskDetail ??
-              (authState.isLoggedIn
-                  ? const HomeSubPath(AppRouteSegments.allTasks, showRightSidebar: true)
-                  : (kIsWeb ? const LandingPath() : const AuthPath()));
+          _currentPathConfig = _previousPathBeforeTaskDetail ?? const HomeSubPath(AppRouteSegments.allTasks);
           _previousPathBeforeTaskDetail = null;
         } else if (_currentPathConfig is TeamDetailPath) {
-          newPathAfterPop = const HomeSubPath(AppRouteSegments.teams, showRightSidebar: true);
+          _currentPathConfig = const HomeSubPath(AppRouteSegments.teams);
         } else if (_currentPathConfig is JoinTeamProcessingPath) {
-          newPathAfterPop = authState.isLoggedIn
-              ? const HomeSubPath(AppRouteSegments.teams, showRightSidebar: true)
-              : (kIsWeb ? const LandingPath() : const AuthPath());
-        } else if (_currentPathConfig is AuthPath && kIsWeb) {
-          newPathAfterPop = const LandingPath();
-        } else if (pages.length > 1) {
-          // Пытаемся восстановить путь из предыдущей страницы в стеке (которая теперь верхняя)
-          final previousPage = pages[pages.length - 2]; // Страница до той, что была удалена
-          // Эта логика восстановления пути по имени страницы не очень надежна.
-          // Лучше, если setNewRoutePath будет правильно устанавливать _currentPathConfig.
-          // onPopPage Navigator'а УЖЕ изменил `pages`.
-          // Мы должны здесь определить, какому AppRoutePath соответствует новая ВЕРХНЯЯ страница.
-          // Это сложно без обратного маппинга Page -> AppRoutePath.
-
-          // Временное упрощение: если мы не знаем, куда идти, идем на дефолтный
-          if (authState.isLoggedIn) {
-            newPathAfterPop = const HomeSubPath(AppRouteSegments.allTasks, showRightSidebar: true);
-          } else {
-            newPathAfterPop = kIsWeb ? const LandingPath() : const AuthPath();
-          }
-          debugPrint("AppRouterDelegate.onPopPage: Fallback after pop. New path: ${newPathAfterPop.runtimeType}");
-
-        } else { // Осталась одна страница (или 0, что не должно быть)
-          newPathAfterPop = authState.isLoggedIn
-              ? const HomeSubPath(AppRouteSegments.allTasks, showRightSidebar: true)
-              : (kIsWeb ? const LandingPath() : const AuthPath());
-          debugPrint("AppRouterDelegate.onPopPage: Popped to last page. New path: ${newPathAfterPop.runtimeType}");
+          _currentPathConfig = const HomeSubPath(AppRouteSegments.teams);
+        } else {
+          // Для других случаев pop, если это возможно, RouterDelegate сам обработает.
+          // Если мы хотим кастомную логику, то здесь нужно определить предыдущий путь.
+          // Пока что этого достаточно.
+          return false;
         }
 
-        _currentPathConfig = newPathAfterPop;
         notifyListeners();
         return true;
       },
     );
   }
 
-  Future<void> _handleJoinTeamByTokenPath(JoinTeamByTokenPath path) async {
-    // ... (без изменений)
-    debugPrint("AppRouterDelegate._handleJoinTeamByTokenPath: Processing token ${path.token}");
+  @override
+  Future<void> setNewRoutePath(AppRoutePath configuration) async {
+    debugPrint("[RouterDelegate] setNewRoutePath received: ${configuration.runtimeType}");
 
+    if (!authState.initialAuthCheckCompleted) {
+      // Если аутентификация еще не проверена, сохраняем запрошенный путь
+      _parsedPathFromUrlWhileLoading = configuration;
+      // Если в URL есть токен, сохраняем его сразу
+      if (configuration is JoinTeamByTokenPath) {
+        authState.setPendingInviteToken(configuration.token);
+      }
+      debugPrint("[RouterDelegate] Auth check pending. Stashed path: ${configuration.runtimeType}");
+      return;
+    }
+
+    // AuthState уже известен, принимаем решение немедленно
+    _currentPathConfig = _getAppropriatePathForCurrentState(configuration)!;
+
+    // Если это путь с токеном и пользователь залогинен, обрабатываем его
+    if (_currentPathConfig is JoinTeamByTokenPath && authState.isLoggedIn) {
+      await _handleJoinTeamByTokenPath(_currentPathConfig as JoinTeamByTokenPath);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  void navigateTo(AppRoutePath path) {
+    // Внутренняя навигация, setNewRoutePath не вызывается платформой, а нами.
+    setNewRoutePath(path);
+  }
+
+  Future<void> _handleJoinTeamByTokenPath(JoinTeamByTokenPath path) async {
+    debugPrint("[RouterDelegate] Handling JoinTeamByTokenPath: ${path.token}");
+
+    // Переключаемся на экран загрузки
     _currentPathConfig = const JoinTeamProcessingPath();
     notifyListeners();
 
+    // Даем Flutter перестроиться
     await Future.delayed(Duration.zero);
 
     Team? joinedTeam;
     String? joinError;
-
     try {
       joinedTeam = await teamProvider.joinTeamByToken(path.token);
       authState.clearPendingInviteToken();
 
       if (joinedTeam != null) {
-        debugPrint("AppRouterDelegate._handleJoinTeamByTokenPath: Successfully joined team ${joinedTeam.teamId}. Navigating to team details.");
         _currentPathConfig = TeamDetailPath(joinedTeam.teamId);
       } else {
-        joinError = teamProvider.error ?? "Не удалось присоединиться к команде. Токен недействителен или срок его действия истек.";
-        debugPrint("AppRouterDelegate._handleJoinTeamByTokenPath: Failed to join team. Error: $joinError. Navigating to teams list.");
-        _currentPathConfig = const HomeSubPath(AppRouteSegments.teams, showRightSidebar: true);
+        joinError = teamProvider.error ?? "Не удалось присоединиться к команде.";
+        _currentPathConfig = const HomeSubPath(AppRouteSegments.teams);
       }
     } catch (e) {
       authState.clearPendingInviteToken();
-      joinError = "Неизвестная ошибка при присоединении к команде: $e";
-      debugPrint("AppRouterDelegate._handleJoinTeamByTokenPath: Exception during join: $joinError. Navigating to teams list.");
-      _currentPathConfig = const HomeSubPath(AppRouteSegments.teams, showRightSidebar: true);
+      joinError = "Ошибка: ${e.toString()}";
+      _currentPathConfig = const HomeSubPath(AppRouteSegments.teams);
     }
 
+    // Показываем SnackBar с результатом
     final currentContext = navigatorKey.currentContext;
     if (currentContext != null && currentContext.mounted) {
-      if (joinedTeam != null) {
-        ScaffoldMessenger.of(currentContext).showSnackBar(
-          SnackBar(
-            content: Text('Вы успешно присоединились к команде "${joinedTeam.name}"!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (joinError != null) {
-        ScaffoldMessenger.of(currentContext).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка присоединения: $joinError'),
-            backgroundColor: Theme.of(currentContext).colorScheme.error,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-        if(teamProvider.error != null) teamProvider.clearError();
-      }
+      ScaffoldMessenger.of(currentContext).showSnackBar(
+        SnackBar(
+          content: Text(joinedTeam != null ? 'Вы успешно присоединились к команде "${joinedTeam.name}"!' : 'Ошибка: $joinError'),
+          backgroundColor: joinedTeam != null ? Colors.green : Theme.of(currentContext).colorScheme.error,
+        ),
+      );
     }
+
     notifyListeners();
-  }
-
-
-  @override
-  Future<void> setNewRoutePath(AppRoutePath configuration) async {
-    debugPrint("[AppRouterDelegate.setNewRoutePath] Received new configuration: ${configuration.runtimeType}");
-
-    // 1. Если это LandingPath и веб, устанавливаем его и выходим.
-    if (configuration is LandingPath && kIsWeb) {
-      if (!(_currentPathConfig is LandingPath)) {
-        _currentPathConfig = const LandingPath();
-        _parsedPathFromUrlDuringLoading = null; // Очищаем, так как путь установлен
-        debugPrint("AppRouterDelegate.setNewRoutePath: Path set to LandingPath (web). Notifying.");
-        notifyListeners();
-      } else {
-        debugPrint("AppRouterDelegate.setNewRoutePath: Path already LandingPath (web). No notification.");
-        _parsedPathFromUrlDuringLoading = null; // Все равно очищаем
-      }
-      return;
-    }
-    // Если это LandingPath, но не веб, перенаправляем на AuthPath
-    if (configuration is LandingPath && !kIsWeb) {
-      if (!(_currentPathConfig is AuthPath)) {
-        _currentPathConfig = const AuthPath();
-        _parsedPathFromUrlDuringLoading = null;
-        debugPrint("AppRouterDelegate.setNewRoutePath: LandingPath on non-web, redirecting to AuthPath. Notifying.");
-        notifyListeners();
-      }
-      return;
-    }
-
-    // 2. Если authState еще не инициализирован, сохраняем путь и выходим
-    if (!authState.initialAuthCheckCompleted) {
-      _parsedPathFromUrlDuringLoading = configuration; // Сохраняем для _determineAppropriatePath
-      if (configuration is JoinTeamByTokenPath) {
-        authState.setPendingInviteToken(configuration.token);
-      }
-      // _currentPathConfig остается LoadingPath
-      debugPrint("AppRouterDelegate.setNewRoutePath: Auth loading. Stored requested path: ${configuration.runtimeType} in _parsedPathFromUrlDuringLoading. Current is LoadingPath.");
-      return;
-    }
-
-    // AuthState уже инициализирован.
-    // Определяем новый путь на основе configuration и текущего состояния authState.
-    AppRoutePath newPath = configuration;
-
-    if (authState.isLoggedIn) {
-      // Если залогинен и пытается попасть на Auth или Landing (веб) -> Home
-      if ((configuration is AuthPath) || (configuration is LandingPath && kIsWeb)) {
-        newPath = const HomeSubPath(AppRouteSegments.allTasks, showRightSidebar: true);
-        debugPrint("AppRouterDelegate.setNewRoutePath: User logged in, received ${configuration.runtimeType}. Redirecting to Home.");
-      }
-      // Если есть pendingInviteToken и configuration еще не путь его обработки
-      else if (authState.pendingInviteToken != null && configuration is! JoinTeamByTokenPath && configuration is! JoinTeamProcessingPath) {
-        newPath = JoinTeamByTokenPath(authState.pendingInviteToken!);
-        debugPrint("AppRouterDelegate.setNewRoutePath: User logged in, has pending invite. Path set to JoinTeamByTokenPath.");
-      }
-      // Иначе, если configuration это JoinTeamByTokenPath, он будет обработан ниже
-    } else { // Не залогинен
-      // Если пытается попасть не на Auth и не на Landing (веб) -> редирект
-      if (configuration is! AuthPath && !(configuration is LandingPath && kIsWeb)) {
-        if (configuration is JoinTeamByTokenPath) { // Если это Join-токен, сохраняем и идем на Auth
-          authState.setPendingInviteToken(configuration.token);
-          newPath = const AuthPath();
-          debugPrint("AppRouterDelegate.setNewRoutePath: User NOT logged in, received JoinTeamByTokenPath. Stored token. Redirecting to Auth.");
-        } else { // Для всех других путей - на Landing (веб) или Auth (натив)
-          newPath = kIsWeb ? const LandingPath() : const AuthPath();
-          debugPrint("AppRouterDelegate.setNewRoutePath: User NOT logged in, received ${configuration.runtimeType}. Redirecting to ${newPath.runtimeType}.");
-        }
-      }
-      // Если configuration уже AuthPath или LandingPath (веб), то newPath не меняется
-    }
-
-    // Обработка JoinTeamByTokenPath, если newPath стал им
-    if (newPath is JoinTeamByTokenPath && authState.isLoggedIn) {
-      await _handleJoinTeamByTokenPath(newPath);
-      return;
-    }
-
-    // Сохранение предыдущего пути для TaskDetail
-    if (newPath is TaskDetailPath && _currentPathConfig is! TaskDetailPath) {
-      if (_currentPathConfig is HomePath || _currentPathConfig is HomeSubPath || _currentPathConfig is TeamDetailPath) {
-        _previousPathBeforeTaskDetail = _currentPathConfig;
-      }
-    }
-
-    bool configActuallyChanged = _currentPathConfig.runtimeType != newPath.runtimeType;
-    if (!configActuallyChanged) {
-      // ... (логика сравнения содержимого такая же)
-      if (newPath is HomeSubPath && _currentPathConfig is HomeSubPath) {
-        final currentCasted = _currentPathConfig as HomeSubPath;
-        final newCasted = newPath;
-        configActuallyChanged = !((currentCasted.subRoute == newCasted.subRoute && currentCasted.showRightSidebar == newCasted.showRightSidebar));
-      } else if (newPath is TaskDetailPath && _currentPathConfig is TaskDetailPath) {
-        configActuallyChanged = (_currentPathConfig as TaskDetailPath).taskId != newPath.taskId;
-      } else if (newPath is TeamDetailPath && _currentPathConfig is TeamDetailPath) {
-        configActuallyChanged = (_currentPathConfig as TeamDetailPath).teamId != newPath.teamId;
-      }
-    }
-
-    if (configActuallyChanged) {
-      _currentPathConfig = newPath;
-      debugPrint("AppRouterDelegate.setNewRoutePath: END. Path changed to ${_currentPathConfig.runtimeType}. Notifying listeners.");
-      notifyListeners();
-    } else {
-      debugPrint("AppRouterDelegate.setNewRoutePath: END. Path effectively NOT changed. Current: ${_currentPathConfig.runtimeType}, New (after processing): ${newPath.runtimeType}. No notification.");
-    }
-    _parsedPathFromUrlDuringLoading = null; // Очищаем здесь, так как setNewRoutePath вызвался когда authState.initialAuthCheckCompleted = true
-  }
-
-  void navigateTo(AppRoutePath path) {
-    setNewRoutePath(path);
   }
 
   @override

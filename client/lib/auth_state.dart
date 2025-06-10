@@ -54,30 +54,23 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> _checkInitialAuthStatus() async {
-    // Устанавливаем isLoading в true в начале, если проверка еще не завершена
     if (!_initialAuthCheckCompleted) {
       _isLoading = true;
-      // Уведомляем только если это самый первый запуск _checkInitialAuthStatus,
-      // чтобы избежать лишних перестроек, если он вызывается повторно.
-      // Однако, если _isLoading уже true, notifyListeners() не сделает хуже.
       notifyListeners();
     }
 
-    _initialAuthCheckCompleted = false; // Сбрасываем перед началом проверки
+    _initialAuthCheckCompleted = false;
     _emailPendingConfirmation = null;
     _oauthErrorMessage = null;
-    // _pendingInviteToken НЕ сбрасываем здесь, он мог быть установлен парсером URL
-    // и должен быть обработан после проверки логина.
 
     try {
       debugPrint("AuthState (_checkInitialAuthStatus): Attempting to get user profile with existing access token (if any).");
-      final user = await _apiService.getUserProfile(); // Этот метод должен сам обрабатывать TokenRefreshedException
+      final user = await _apiService.getUserProfile();
       _currentUser = user;
       _isLoggedIn = true;
       _errorMessage = null;
       debugPrint("AuthState (_checkInitialAuthStatus): Success with existing access token. User: ${_currentUser?.login}");
 
-      // Если пользователь залогинен и есть ожидающий токен, он будет обработан в AppRouterDelegate._onAuthStateChanged
       if (_isLoggedIn && _pendingInviteToken != null) {
         debugPrint("AuthState (_checkInitialAuthStatus): User logged in, pending invite token '$_pendingInviteToken' is ready to be processed by router.");
       }
@@ -85,7 +78,7 @@ class AuthState extends ChangeNotifier {
     } on TokenRefreshedException {
       debugPrint("AuthState (_checkInitialAuthStatus): TokenRefreshedException caught. Attempting to get profile again.");
       try {
-        final user = await _apiService.getUserProfile(); // Повторная попытка после исключения
+        final user = await _apiService.getUserProfile();
         _currentUser = user;
         _isLoggedIn = true;
         _errorMessage = null;
@@ -108,7 +101,6 @@ class AuthState extends ChangeNotifier {
         _currentUser = null;
         await _apiService.clearLocalAccessToken();
         if (!kIsWeb) await _secureStorage.delete(key: _refreshTokenKeySecure);
-        // _pendingInviteToken остается, чтобы пользователь мог залогиниться и потом обработать его
       } else {
         _errorMessage = "Не удалось проверить сессию: ${e.message}";
         debugPrint("AuthState (_checkInitialAuthStatus): API Exception ${e.statusCode}: ${e.message}");
@@ -126,27 +118,21 @@ class AuthState extends ChangeNotifier {
     }
 
     if (_isLoggedIn && _currentUser != null) {
-      _applyProfileUISettings(_currentUser!);
+      // Настройки UI больше не применяются здесь, ThemeProvider будет слушать изменения currentUser
     } else {
-      _isLoggedIn = false; // Убеждаемся, что false, если нет currentUser
+      _isLoggedIn = false;
       _currentUser = null;
     }
 
-    _isLoading = false; // Завершаем общую загрузку
-    _initialAuthCheckCompleted = true; // <<< УСТАНАВЛИВАЕМ ФЛАГ В КОНЦЕ >>>
+    _isLoading = false;
+    _initialAuthCheckCompleted = true;
     debugPrint("AuthState (_checkInitialAuthStatus) FINISHING: isLoggedIn: $_isLoggedIn, initialAuthCheckCompleted: $_initialAuthCheckCompleted, currentUser: ${_currentUser?.login}, error: $_errorMessage, pendingToken: $_pendingInviteToken");
     notifyListeners();
   }
 
   Future<void> checkInitialAuthStatusAgain() async {
     debugPrint("AuthState: Manually re-checking initial auth status via checkInitialAuthStatusAgain().");
-    // _isLoading = true; // _checkInitialAuthStatus сам управляет этим флагом
-    // notifyListeners(); // _checkInitialAuthStatus вызовет notifyListeners
     await _checkInitialAuthStatus();
-  }
-
-  void _applyProfileUISettings(UserProfile profile) {
-    debugPrint("AuthState (_applyProfileUISettings): Applying UI settings from profile (login: ${profile.login}, email: ${profile.email}). UserID: ${profile.userId}");
   }
 
   Future<bool> signUp({
@@ -185,13 +171,9 @@ class AuthState extends ChangeNotifier {
         await _secureStorage.write(key: _refreshTokenKeySecure, value: authResponse.refreshToken!);
         debugPrint("AuthState (signIn): Native refresh token saved from signIn API response.");
       }
-      // Access token уже должен быть сохранен в ApiService._saveAccessToken
 
-      // После успешного signIn, мы немедленно вызываем _checkInitialAuthStatus.
-      // _checkInitialAuthStatus обновит _isLoggedIn, _currentUser, и вызовет notifyListeners().
-      // Если был _pendingInviteToken, он будет обработан в AppRouterDelegate при следующем _onAuthStateChanged.
-      await _checkInitialAuthStatus(); // Это вызовет notifyListeners() в конце
-      return _isLoggedIn; // Возвращаем актуальное состояние после _checkInitialAuthStatus
+      await _checkInitialAuthStatus();
+      return _isLoggedIn;
 
     } on EmailNotConfirmedException catch (e) {
       _errorMessage = e.message;
@@ -207,14 +189,13 @@ class AuthState extends ChangeNotifier {
       _errorMessage = 'Неизвестная ошибка при входе: ${e.toString()}';
       _isLoggedIn = false; _currentUser = null; _isLoading = false; notifyListeners(); return false;
     }
-    // Блок _isLoading = false; notifyListeners(); не нужен здесь, т.к. _checkInitialAuthStatus сделает это.
   }
 
   Future<void> logout() async {
     _errorMessage = null;
     _oauthErrorMessage = null;
     _emailPendingConfirmation = null;
-    _pendingInviteToken = null; // <<< СБРАСЫВАЕМ ТОКЕН ПРИ ЛОГАУТЕ >>>
+    _pendingInviteToken = null;
 
     try {
       await _apiService.logout();
@@ -384,12 +365,9 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<bool> updateUserProfile({
-    String? login, String? theme, String? accentColor,
-    bool? isSidebarCollapsed, bool? resetAvatar, Map<String, dynamic>? avatarFile,
-    bool? notificationsEmailEnabled,
-    bool? notificationsPushTaskAssigned,
-    bool? notificationsPushTaskDeadline,
-    bool? notificationsPushTeamMention,
+    String? login,
+    bool? resetAvatar,
+    Map<String, dynamic>? avatarFile,
   }) async {
     if (!_isLoggedIn || _currentUser == null) {
       _errorMessage = "Пользователь не авторизован для обновления профиля.";
@@ -404,28 +382,90 @@ class AuthState extends ChangeNotifier {
 
     try {
       final updatedProfile = await _apiService.updateUserProfile(
-          login: login, theme: theme, accentColor: accentColor,
-          isSidebarCollapsed: isSidebarCollapsed, resetAvatar: resetAvatar, avatarFile: avatarFile,
-          notificationsEmailEnabled: notificationsEmailEnabled,
-          notificationsPushTaskAssigned: notificationsPushTaskAssigned,
-          notificationsPushTaskDeadline: notificationsPushTaskDeadline,
-          notificationsPushTeamMention: notificationsPushTeamMention
+        login: login,
+        resetAvatar: resetAvatar,
+        avatarFile: avatarFile,
       );
       _currentUser = updatedProfile;
-      _applyProfileUISettings(updatedProfile);
       _isLoading = false;
       debugPrint("AuthState (updateUserProfile) SUCCESS: currentUser: ${_currentUser?.login}");
       notifyListeners();
       return true;
-    } on ApiException catch (e) { operationError = e.message;
-    } on NetworkException catch (e) { operationError = e.message;
-    } catch (e) { operationError = 'Ошибка обновления профиля: ${e.toString()}'; }
+    } on ApiException catch (e) {
+      operationError = e.message;
+    } on NetworkException catch (e) {
+      operationError = e.message;
+    } catch (e) {
+      operationError = 'Ошибка обновления профиля: ${e.toString()}';
+    }
 
     _errorMessage = operationError;
     _isLoading = false;
     debugPrint("AuthState (updateUserProfile) FAILED: error: $_errorMessage");
     notifyListeners();
     return false;
+  }
+
+  // <<< НОВЫЙ МЕТОД ДЛЯ PATCH-запросов >>>
+  Future<bool> patchUserProfile({
+    String? theme,
+    String? accentColor,
+    String? emailNotificationsLevel,
+    String? pushNotificationsTasksLevel,
+    bool? pushNotificationsChatMentions,
+    bool? taskDeadlineRemindersEnabled,
+    String? taskDeadlineReminderTimePreference,
+  }) async {
+    if (!_isLoggedIn || _currentUser == null) {
+      _errorMessage = "Пользователь не авторизован.";
+      notifyListeners();
+      return false;
+    }
+
+    final Map<String, dynamic> patchData = {};
+    if (theme != null) patchData['theme'] = theme;
+    if (accentColor != null) patchData['accent_color'] = accentColor;
+    if (emailNotificationsLevel != null) patchData['email_notifications_level'] = emailNotificationsLevel;
+    if (pushNotificationsTasksLevel != null) patchData['push_notifications_tasks_level'] = pushNotificationsTasksLevel;
+    if (pushNotificationsChatMentions != null) patchData['push_notifications_chat_mentions'] = pushNotificationsChatMentions;
+    if (taskDeadlineRemindersEnabled != null) patchData['task_deadline_reminders_enabled'] = taskDeadlineRemindersEnabled;
+    if (taskDeadlineReminderTimePreference != null) patchData['task_deadline_reminder_time_preference'] = taskDeadlineReminderTimePreference;
+
+    if (patchData.isEmpty) {
+      debugPrint("patchUserProfile called with no data to update.");
+      return true;
+    }
+
+    // Сохраняем текущее состояние для отката в случае ошибки
+    final oldUser = _currentUser;
+    // Оптимистично обновляем UI
+    _currentUser = _applyPatchToLocalUser(patchData);
+    notifyListeners();
+
+    try {
+      final updatedProfileFromServer = await _apiService.patchUserProfile(patchData);
+      // Обновляем состояние данными с сервера для полной синхронизации
+      _currentUser = updatedProfileFromServer;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      // Откатываем UI к предыдущему состоянию в случае ошибки
+      _currentUser = oldUser;
+      _errorMessage = "Ошибка сохранения настроек: $e";
+      notifyListeners();
+      return false;
+    }
+  }
+
+  UserProfile? _applyPatchToLocalUser(Map<String, dynamic> patchData) {
+    if (_currentUser == null) return null;
+
+    // Это простой способ обновить локальный объект, чтобы UI отреагировал мгновенно.
+    // Нам нужно создать новый объект UserProfile из старого, применив изменения.
+    // Мы можем сделать это, создав копию json и обновив его.
+    final currentJson = _currentUser!.toJson();
+    currentJson.addAll(patchData);
+    return UserProfile.fromJson(currentJson);
   }
 
   Future<bool> deleteUserAccount() async {
@@ -436,7 +476,7 @@ class AuthState extends ChangeNotifier {
       _isLoggedIn = false;
       _currentUser = null;
       _emailPendingConfirmation = null;
-      _pendingInviteToken = null; // <<< СБРОС ПРИ УДАЛЕНИИ АККАУНТА >>>
+      _pendingInviteToken = null;
       _isLoading = false;
       notifyListeners();
       return true;
@@ -452,17 +492,10 @@ class AuthState extends ChangeNotifier {
   void clearEmailPendingConfirmation() { if (_emailPendingConfirmation != null) { _emailPendingConfirmation = null; notifyListeners(); } }
   void setEmailPendingConfirmation(String? email) { if (_emailPendingConfirmation != email) { _emailPendingConfirmation = email; notifyListeners(); } }
 
-  // <<< МЕТОДЫ ДЛЯ УПРАВЛЕНИЯ PENDING INVITE TOKEN >>>
   void setPendingInviteToken(String? token) {
     if (_pendingInviteToken != token) {
       _pendingInviteToken = token;
       debugPrint("AuthState: Pending invite token set to: $token");
-      // Не вызываем notifyListeners(), чтобы не спровоцировать лишних перестроек,
-      // этот токен будет проверен при следующем изменении состояния аутентификации или навигации.
-      // Если пользователь не залогинен, notifyListeners() из checkInitialAuthStatus или signIn/signUp
-      // вызовет обновление AppRouterDelegate, который увидит токен.
-      // Если пользователь уже залогинен и получает токен (не через URL), то нужно будет
-      // инициировать навигацию явно. Но здесь это для случая получения токена из URL.
     }
   }
 
@@ -470,11 +503,8 @@ class AuthState extends ChangeNotifier {
     if (_pendingInviteToken != null) {
       _pendingInviteToken = null;
       debugPrint("AuthState: Pending invite token cleared.");
-      // notifyListeners(); // Возможно, потребуется, если это состояние используется где-то в UI напрямую
     }
   }
-  // <<< КОНЕЦ НОВЫХ МЕТОДОВ >>>
-
 
   @override
   void dispose() {

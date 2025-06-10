@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../auth_state.dart';
-import '../../services/api_service.dart'; // UserProfile используется AuthState
+import '../../services/api_service.dart';
 import '../../theme_provider.dart';
 import '../../sidebar_state_provider.dart';
 import '../CustomInputField.dart';
@@ -26,31 +26,23 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
   Uint8List? _pickedImageBytes;
   bool _resetAvatar = false;
 
-  // Эти поля будут инициализированы в build на основе AuthState,
-  // чтобы гарантировать, что они всегда актуальны при первом построении
-  // или когда пользователь меняется.
   String? _initialLoginOnLoadFromAuthState;
   String? _currentAvatarUrlFromAuthState;
 
   bool _isLoading = false;
   String? _errorMessage;
 
-  // Для безопасного использования context в асинхронных операциях
   BuildContext? _scaffoldMessengerContext;
 
   @override
   void initState() {
     super.initState();
-    // Инициализируем контроллер пустым, он заполнится в первом build
     _loginController = TextEditingController();
-    // Не добавляем слушателя на authState здесь, Consumer сделает свою работу.
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Сохраняем контекст, который точно будет валидным для ScaffoldMessenger
-    // Это полезно, если виджет может быть удален из дерева во время асинхронной операции
     if (mounted) {
       _scaffoldMessengerContext = context;
     }
@@ -64,14 +56,14 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
 
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
-    if (!mounted) return; // Проверка перед использованием context
+    if (!mounted) return;
     final currentContext = _scaffoldMessengerContext ?? context;
 
     try {
       final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70, maxWidth: 1024, maxHeight: 1024);
       if (image != null) {
         final bytes = await image.readAsBytes();
-        if (bytes.lengthInBytes > 2 * 1024 * 1024) { // 2MB limit
+        if (bytes.lengthInBytes > 2 * 1024 * 1024) {
           if (!mounted) return;
           ScaffoldMessenger.of(currentContext).showSnackBar(
             const SnackBar(content: Text('Файл слишком большой. Максимум 2MB.'), backgroundColor: Colors.red),
@@ -114,8 +106,6 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
 
     final currentContext = _scaffoldMessengerContext ?? context;
     final authState = Provider.of<AuthState>(currentContext, listen: false);
-    final themeProvider = Provider.of<ThemeProvider>(currentContext, listen: false);
-    final sidebarProvider = Provider.of<SidebarStateProvider>(currentContext, listen: false);
 
     Map<String, dynamic>? avatarFileMap;
     if (_pickedImageFile != null && _pickedImageBytes != null) {
@@ -126,44 +116,10 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
     }
 
     final newLogin = _loginController.text.trim();
-    // Используем _initialLoginOnLoadFromAuthState для сравнения, т.к. он отражает состояние на момент загрузки/последнего сохранения
     bool loginChanged = newLogin != (_initialLoginOnLoadFromAuthState ?? '');
     bool avatarChanged = _pickedImageFile != null || _resetAvatar;
 
-    final currentUser = authState.currentUser; // Это актуальный UserProfile из AuthState
-    bool themeSettingsChanged = false;
-
-    if (currentUser != null) {
-      final currentThemeFromServer = ThemeMode.values.firstWhere(
-              (e) => e.name == currentUser.theme,
-          orElse: () => ThemeMode.system
-      );
-
-      Color? currentAccentFromServer;
-      if (currentUser.accentColor != null && currentUser.accentColor!.isNotEmpty) {
-        try {
-          currentAccentFromServer = Color(int.parse(currentUser.accentColor!.replaceFirst('#', '0xff')));
-        } catch (_) { /* ignore parse error */ }
-      }
-      final currentAccentProvider = themeProvider.accentColor;
-
-      if (themeProvider.themeMode != currentThemeFromServer ||
-          (currentAccentFromServer != null && currentAccentProvider.value != currentAccentFromServer.value) ||
-          (currentAccentFromServer == null && currentAccentProvider.value != Provider.of<ThemeProvider>(currentContext, listen:false).accentColor.value) ||
-          sidebarProvider.isCollapsed != (currentUser.isSidebarCollapsed ?? false) ) {
-        themeSettingsChanged = true;
-      }
-    } else {
-      // Если currentUser почему-то null (не должно быть здесь, если пользователь залогинен),
-      // но на всякий случай считаем, что настройки могли измениться, если они не дефолтные.
-      if (themeProvider.themeMode != ThemeMode.system ||
-          themeProvider.accentColor != const Color(0xFF5457FF) || // Сравнение с дефолтным акцентом
-          sidebarProvider.isCollapsed != false ) { // Сравнение с дефолтным состоянием сайдбара
-        themeSettingsChanged = true;
-      }
-    }
-
-    if (!loginChanged && !avatarChanged && !themeSettingsChanged) {
+    if (!loginChanged && !avatarChanged) {
       if (mounted) {
         ScaffoldMessenger.of(currentContext).showSnackBar(
           const SnackBar(content: Text('Нет изменений для сохранения.')),
@@ -173,12 +129,10 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
       return;
     }
 
+    // <<< ИСПРАВЛЕНИЕ: Вызываем updateUserProfile только с нужными полями >>>
     final success = await authState.updateUserProfile(
       login: loginChanged ? newLogin : null,
-      theme: themeSettingsChanged ? themeProvider.themeMode.name : null,
-      accentColor: themeSettingsChanged ? '#${themeProvider.accentColor.value.toRadixString(16).padLeft(8, '0').substring(2)}' : null,
-      isSidebarCollapsed: themeSettingsChanged ? sidebarProvider.isCollapsed : null,
-      resetAvatar: _resetAvatar,
+      resetAvatar: _resetAvatar ? true : null, // Отправляем true только если флаг установлен
       avatarFile: avatarFileMap,
     );
 
@@ -189,13 +143,10 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
       ScaffoldMessenger.of(currentContext).showSnackBar(
         const SnackBar(content: Text('Профиль успешно обновлен!'), backgroundColor: Colors.green),
       );
-      // После успешного сохранения, AuthState.currentUser будет обновлен.
-      // _initialLoginOnLoadFromAuthState и _currentAvatarUrlFromAuthState обновятся в следующем build.
       setState(() {
         _pickedImageFile = null;
         _pickedImageBytes = null;
         _resetAvatar = false;
-        // Контроллер и URL аватара обновятся в build на основе свежих данных из AuthState
       });
     } else {
       setState(() { _errorMessage = authState.errorMessage ?? 'Не удалось обновить профиль.'; });
@@ -233,9 +184,6 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
 
       final success = await authState.deleteUserAccount();
 
-      // После deleteUserAccount AuthState вызовет logout, что приведет к перестроению
-      // и навигации на экран логина. Поэтому проверки !mounted здесь могут быть излишни,
-      // так как виджет будет удален из дерева.
       if (!mounted) return;
 
       if (!success) {
@@ -254,13 +202,13 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
     String nameSource = user.login;
 
     if (nameSource.isNotEmpty) {
-      final names = nameSource.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList(); // Разделяем по пробелам и убираем пустые
+      final names = nameSource.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
       if (names.isNotEmpty) {
         initials = names[0][0];
         if (names.length > 1 && names[1].isNotEmpty) {
           initials += names[1][0];
         } else if (names[0].length > 1) {
-          initials = names[0].substring(0, initials.length == 1 ? 2 : 1).trim(); // Берем 2 если одна буква, или 1 если уже есть 2
+          initials = names[0].substring(0, initials.length == 1 ? 2 : 1).trim();
           if (initials.length > 2) initials = initials.substring(0,2);
         }
       }
@@ -274,14 +222,12 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
       initials = "?";
     }
 
-
     Color avatarBackgroundColor = colorScheme.primaryContainer;
     Color avatarTextColor = colorScheme.onPrimaryContainer;
 
     if (user.accentColor != null && user.accentColor!.isNotEmpty) {
       try {
         final userAccent = Color(int.parse(user.accentColor!.replaceFirst('#', '0xff')));
-        // Определяем контрастный цвет для текста на фоне акцентного цвета
         avatarTextColor = ThemeData.estimateBrightnessForColor(userAccent) == Brightness.dark
             ? Colors.white.withOpacity(0.95)
             : Colors.black.withOpacity(0.8);
@@ -295,7 +241,7 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
       child: Text(
         initials,
         style: TextStyle(
-          fontSize: radius * (initials.length == 1 ? 0.8 : 0.6), // Адаптируем размер шрифта
+          fontSize: radius * (initials.length == 1 ? 0.8 : 0.6),
           fontWeight: FontWeight.bold,
           color: avatarTextColor,
         ),
@@ -305,7 +251,7 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (mounted) { // Обновляем контекст, если виджет все еще в дереве
+    if (mounted) {
       _scaffoldMessengerContext = context;
     }
     final theme = Theme.of(context);
@@ -338,17 +284,8 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
           );
         }
 
-        // currentUser здесь точно не null
-
-        // Обновление локальных переменных состояния на основе AuthState
-        // Это нужно делать здесь, чтобы UI корректно отражал изменения
-        // после загрузки или обновления профиля.
         if (_initialLoginOnLoadFromAuthState != currentUser!.login) {
           _initialLoginOnLoadFromAuthState = currentUser.login;
-          // Обновляем текст в контроллере, только если он не совпадает
-          // и поле не в фокусе (чтобы не сбросить ввод пользователя).
-          // Это лучше делать через key для TextFormField или более сложную логику,
-          // но для простоты пока так.
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _loginController.text != (_initialLoginOnLoadFromAuthState ?? '')) {
               final currentFocus = FocusScope.of(context).focusedChild;
@@ -361,8 +298,6 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
         }
         if (_currentAvatarUrlFromAuthState != currentUser.avatarUrl) {
           _currentAvatarUrlFromAuthState = currentUser.avatarUrl;
-          // Если есть _pickedImageFile, он имеет приоритет, поэтому не сбрасываем его,
-          // просто обновляем _currentAvatarUrlFromAuthState для следующего рендера, если _pickedImageFile будет сброшен.
         }
 
         Widget avatarDisplayWidget;
@@ -384,7 +319,6 @@ class _ProfileSettingsTabState extends State<ProfileSettingsTab> {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if(mounted) {
                     setState(() {
-                      // Если URL не загрузился, сбрасываем его, чтобы показать инициалы
                       _currentAvatarUrlFromAuthState = null;
                     });
                   }

@@ -7,10 +7,15 @@ http_server:
   allowed_origins: # Домены фронтенда для CORS
     - "https://localhost:5174"
     - "https://127.0.0.1:5174"
+    - "https://todo-rho-sage.vercel.app"
   tls:
     enabled: true
     cert_file: "/app/.certs/localhost+2.pem"
     key_file: "/app/.certs/localhost+2-key.pem"
+
+fcm_config:
+  project_id: "todo-80b1b"
+  service_account_key_json_path: "/app/todo-80b1b-firebase-adminsdk-fbsvc-6f38d4c04c.json"
 
 db:
   username: "user"     # Как в docker-compose.yml

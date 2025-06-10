@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../models/task_model.dart';
 import '../../deleted_tasks_provider.dart';
-// import '../../tag_provider.dart'; // Раскомментируй, если будешь использовать tagProvider
+import '../../task_provider.dart';
 
 class DeletedTaskCardWidget extends StatelessWidget {
   final Task task;
@@ -25,26 +25,20 @@ class DeletedTaskCardWidget extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
     final deletedTasksProvider = Provider.of<DeletedTasksProvider>(context, listen: false);
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
 
     return Card(
       elevation: 1.0,
-      // Убрал vertical: 6.0 из margin, так как GridView уже дает mainAxisSpacing
       margin: const EdgeInsets.symmetric(horizontal: 0),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10.0),
         side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.4), width: 0.8),
       ),
-      // Оборачиваем Padding в IntrinsicHeight, чтобы Column мог корректно использовать Spacer
-      // и при этом карточка не пыталась занять бесконечную высоту, если GridView этого не ограничивает.
-      // Однако, GridView с childAspectRatio уже должен давать ограничения по высоте.
-      // Попробуем сначала без IntrinsicHeight, так как GridView обычно сам управляет размерами дочерних элементов.
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          // mainAxisSize: MainAxisSize.min, // Убираем, чтобы Spacer работал
           children: [
-            // --- Начало основного контента ---
             Text(
               task.title,
               style: textTheme.titleMedium?.copyWith(
@@ -58,11 +52,6 @@ class DeletedTaskCardWidget extends StatelessWidget {
             ),
             if (task.description != null && task.description!.isNotEmpty) ...[
               const SizedBox(height: 6.0),
-              // Оборачиваем описание в Flexible, если оно может быть длинным,
-              // чтобы оно не выталкивало кнопки за пределы карточки.
-              // Но это имеет смысл, если высота карточки фиксирована или ограничена.
-              // В GridView с childAspectRatio высота элемента уже определяется.
-              // Если описание будет слишком длинным для maxLines: 3, оно все равно обрежется.
               Text(
                 task.description!,
                 style: textTheme.bodySmall?.copyWith(
@@ -71,7 +60,7 @@ class DeletedTaskCardWidget extends StatelessWidget {
                   decoration: TextDecoration.lineThrough,
                   decorationColor: colorScheme.onSurfaceVariant.withOpacity(0.7),
                 ),
-                maxLines: 3, // Ограничиваем количество строк для описания
+                maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
@@ -83,7 +72,7 @@ class DeletedTaskCardWidget extends StatelessWidget {
                   children: [
                     Icon(Icons.group_work_outlined, size: 15, color: colorScheme.onSurfaceVariant),
                     const SizedBox(width: 6),
-                    Flexible( // Добавляем Flexible на случай длинного имени команды
+                    Flexible(
                       child: Text(
                         "Команда: ${task.teamName}",
                         style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
@@ -99,35 +88,36 @@ class DeletedTaskCardWidget extends StatelessWidget {
             ),
             if (task.deletedByUserId != null)
               Text(
-                'Кем: ${task.deletedByUserId}',
+                // TODO: Заменить ID на имя пользователя, когда будет доступен соответствующий сервис
+                'Кем: ID ${task.deletedByUserId}',
                 style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
               ),
-            // --- Конец основного контента ---
-
-            const Spacer(), // <<< ЭТОТ ВИДЖЕТ ПРИЖМЕТ ВСЕ, ЧТО НИЖЕ, К НИЗУ КАРТОЧКИ
-
-            // const SizedBox(height: 10.0), // Можно убрать или уменьшить, Spacer даст отступ
+            const Spacer(),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton.icon(
                   icon: Icon(Icons.restore_from_trash_outlined, size: 18, color: colorScheme.primary),
                   label: Text('Восстановить', style: TextStyle(color: colorScheme.primary, fontSize: 13)),
-                  onPressed: () {
-                    deletedTasksProvider.restoreFromTrash(task.taskId);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Задача "${task.title}" восстановлена (из корзины)')),
-                    );
+                  onPressed: () async {
+                    final restoredTask = await deletedTasksProvider.restoreFromTrash(task.taskId);
+                    if (restoredTask != null && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Задача "${task.title}" восстановлена')),
+                      );
+                      // Принудительно обновляем список активных задач, чтобы восстановленная задача появилась
+                      taskProvider.fetchTasks(forceBackendCall: true);
+                    }
                   },
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap, // Уменьшает область тапа до размеров кнопки
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
                   icon: Icon(Icons.delete_forever_outlined, size: 18, color: colorScheme.error),
-                  label: Text('Удалить навсегда', style: TextStyle(color: colorScheme.error, fontSize: 13)),
+                  label: Text('Удалить', style: TextStyle(color: colorScheme.error, fontSize: 13)),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -142,12 +132,16 @@ class DeletedTaskCardWidget extends StatelessWidget {
                             ),
                             TextButton(
                               child: Text('Удалить', style: TextStyle(color: colorScheme.error, fontWeight: FontWeight.bold)),
-                              onPressed: () {
-                                deletedTasksProvider.deletePermanently(task.taskId);
-                                Navigator.of(dialogContext).pop();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Задача "${task.title}" удалена навсегда.')),
-                                );
+                              onPressed: () async {
+                                final success = await deletedTasksProvider.deletePermanently(task.taskId);
+                                if (context.mounted) {
+                                  Navigator.of(dialogContext).pop();
+                                  if (success) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Задача "${task.title}" удалена навсегда.')),
+                                    );
+                                  }
+                                }
                               },
                             ),
                           ],

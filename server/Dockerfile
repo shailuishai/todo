@@ -1,7 +1,7 @@
 # server/Dockerfile
 
 # Этап сборки
-FROM golang:1.23.4 AS builder
+FROM golang:1.24 AS builder
 
 # Установка зависимостей для сборки, включая libwebp-dev для cgo
 # RUN apt-get update && apt-get install -y gcc g++ make libwebp-dev
@@ -30,6 +30,8 @@ COPY . .
 # то пути для COPY должны быть server/config, server/docs
 COPY ./config /app/server/config
 COPY ./docs /app/server/docs
+COPY ./todo-80b1b-firebase-adminsdk-fbsvc-6f38d4c04c.json /app/todo-80b1b-firebase-adminsdk-fbsvc-6f38d4c04c.json
+
 # defaultAvatars копировать не будем, если они нужны только для загрузки в S3 при инициализации
 # и эта логика будет выполняться приложением, читающим с хоста через том или изнутри контейнера, если они скопированы
 # Если S3 инициализация берет файлы из путей в конфиге, и эти пути - это пути на хосте,
@@ -65,6 +67,7 @@ COPY --from=builder /app/main /app/main
 # Пути должны соответствовать тому, что приложение ожидает
 COPY --from=builder /app/server/config /app/server/config
 COPY --from=builder /app/server/docs /app/server/docs
+COPY --from=builder /app/todo-80b1b-firebase-adminsdk-fbsvc-6f38d4c04c.json /app/todo-80b1b-firebase-adminsdk-fbsvc-6f38d4c04c.json
 
 # Копируем defaultAvatars, если они читаются из файловой системы контейнера при инициализации S3
 # COPY --from=builder /app/server/defaultAvatars /app/server/defaultAvatars
