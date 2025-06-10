@@ -126,8 +126,8 @@ class ApiService {
   // <<< ИЗМЕНЕНИЕ: Базовый URL теперь зависит от режима сборки >>>
   static const String _prodBaseUrl = 'https://todo-vd2m.onrender.com';
   static final String _devBaseUrl = kIsWeb
-      ? 'https://localhost:8080'
-      : (Platform.isAndroid ? 'https://10.0.2.2:8080' : 'https://localhost:8080');
+      ? 'https://todo-vd2m.onrender.com'
+      : (Platform.isAndroid ? 'https://todo-vd2m.onrender.com' : 'https://todo-vd2m.onrender.com');
 
   static final String _baseUrl = kDebugMode ? _devBaseUrl : _prodBaseUrl;
 
