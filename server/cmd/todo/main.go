@@ -386,6 +386,8 @@ func (app *App) SetupRoutes() {
 		r.Post("/refresh-token-native", authCtrl.RefreshTokenNative)
 		r.Get("/{provider}", authCtrl.Oauth)
 		r.Get("/{provider}/callback", authCtrl.OauthCallback)
+		r.Get("/v1/auth/oauth/finalize", authCtrl.OauthFinalizePage)
+		r.Post("/v1/auth/oauth/exchange-code", authCtrl.OauthExchangeCode)
 		r.With(AuthUserMiddleware).Post("/logout", authCtrl.Logout)
 	})
 

@@ -76,6 +76,8 @@ type Controller interface {
 	RefreshToken(w http.ResponseWriter, r *http.Request)
 	RefreshTokenNative(w http.ResponseWriter, r *http.Request)
 	Logout(w http.ResponseWriter, r *http.Request)
+	OauthFinalizePage(w http.ResponseWriter, r *http.Request)
+	OauthExchangeCode(w http.ResponseWriter, r *http.Request)
 }
 
 type UseCase interface {
@@ -87,6 +89,8 @@ type UseCase interface {
 	RefreshTokenNative(tokenString string) (newAccessToken string, newRefreshToken string, err error)
 	// GetUserProfileAfterOAuth теперь возвращает UserProfileResponse, который включает настройки
 	GetUserProfileAfterOAuth(userID uint) (*profile.UserProfileResponse, error)
+	StoreFinalizeTokens(code, tokens string) error
+	RetrieveFinalizeTokens(code string) (string, error)
 }
 
 // Repo определяет интерфейсы для взаимодействия с хранилищем данных (БД и кэш).
@@ -99,4 +103,6 @@ type Repo interface {
 	// Cache methods
 	SaveStateCode(state string, providerData string) error
 	VerifyStateCode(state string) (providerData string, isValid bool, err error)
+	RetrieveFinalizeTokens(code string) (string, error)
+	StoreFinalizeTokens(code, tokens string) error
 }
