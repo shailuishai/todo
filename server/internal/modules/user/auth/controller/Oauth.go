@@ -195,10 +195,9 @@ func (c *AuthController) OauthCallback(w http.ResponseWriter, r *http.Request) {
 			Value:    appRefreshToken,
 			Expires:  time.Now().Add(c.jwtCfg.RefreshExpire),
 			HttpOnly: true,
-			Path:     "/", // Доступен для всех путей API (например, /v1/auth/refresh-token)
-			Domain:   "todo-vd2m.onrender.com",
-			Secure:   true,                  // Должно быть true для HTTPS
-			SameSite: http.SameSiteNoneMode, // Для кросс-доменных/кросс-портовых запросов
+			Path:     "/",
+			Domain:   c.jwtCfg.CookieDomain, // "localhost" из вашего config.yml
+			Secure:   c.jwtCfg.SecureCookie, // false из вашего config.yml для http
 		}
 		// Замечание про Secure остается актуальным - для SameSite=None он должен быть true
 		if !cookie.Secure {
