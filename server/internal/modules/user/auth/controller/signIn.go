@@ -70,14 +70,6 @@ func (c *AuthController) SignIn(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteNoneMode,
 	}
 
-	if !cookie.Secure {
-		cookie.SameSite = http.SameSiteNoneMode
-	} else {
-		// Для HTTPS можно использовать SameSite=Lax или SameSite=None (если нужна кросс-сайтовая отправка cookie)
-		// В данном OAuth сценарии с редиректами Lax более чем достаточен и безопасен.
-		cookie.SameSite = http.SameSiteNoneMode
-	} // Устанавливаем refresh_token в cookie
-
 	http.SetCookie(w, &cookie)
 	log.Info("refresh_token cookie set",
 		slog.String("name", cookie.Name),

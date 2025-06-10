@@ -190,33 +190,44 @@ func (c *AuthController) OauthCallback(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Это веб-клиент: устанавливаем httpOnly refresh_token cookie и редиректим на FrontendRedirectSuccessURL
 		log.Info("OAuth successful for WEB client, setting httpOnly refresh_token cookie and redirecting to frontend.")
+		cookieDomain := "todo-vd2m.onrender.com" // ХАРДКОД
+		isSecure := true                         // ХАРДКОД
+
 		cookie := http.Cookie{
 			Name:     "refresh_token",
 			Value:    appRefreshToken,
-			Expires:  time.Now().Add(c.jwtCfg.RefreshExpire),
+			Expires:  time.Now().Add(30 * 24 * time.Hour), // 30 дней
 			HttpOnly: true,
 			Path:     "/",
-			Domain:   c.jwtCfg.CookieDomain,
-			Secure:   true, // Должно быть true для HTTPS
+			Domain:   cookieDomain,
+			Secure:   isSecure,
 			SameSite: http.SameSiteNoneMode,
 		}
-		// Замечание про Secure остается актуальным - для SameSite=None он должен быть true
-		if !cookie.Secure {
-			log.Warn("Refresh_token cookie is NOT Secure for web client, SameSite=None might not work as expected without Secure flag. Ensure SecureCookie=true in config for HTTPS.")
-		}
+
+		// ЛОГИРУЕМ ВСЁ, ЧТО МОЖНО
+		log.Info("DEBUG: Preparing to set cookie with HARDCODED values",
+			slog.String("cookie_name", cookie.Name),
+			slog.String("cookie_value_prefix", appRefreshToken[:10]+"..."), // Не логируем весь токен
+			slog.String("cookie_domain", cookie.Domain),
+			slog.Bool("cookie_secure", cookie.Secure),
+			slog.String("cookie_samesite", "None"),
+			slog.String("cookie_path", cookie.Path),
+			slog.String("cookie_expires", cookie.Expires.String()),
+		)
+
 		http.SetCookie(w, &cookie)
-		log.Info("HttpOnly refresh_token cookie set for web client", slog.String("domain", cookie.Domain), slog.Bool("secure", cookie.Secure))
+		log.Info("DEBUG: SetCookie header has been written to the response writer.")
+		// ==========================================================
 
 		successRedirectURL, _ := url.Parse(c.oauthCfg.FrontendRedirectSuccessURL)
 		q := successRedirectURL.Query()
 		q.Set("provider", provider)
-		if isNewUser {
-			q.Set("new_user", "true")
-		}
-		// AccessToken НЕ передаем в URL для веба, он будет получен через /refresh-token или уже есть (если это был не первый вход)
+		q.Set("debug_ts", time.Now().Format(time.RFC3339Nano)) // Добавим метку времени для отладки
 		successRedirectURL.RawQuery = q.Encode()
 
 		log.Info("Redirecting to WEB client's success page", "final_url", successRedirectURL.String())
+
+		// ВАЖНО: Убедимся, что ничего больше не пишется в writer после редиректа.
 		http.Redirect(w, r, successRedirectURL.String(), http.StatusTemporaryRedirect)
 	}
 }
