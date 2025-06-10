@@ -1,3 +1,5 @@
+// lib/core/routing/app_router_delegate.dart
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../models/team_model.dart';
@@ -44,7 +46,7 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
         return JoinTeamByTokenPath(authState.pendingInviteToken!);
       }
       // 2. Если пытаются попасть на страницы для неавторизованных, редиректим на home
-      if (intendedPath is AuthPath || (intendedPath is LandingPath && kIsWeb)) {
+      if (intendedPath is AuthPath || intendedPath is LandingPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
       // 3. Если это валидный путь для залогиненного, используем его
@@ -60,17 +62,18 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     }
     // Если пользователь НЕ залогинен
     else {
-      // 1. Если пришли с токеном, сохраняем его и идем на Auth
+      // 1. Если пришли с токеном приглашения, сохраняем его и идем на Auth
       if (intendedPath is JoinTeamByTokenPath) {
         authState.setPendingInviteToken(intendedPath.token);
         return const AuthPath();
       }
-      // 2. Разрешаем только Auth и Landing (для веба)
-      if (intendedPath is AuthPath || (intendedPath is LandingPath && kIsWeb)) {
-        return intendedPath;
+      // 2. В вебе разрешаем явно посетить страницу лендинга
+      if (kIsWeb && intendedPath is LandingPath) {
+        return const LandingPath();
       }
-      // 3. Все остальные пути ведут на Landing (веб) или Auth (мобильные)
-      return kIsWeb ? const LandingPath() : const AuthPath();
+      // 3. Во всех остальных случаях (включая неудачный логин, прямой переход на защищенный URL и т.д.)
+      //    отправляем пользователя на страницу аутентификации.
+      return const AuthPath();
     }
   }
 
@@ -138,6 +141,16 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   @override
   Future<void> setNewRoutePath(AppRoutePath configuration) async {
     debugPrint("[RouterDelegate] setNewRoutePath received: ${configuration.runtimeType}");
+
+    // Если это редирект с OAuth, очистим URL
+    if (kIsWeb && configuration is HomePath) {
+      final currentUrl = Uri.base.toString();
+      if (currentUrl.contains('oauth-callback-success')) {
+        // Это можно сделать в MyApp, здесь просто для информации
+        debugPrint("[RouterDelegate] Detected OAuth callback success, URL should be cleaned up by MyApp.");
+      }
+    }
+
 
     if (!authState.initialAuthCheckCompleted) {
       // Если аутентификация еще не проверена, сохраняем запрошенный путь
