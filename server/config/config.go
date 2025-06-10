@@ -89,12 +89,12 @@ type OAuthConfig struct {
 func MustLoad() *Config {
 	ConfigPath := os.Getenv("CONFIG_PATH")
 	if ConfigPath == "" {
-		defaultPath := "./config/local.yaml"
+		defaultPath := "./config/dev.yaml"
 		if _, err := os.Stat(defaultPath); err == nil {
 			ConfigPath = defaultPath
 			log.Printf("CONFIG_PATH environment variable not set, using default: %s", ConfigPath)
 		} else {
-			configPathFromRoot := "app/config/local.yaml"
+			configPathFromRoot := "app/config/dev.yaml"
 			if _, errRoot := os.Stat(configPathFromRoot); errRoot == nil {
 				ConfigPath = configPathFromRoot
 				log.Printf("CONFIG_PATH environment variable not set, using default relative to root: %s", ConfigPath)
