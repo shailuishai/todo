@@ -68,7 +68,7 @@ type JWTConfig struct {
 	AccessExpire  time.Duration `yaml:"access_expire" env-required:"true"`
 	RefreshExpire time.Duration `yaml:"refresh_expire" env-required:"true"`
 	CookieDomain  string        `yaml:"cookie_domain" env-required:"true"`
-	SecureCookie  bool          `yaml:"secure_cookie" default:"false"`
+	SecureCookie  bool          `yaml:"secure_cookie" default:"true"`
 }
 
 type S3Config struct {
