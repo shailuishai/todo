@@ -546,3 +546,16 @@ func (uc *AuthUseCase) GetUserProfileAfterOAuth(userID uint) (*profile.UserProfi
 	}
 	return userProfile, nil
 }
+
+func (uc *AuthUseCase) StoreFinalizeTokens(code, tokens string) error {
+	// Делегируем в репозиторий (который использует кеш)
+	// Этот метод нужно добавить в ваш интерфейс auth.Repo
+	return uc.repo.StoreFinalizeTokens(code, tokens)
+}
+
+// RetrieveFinalizeTokens извлекает и удаляет токены по одноразовому коду
+func (uc *AuthUseCase) RetrieveFinalizeTokens(code string) (string, error) {
+	// Делегируем в репозиторий
+	// Этот метод нужно добавить в ваш интерфейс auth.Repo
+	return uc.repo.RetrieveFinalizeTokens(code)
+}

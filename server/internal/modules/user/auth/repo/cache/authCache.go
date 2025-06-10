@@ -2,9 +2,11 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"github.com/go-redis/redis/v8" // Убедись, что импорт правильный
 	"server/internal/init/cache"   // Твой пакет инициализации кэша
 	"server/internal/modules/user" // Твой пакет с ошибками user
+	"time"
 )
 
 type AuthCache struct {
@@ -67,4 +69,31 @@ func (c *AuthCache) VerifyStateCode(state string) (providerData string, isValid 
 	}
 
 	return storedValue, true, nil
+}
+
+func (c *AuthCache) StoreFinalizeTokens(code, tokens string) error {
+	finalizeCodePrefix := "finalize_code:"
+	key := finalizeCodePrefix + code
+	finalizeCodeExpiration := 1 * time.Minute
+	err := c.ch.Client.Set(context.Background(), key, tokens, finalizeCodeExpiration).Err()
+	if err != nil {
+		return user.ErrInternal
+	}
+	return nil
+}
+
+func (c *AuthCache) RetrieveFinalizeTokens(code string) (string, error) {
+	finalizeCodePrefix := "finalize_code:"
+	key := finalizeCodePrefix + code
+	tokens, err := c.ch.Client.Get(context.Background(), key).Result()
+	if err == redis.Nil {
+		return "", errors.New("invalid or expired code")
+	} else if err != nil {
+		return "", user.ErrInternal
+	}
+
+	// Удаляем ключ после использования
+	c.ch.Client.Del(context.Background(), key)
+
+	return tokens, nil
 }

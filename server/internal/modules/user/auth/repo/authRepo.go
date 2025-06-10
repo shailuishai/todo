@@ -6,6 +6,8 @@ import "server/internal/modules/user/auth" // Интерфейсы и DTO UserAu
 type AuthCache interface {
 	SaveStateCode(state string, providerData string) error
 	VerifyStateCode(state string) (providerData string, isValid bool, err error)
+	StoreFinalizeTokens(code, tokens string) error
+	RetrieveFinalizeTokens(code string) (string, error)
 }
 
 // AuthDb определяет методы для работы с базой данных пользователей для аутентификации.
@@ -57,4 +59,14 @@ func (r *Repo) SaveStateCode(state string, providerData string) error {
 // VerifyStateCode делегирует верификацию OAuth state в AuthCache.
 func (r *Repo) VerifyStateCode(state string) (string, bool, error) {
 	return r.ch.VerifyStateCode(state)
+}
+
+func (r *Repo) StoreFinalizeTokens(code, tokens string) error {
+	// Предполагается, что у AuthCache есть подходящий метод
+	return r.ch.StoreFinalizeTokens(code, tokens)
+}
+
+// Добавьте этот метод в ваш Repo
+func (r *Repo) RetrieveFinalizeTokens(code string) (string, error) {
+	return r.ch.RetrieveFinalizeTokens(code)
 }
