@@ -26,8 +26,10 @@ import (
 )
 
 type OAuthProviderConfig struct {
-	Google *oauth2.Config
-	Yandex *oauth2.Config
+	GoogleWeb    *oauth2.Config
+	YandexWeb    *oauth2.Config
+	GoogleNative *oauth2.Config
+	YandexNative *oauth2.Config
 }
 
 type AuthUseCase struct {
@@ -38,6 +40,7 @@ type AuthUseCase struct {
 	jwtConfig    config.JWTConfig
 }
 
+// ИЗМЕНЕНИЕ: Инициализация раздельных конфигов
 func NewAuthUseCase(log *slog.Logger, repo auth.Repo, appCfg *config.Config, profileUC profile.UseCase) *AuthUseCase {
 	googleKey := os.Getenv("GOOGLE_KEY")
 	googleSecret := os.Getenv("GOOGLE_SECRET")
@@ -51,17 +54,15 @@ func NewAuthUseCase(log *slog.Logger, repo auth.Repo, appCfg *config.Config, pro
 		log.Warn("Yandex OAuth credentials are not set. Yandex OAuth will be unavailable.")
 	}
 
-	// ВАЖНО: RedirectURL здесь теперь должен быть URL бэкенда для нативного потока.
-	// В прод конфиге это должно быть что-то вроде https://todo-vd2m.onrender.com/v1/auth/google/callback
-	// Для веб-потока мы будем его переопределять.
-	googleCfg := &oauth2.Config{
+	// Конфиг для Веб-клиентов (редирект на фронтенд)
+	googleCfgWeb := &oauth2.Config{
 		ClientID:     googleKey,
 		ClientSecret: googleSecret,
 		RedirectURL:  appCfg.OAuthConfig.GoogleRedirectURL,
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
 		Endpoint:     google.Endpoint,
 	}
-	yandexCfg := &oauth2.Config{
+	yandexCfgWeb := &oauth2.Config{
 		ClientID:     yandexKey,
 		ClientSecret: yandexSecret,
 		RedirectURL:  appCfg.OAuthConfig.YandexRedirectURL,
@@ -69,12 +70,33 @@ func NewAuthUseCase(log *slog.Logger, repo auth.Repo, appCfg *config.Config, pro
 		Endpoint:     yandex.Endpoint,
 	}
 
+	// Конфиг для Нативных клиентов (редирект на бэкенд)
+	googleCfgNative := &oauth2.Config{
+		ClientID:     googleKey,
+		ClientSecret: googleSecret,
+		RedirectURL:  appCfg.OAuthConfig.GoogleRedirectURLNative,
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
+		Endpoint:     google.Endpoint,
+	}
+	yandexCfgNative := &oauth2.Config{
+		ClientID:     yandexKey,
+		ClientSecret: yandexSecret,
+		RedirectURL:  appCfg.OAuthConfig.YandexRedirectURLNative,
+		Scopes:       []string{"login:email", "login:info", "login:avatar"},
+		Endpoint:     yandex.Endpoint,
+	}
+
 	return &AuthUseCase{
-		log:          log,
-		repo:         repo,
-		oauthConfigs: OAuthProviderConfig{Google: googleCfg, Yandex: yandexCfg},
-		profileUC:    profileUC,
-		jwtConfig:    appCfg.JWTConfig,
+		log:  log,
+		repo: repo,
+		oauthConfigs: OAuthProviderConfig{
+			GoogleWeb:    googleCfgWeb,
+			YandexWeb:    yandexCfgWeb,
+			GoogleNative: googleCfgNative,
+			YandexNative: yandexCfgNative,
+		},
+		profileUC: profileUC,
+		jwtConfig: appCfg.JWTConfig,
 	}
 }
 
@@ -256,33 +278,38 @@ func (uc *AuthUseCase) GetAuthURL(provider, clientRedirectURI string) (url strin
 	log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
 
 	var oauthCfg *oauth2.Config
+	isWebFlow := clientRedirectURI != ""
+
 	switch provider {
 	case "google":
-		oauthCfg = uc.oauthConfigs.Google
-		if oauthCfg.ClientID == "" {
-			return "", "", gouser.ErrAuthProviderNotConfigured
+		if isWebFlow {
+			oauthCfg = uc.oauthConfigs.GoogleWeb
+		} else {
+			oauthCfg = uc.oauthConfigs.GoogleNative
 		}
 	case "yandex":
-		oauthCfg = uc.oauthConfigs.Yandex
-		if oauthCfg.ClientID == "" {
-			return "", "", gouser.ErrAuthProviderNotConfigured
+		if isWebFlow {
+			oauthCfg = uc.oauthConfigs.YandexWeb
+		} else {
+			oauthCfg = uc.oauthConfigs.YandexNative
 		}
 	default:
 		return "", "", gouser.ErrUnsupportedProvider
 	}
 
-	cfgCopy := *oauthCfg
+	if oauthCfg.ClientID == "" {
+		return "", "", gouser.ErrAuthProviderNotConfigured
+	}
 
-	if clientRedirectURI != "" {
+	// Копируем конфиг, чтобы установить/проверить RedirectURL для этого вызова
+	cfgCopy := *oauthCfg
+	if isWebFlow {
+		// Для веба мы доверяем URL, переданному клиентом
 		cfgCopy.RedirectURL = clientRedirectURI
-		log.Info("Using client-provided redirect URI for web flow", "uri", clientRedirectURI)
-	} else {
-		log.Info("Using default redirect URI from config for native flow", "uri", cfgCopy.RedirectURL)
 	}
 
 	stateUUID := uuid.NewString()
 	if err := uc.repo.SaveStateCode(stateUUID, provider); err != nil {
-		log.Error("failed to save oauth state to repo", "error", err)
 		return "", "", gouser.ErrInternal
 	}
 
@@ -291,74 +318,72 @@ func (uc *AuthUseCase) GetAuthURL(provider, clientRedirectURI string) (url strin
 	return authURL, stateUUID, nil
 }
 
+// OAuthExchange ИЗМЕНЕН: теперь использует только ВЕБ-конфиг
 func (uc *AuthUseCase) OAuthExchange(provider, state, code, redirectURI string) (accessToken string, refreshToken string, err error) {
-	op := "AuthUseCase.OAuthExchange"
-	log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
+	//op := "AuthUseCase.OAuthExchange"
+	//log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
 
+	// Передаем redirectURI в Callback, чтобы он использовал правильный конфиг
 	_, _, appAccessToken, appRefreshToken, err := uc.Callback(provider, state, code, redirectURI)
 	if err != nil {
-		log.Error("underlying callback logic failed during exchange", "error", err)
 		return "", "", err
 	}
-
-	log.Info("OAuth exchange successful")
 	return appAccessToken, appRefreshToken, nil
 }
 
-// <<< ИЗМЕНЕННЫЙ МЕТОД >>>
+// Callback ИЗМЕНЕН: выбирает конфиг на основе redirectURI
 func (uc *AuthUseCase) Callback(provider, state, code, redirectURI string) (userID uint, isNewUser bool, accessToken string, refreshToken string, err error) {
 	op := "AuthUseCase.Callback"
 	log := uc.log.With(slog.String("op", op), slog.String("provider", provider), slog.String("redirectURI_param", redirectURI))
 
 	var oauthCfg *oauth2.Config
 	var userInfoURL string
+	isWebFlow := redirectURI != ""
 
 	savedDataProvider, isValidState, err := uc.repo.VerifyStateCode(state)
 	if err != nil {
-		log.Error("failed to verify oauth state from repo", "state", state, "error", err)
 		return 0, false, "", "", gouser.ErrInternal
 	}
 	if !isValidState || savedDataProvider != provider {
-		log.Warn("invalid oauth state or provider mismatch", "state", state, "expected_provider", savedDataProvider, "actual_provider", provider)
 		return 0, false, "", "", gouser.ErrInvalidState
 	}
-	log.Info("OAuth state verified successfully")
 
 	switch provider {
 	case "google":
-		oauthCfg = uc.oauthConfigs.Google
-		if oauthCfg.ClientID == "" {
-			return 0, false, "", "", gouser.ErrAuthProviderNotConfigured
+		if isWebFlow {
+			oauthCfg = uc.oauthConfigs.GoogleWeb
+		} else {
+			oauthCfg = uc.oauthConfigs.GoogleNative
 		}
 		userInfoURL = "https://www.googleapis.com/oauth2/v3/userinfo"
 	case "yandex":
-		oauthCfg = uc.oauthConfigs.Yandex
-		if oauthCfg.ClientID == "" {
-			return 0, false, "", "", gouser.ErrAuthProviderNotConfigured
+		if isWebFlow {
+			oauthCfg = uc.oauthConfigs.YandexWeb
+		} else {
+			oauthCfg = uc.oauthConfigs.YandexNative
 		}
 		userInfoURL = "https://login.yandex.ru/info?format=json"
 	default:
 		return 0, false, "", "", gouser.ErrUnsupportedProvider
 	}
 
-	// Создаем копию конфига, чтобы динамически установить RedirectURL
 	cfgCopy := *oauthCfg
-	if redirectURI != "" {
-		// Если URI передан (веб-поток), используем его
+	if isWebFlow {
+		// Для веба, Google требует, чтобы redirect_uri в запросе токена совпадал с тем,
+		// который использовался для получения кода авторизации.
 		cfgCopy.RedirectURL = redirectURI
 	}
-	// Если URI не передан (нативный поток), используется RedirectURL из оригинального oauthCfg,
-	// который мы теперь должны настроить на URL бэкенда.
 
 	oauthToken, err := cfgCopy.Exchange(context.Background(), code)
 	if err != nil {
-		log.Error("failed to exchange oauth code for token", "provider", provider, "redirect_uri_used", cfgCopy.RedirectURL, "error", err)
+		log.Error("failed to exchange oauth code for token", "redirect_uri_used", cfgCopy.RedirectURL, "error", err)
 		return 0, false, "", "", fmt.Errorf("oauth exchange failed: %w", err)
 	}
+
+	// ... остальной код метода (fetch, create user, generate tokens) без изменений ...
 	log.Info("OAuth code exchanged for token successfully", slog.Bool("refresh_token_exists_from_provider", oauthToken.RefreshToken != ""))
 
 	if oauthToken.AccessToken == "" {
-		log.Error("exchanged oauth token but AccessToken from provider is empty", "provider", provider)
 		return 0, false, "", "", errors.New("oauth provider returned empty access token")
 	}
 
@@ -372,42 +397,36 @@ func (uc *AuthUseCase) Callback(provider, state, code, redirectURI string) (user
 	wasNewUser := false
 
 	if errors.Is(err, gouser.ErrUserNotFound) {
-		log.Info("user not found by email, creating new user from oauth data", "email", oauthUserDTO.Email)
 		wasNewUser = true
 		newUserID, createErr := uc.repo.CreateUser(oauthUserDTO)
 		if createErr != nil {
 			if errors.Is(createErr, gouser.ErrLoginExists) {
 				originalLoginAttempt := oauthUserDTO.Login
 				oauthUserDTO.Login = fmt.Sprintf("%s_%s", strings.Split(oauthUserDTO.Email, "@")[0], uuid.NewString()[:4])
-				log.Warn("login from oauth provider already exists, attempting to create user with generated login", "original_login", originalLoginAttempt, "new_login_attempt", oauthUserDTO.Login)
+				log.Warn("login conflict, generating new login", "original", originalLoginAttempt, "new", oauthUserDTO.Login)
 				newUserID, createErr = uc.repo.CreateUser(oauthUserDTO)
 			}
 			if createErr != nil {
-				log.Error("failed to create new user from oauth data after attempting to resolve conflict", "error", createErr)
+				log.Error("failed to create new user from oauth data", "error", createErr)
 				return 0, false, "", "", createErr
 			}
 		}
 		oauthUserDTO.UserId = newUserID
 	} else if err != nil {
-		log.Error("error checking for existing user by email", "email", oauthUserDTO.Email, "error", err)
 		return 0, false, "", "", err
 	} else {
-		log.Info("existing user found by email from oauth data", "userID", existingUser.UserId)
 		oauthUserDTO = existingUser
 	}
 
 	appAccessToken, err := appjwt.GenerateAccessToken(oauthUserDTO.UserId, oauthUserDTO.IsAdmin)
 	if err != nil {
-		log.Error("failed to generate app access token for oauth user", "userID", oauthUserDTO.UserId, "error", err)
 		return 0, false, "", "", gouser.ErrInternal
 	}
 	appRefreshToken, err := appjwt.GenerateRefreshToken(oauthUserDTO.UserId, oauthUserDTO.IsAdmin)
 	if err != nil {
-		log.Error("failed to generate app refresh token for oauth user", "userID", oauthUserDTO.UserId, "error", err)
 		return 0, false, "", "", gouser.ErrInternal
 	}
 
-	log.Info("oauth callback processed successfully, app tokens generated", "userID", oauthUserDTO.UserId, "isNewUser", wasNewUser)
 	return oauthUserDTO.UserId, wasNewUser, appAccessToken, appRefreshToken, nil
 }
 

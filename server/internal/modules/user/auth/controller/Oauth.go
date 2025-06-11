@@ -23,7 +23,7 @@ func (c *AuthController) Oauth(w http.ResponseWriter, r *http.Request) {
 	clientRedirectURI := r.URL.Query().Get("redirect_uri")
 	nativeFinalRedirectURI := r.URL.Query().Get("native_final_redirect_uri")
 
-	// Usecase сам выберет нужный конфиг на основе clientRedirectURI
+	// Передаем clientRedirectURI в usecase. Если он пустой, usecase поймет, что это нативный поток.
 	authURL, _, err := c.uc.GetAuthURL(provider, clientRedirectURI)
 	if err != nil {
 		log.Warn("failed to get auth URL from usecase", "error", err)
@@ -35,7 +35,8 @@ func (c *AuthController) Oauth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if nativeFinalRedirectURI != "" && clientRedirectURI == "" {
+	// Сохраняем cookie только если это нативный поток.
+	if nativeFinalRedirectURI != "" {
 		http.SetCookie(w, &http.Cookie{
 			Name:     nativeRedirectURISessionCookie,
 			Value:    nativeFinalRedirectURI,
@@ -45,7 +46,7 @@ func (c *AuthController) Oauth(w http.ResponseWriter, r *http.Request) {
 			Secure:   c.jwtCfg.SecureCookie,
 			SameSite: http.SameSiteLaxMode,
 		})
-		log.Info("Native final redirect URI saved in session cookie for callback", "uri", nativeFinalRedirectURI, "provider", provider)
+		log.Info("Native final redirect URI saved in session cookie for callback", "uri", nativeFinalRedirectURI)
 	}
 
 	log.Info("Redirecting user to OAuth provider authorization page", "provider_auth_url", authURL)
@@ -64,12 +65,9 @@ func (c *AuthController) OAuthExchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := render.DecodeJSON(r.Body, &req); err != nil {
-		log.Error("failed to decode request body", "error", err)
 		resp.SendError(w, r, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-
-	log = log.With("provider", req.Provider, "state", req.State)
 
 	if req.Code == "" || req.State == "" || req.Provider == "" || req.RedirectURI == "" {
 		resp.SendError(w, r, http.StatusBadRequest, "Missing required fields")
@@ -98,7 +96,6 @@ func (c *AuthController) OAuthExchange(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteNoneMode,
 	}
 	http.SetCookie(w, &cookie)
-
 	log.Info("OAuthExchange successful, tokens issued and cookie set.")
 	render.JSON(w, r, resp.AccessToken(accessToken))
 }
@@ -112,20 +109,16 @@ func (c *AuthController) OauthCallback(w http.ResponseWriter, r *http.Request) {
 
 	nativeRedirectCookie, errCookie := r.Cookie(nativeRedirectURISessionCookie)
 	if errCookie != nil || nativeRedirectCookie.Value == "" {
-		log.Error("Native callback called without a redirect URI cookie. This endpoint is for native clients only.")
-		http.Error(w, "This callback is intended for native clients which provide a final redirect URI.", http.StatusBadRequest)
+		http.Error(w, "This callback is intended for native clients only.", http.StatusBadRequest)
 		return
 	}
 	nativeFinalRedirectURI := nativeRedirectCookie.Value
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     nativeRedirectURISessionCookie,
-		Value:    "",
-		Path:     "/v1/auth/" + provider + "/callback",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   c.jwtCfg.SecureCookie,
-		SameSite: http.SameSiteLaxMode,
+		Name:   nativeRedirectURISessionCookie,
+		Value:  "",
+		Path:   "/v1/auth/" + provider + "/callback",
+		MaxAge: -1,
 	})
 
 	// Передаем пустой redirectURI, чтобы usecase использовал дефолтный (нативный)

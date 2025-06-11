@@ -82,6 +82,8 @@ type S3Config struct {
 type OAuthConfig struct {
 	GoogleRedirectURL          string `yaml:"google_redirect_url" env-required:"true"`
 	YandexRedirectURL          string `yaml:"yandex_redirect_url" env-required:"true"`
+	GoogleRedirectURLNative    string `yaml:"google_redirect_url_native" env-required:"true"`
+	YandexRedirectURLNative    string `yaml:"yandex_redirect_url_native" env-required:"true"`
 	FrontendRedirectSuccessURL string `yaml:"frontend_redirect_success_url" env-required:"true"` // Добавлено
 	FrontendRedirectErrorURL   string `yaml:"frontend_redirect_error_url" env-required:"true"`   // Добавлено
 }
