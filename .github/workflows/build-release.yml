@@ -1,0 +1,88 @@
+# .github/workflows/build-release.yml
+name: Build & Release Flutter App
+
+# Запускается при создании тега, начинающегося с 'v'
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-linux:
+    name: Build Linux AppImage
+    runs-on: ubuntu-latest # Используем стандартный раннер GitHub
+
+    steps:
+      # 1. Загружаем код из репозитория
+      - uses: actions/checkout@v4
+
+      # 2. Устанавливаем Flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      # 3. Собираем Linux билд
+      # Важно: предполагается, что ваш Flutter проект находится в папке 'client'
+      - name: Build Flutter Linux
+        run: |
+          cd client
+          flutter build linux
+
+      # 4. Устанавливаем инструмент для сборки AppImage
+      # Скачиваем его напрямую, чтобы не зависеть от pip или системных пакетов
+      - name: Download appimage-builder
+        run: |
+          wget https://github.com/AppImage/appimage-builder/releases/download/v1.1.0/appimage-builder-1.1.0-x86_64.AppImage -O appimage-builder
+          chmod +x appimage-builder
+          sudo mv appimage-builder /usr/local/bin/
+
+      # 5. Создаем простой рецепт для AppImage на лету
+      - name: Create AppImage Recipe
+        run: |
+          # Этот рецепт будет создан в корне репозитория
+          cat > appimage-builder.yml <<EOF
+          version: 1
+          script:
+            # Копируем уже собранный бандл в рабочую директорию AppDir
+            - cp -r client/build/linux/x64/release/bundle/* AppDir/
+            # Копируем иконку
+            - cp client/assets/icons/logo.svg AppDir/com.yourcompany.todo.svg
+            # Копируем desktop-файл
+            - cp client/appimage_builder/client.desktop AppDir/com.yourcompany.todo.desktop
+
+          AppDir:
+            path: $(pwd)/AppDir
+            app_info:
+              id: com.yourcompany.todo
+              name: ToDo
+              icon: com.yourcompany.todo
+              version: ${{ github.ref_name }}
+              exec: client
+            apt:
+              arch: amd64
+              sources:
+                - sourceline: "deb http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse"
+              include:
+                - libgtk-3-0
+                - libsecret-1-0
+                - libnotify4
+                - libayatana-appindicator3-1
+          
+          AppImage:
+            arch: x86_64
+            update-information: "gh-releases-zsync|DIIASA|ToDo|latest|ToDo-*-x86_64.AppImage.zsync"
+          EOF
+
+      # 6. Запускаем сборку AppImage
+      - name: Build AppImage
+        run: appimage-builder --recipe appimage-builder.yml
+
+      # 7. Переименовываем артефакт для релиза
+      - name: Rename Artifact
+        run: mv ToDo-*.AppImage ToDo-${{ github.ref_name }}-Linux-x86_64.AppImage
+
+      # 8. Создаем релиз и загружаем в него AppImage
+      - name: Create GitHub Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ToDo-*.AppImage
