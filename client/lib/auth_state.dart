@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:io' show HttpServer, Platform;
 
+import 'package:client/core/routing/app_pages.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -208,46 +209,47 @@ class AuthState extends ChangeNotifier {
     }
   }
 
-  // ИЗМЕНЕННЫЙ МЕТОД
+  // <<< ИЗМЕНЕННЫЙ МЕТОД ДЛЯ РАЗДЕЛЕНИЯ ПОТОКОВ >>>
   Future<void> initiateOAuth(String provider) async {
     _isLoading = true;
     _oauthErrorMessage = null;
     _errorMessage = null;
+    _emailPendingConfirmation = null;
     notifyListeners();
 
+    // Получаем базовый URL от ApiService
+    String backendInitiationUrl = _apiService.getOAuthUrl(provider);
+
     if (kIsWeb) {
+      // --- ВЕБ-ПОТОК ---
       // Формируем полный URL для коллбэка на наш фронтенд
-      final frontendCallbackUrl = Uri.base.origin + '/oauth/callback/$provider';
-      debugPrint("Frontend callback URL will be: $frontendCallbackUrl");
+      final frontendCallbackUrl = Uri.base.origin + AppRoutes.oAuthCallback(provider);
+      debugPrint("Web OAuth: Frontend callback URL will be: $frontendCallbackUrl");
 
-      // Запрашиваем у бэкенда URL для редиректа на Google, передавая наш URL коллбэка
-      final String backendInitiationUrl = _apiService.getOAuthUrl(provider, redirectUri: frontendCallbackUrl);
+      // Добавляем redirect_uri как query-параметр к URL бэкенда
+      final fullUrlToLaunch = Uri.parse(backendInitiationUrl).replace(queryParameters: {'redirect_uri': frontendCallbackUrl}).toString();
 
-      debugPrint('AuthState (initiateOAuth): Web. Redirecting to: $backendInitiationUrl');
-      _oauthRedirectControllerWeb.add(backendInitiationUrl);
+      debugPrint('Web OAuth: Redirecting to: $fullUrlToLaunch');
+      _oauthRedirectControllerWeb.add(fullUrlToLaunch);
 
-    } else { // Нативный поток остается без изменений
-      final backendInitiationUrl = _apiService.getOAuthUrl(provider) + '?native_final_redirect_uri=${Uri.encodeComponent(nativeClientLandingUri)}';
-      debugPrint('AuthState (initiateOAuth): Native. Backend URL: $backendInitiationUrl. Landing: $nativeClientLandingUri');
+    } else {
+      // --- НАТИВНЫЙ ПОТОК ---
+      // Добавляем native_final_redirect_uri как query-параметр к URL бэкенда
+      final fullUrlToLaunch = Uri.parse(backendInitiationUrl).replace(queryParameters: {'native_final_redirect_uri': nativeClientLandingUri}).toString();
+      debugPrint('Native OAuth: Full URL to launch: $fullUrlToLaunch. Landing: $nativeClientLandingUri');
+
       _nativeOAuthCompleter = Completer<bool>();
       try {
         await _startNativeOAuthHttpServer();
-        final uri = Uri.parse(backendInitiationUrl);
+        final uri = Uri.parse(fullUrlToLaunch);
         if (await canLaunchUrl(uri)) {
-          // Для десктопа лучше не закрывать приложение
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else {
           throw Exception('Could not launch $uri for provider $provider');
         }
-        bool success = await _nativeOAuthCompleter!.future;
-        if (success && !kIsWeb && Platform.isLinux) {
-          // Попытка закрыть окно браузера - может не сработать для всех браузеров
-          // Это больше UX-улучшение, не критичное для функционала
-          debugPrint("Attempting to close browser window on Linux is not directly supported via url_launcher.");
-        }
-        if (!success && _oauthErrorMessage == null) {
-          _oauthErrorMessage = "Авторизация через $provider не была завершена или была отменена.";
-        }
+        await _nativeOAuthCompleter!.future;
+        // Ничего не делаем после, так как _nativeOAuthLandingHandler сам обновит состояние
+
       } catch (e) {
         _oauthErrorMessage = "Ошибка запуска OAuth $provider: $e";
         if (!(_nativeOAuthCompleter?.isCompleted == true)) _nativeOAuthCompleter?.complete(false);
@@ -260,7 +262,7 @@ class AuthState extends ChangeNotifier {
     }
   }
 
-  // НОВЫЙ МЕТОД ДЛЯ ВЕБ-ПОТОКА
+  // <<< НОВЫЙ МЕТОД ДЛЯ ОБРАБОТКИ КОЛЛБЭКА В ВЕБЕ >>>
   Future<bool> handleOAuthCallbackFromUrl(Uri uri, String provider) async {
     debugPrint("AuthState (handleOAuthCallbackFromUrl): Received URI from frontend callback page for provider '$provider'");
     _isLoading = true;
@@ -286,9 +288,16 @@ class AuthState extends ChangeNotifier {
     }
 
     try {
-      await _apiService.oAuthExchange(provider: provider, code: code, state: state);
-      // Если oAuthExchange прошел успешно, токен уже сохранен в ApiService.
-      // Теперь просто проверяем статус, чтобы получить данные пользователя.
+      // Передаем и redirect_uri, который использовался для получения кода.
+      // Это требование безопасности OAuth 2.0.
+      final redirectUriUsed = Uri.base.origin + AppRoutes.oAuthCallback(provider);
+      await _apiService.oAuthExchange(
+        provider: provider,
+        code: code,
+        state: state,
+        redirectUri: redirectUriUsed,
+      );
+
       await _checkInitialAuthStatus();
       return _isLoggedIn;
     } on ApiException catch (e) {
@@ -331,7 +340,7 @@ class AuthState extends ChangeNotifier {
     debugPrint('AuthState (_nativeOAuthLandingHandler): Received: ${request.requestedUri}');
     bool success = false;
     String responseMessage = "Ошибка авторизации. Пожалуйста, попробуйте снова. Можете закрыть эту вкладку.";
-    String script = '<script>window.close();</script>'; // Скрипт для закрытия окна
+    String script = '<script>window.close();</script>';
 
     try {
       final accessToken = request.requestedUri.queryParameters['access_token'];
@@ -375,7 +384,6 @@ class AuthState extends ChangeNotifier {
       }
     }
 
-    // Отправляем HTML с сообщением и скриптом закрытия
     final responseBody = '<html><body><p>$responseMessage</p>$script</body></html>';
     return shelf.Response.ok(responseBody, headers: {'content-type': 'text/html; charset=utf-8'});
   }

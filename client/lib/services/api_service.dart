@@ -331,10 +331,12 @@ class ApiService {
     }
   }
 
+  // <<< ИЗМЕНЕНИЕ: oAuthExchange теперь принимает redirectUri >>>
   Future<AuthResponse> oAuthExchange({
     required String provider,
     required String code,
     required String state,
+    required String redirectUri,
   }) async {
     final response = await _httpClient.post(
       Uri.parse('$_baseApiUrl/auth/oauth/exchange'),
@@ -343,28 +345,22 @@ class ApiService {
         'provider': provider,
         'code': code,
         'state': state,
+        'redirect_uri': redirectUri, // <<< Отправляем его на бэкенд
       }),
     );
     final Map<String, dynamic> responseBody = json.decode(utf8.decode(response.bodyBytes));
     if (response.statusCode == 200) {
       final authData = AuthResponse.fromJson(responseBody);
       await _saveAccessToken(authData.accessToken);
-      // Нативный refreshToken здесь не обрабатываем, так как это веб-поток
       return authData;
     }
     throw ApiException(response.statusCode, responseBody['error'] as String? ?? 'Ошибка обмена OAuth кода');
   }
 
-  String getOAuthUrl(String provider, {String? redirectUri}) {
-    final uri = Uri.parse('$_baseApiUrl/auth/$provider');
-    if (kIsWeb && redirectUri != null) {
-      return uri.replace(queryParameters: {'redirect_uri': redirectUri}).toString();
-    }
-    return uri.toString();
-  }
+  // <<< ИЗМЕНЕНИЕ: getOAuthUrl возвращается к простому виду >>>
+  String getOAuthUrl(String provider) => '$_baseApiUrl/auth/$provider';
 
   // ... (остальные методы без изменений)
-  // ... (getChatHistory, getWebSocketChannel, ... signIn, signUp, etc.)
   Future<Map<String, dynamic>> getChatHistory(String teamId, {String? beforeMessageId, int limit = 50}) async {
     return _retryRequest(() async {
       final queryParams = <String, String>{'limit': limit.toString()};
