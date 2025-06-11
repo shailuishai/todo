@@ -49,7 +49,7 @@ jobs:
             # <<< ВОЗВРАЩАЕМ СОЗДАНИЕ ДИРЕКТОРИИ >>>
             - mkdir -p AppDir
             - cp -r client/build/linux/x64/release/bundle/* AppDir/
-            - cp client/assets/icons/logo.svg AppDir/com.yourcompany.todo.svg
+            - cp client/appimage_builder/client.png AppDir/com.yourcompany.todo.png
             - cp client/appimage_builder/client.desktop AppDir/com.yourcompany.todo.desktop
 
           AppDir:
