@@ -33,50 +33,68 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     }
   }
 
+  // <<< ПОЛНОСТЬЮ ПЕРЕПИСАННЫЙ МЕТОД >>>
   AppRoutePath _getAppropriatePathForCurrentState(AppRoutePath? intendedPath) {
     debugPrint("[RouterDelegate] _getAppropriatePathForCurrentState: Intended: ${intendedPath?.runtimeType}, Current: ${_currentPathConfig.runtimeType}, isLoggedIn: ${authState.isLoggedIn}");
 
-    // <<< НОВОЕ ПРАВИЛО: Лендинг всегда имеет приоритет и не редиректит >>>
-    if (intendedPath is LandingPath) {
-      return const LandingPath();
-    }
-
+    // Если authState еще не завершил проверку, всегда показываем загрузку.
     if (!authState.initialAuthCheckCompleted) {
       return const LoadingPath();
     }
 
+    // Правило 1: Лендинг (/welcome) всегда доступен и не редиректит.
+    if (intendedPath is LandingPath) {
+      return const LandingPath();
+    }
+
+    // Правило 2: Коллбэк OAuth всегда должен обрабатываться.
     if (intendedPath is OAuthCallbackPath) {
       return intendedPath;
     }
 
+    // --- Логика для ЗАЛОГИНЕННОГО пользователя ---
     if (authState.isLoggedIn) {
+      // Приоритет: обработка токена приглашения.
       if (authState.pendingInviteToken != null) {
         return JoinTeamByTokenPath(authState.pendingInviteToken!);
       }
-      // Убираем LandingPath из условия редиректа для залогиненного пользователя
-      if (intendedPath is AuthPath || intendedPath is OAuthCallbackPath) {
+
+      // Если залогиненный пользователь пытается попасть на страницу логина/лендинга,
+      // перенаправляем его на домашнюю страницу.
+      if (intendedPath is AuthPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
-      if (intendedPath is HomePath || intendedPath is HomeSubPath || intendedPath is TeamDetailPath || intendedPath is TaskDetailPath || intendedPath is JoinTeamProcessingPath) {
-        return intendedPath!;
+
+      // Если есть валидный intendedPath, используем его.
+      if (intendedPath != null) {
+        // Проверяем, что это не путь для незалогиненных (LandingPath уже обработан)
+        if (intendedPath is! AuthPath) {
+          return intendedPath;
+        }
       }
-      // Убираем LandingPath из условия редиректа
-      if (_currentPathConfig is LoadingPath || _currentPathConfig is AuthPath || _currentPathConfig is OAuthCallbackPath) {
+
+      // Если мы только что залогинились (предыдущий путь был Auth или Loading),
+      // или нет intendedPath, то по умолчанию идем на домашнюю страницу.
+      if (_currentPathConfig is AuthPath || _currentPathConfig is LoadingPath || _currentPathConfig is OAuthCallbackPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
+
+      // В остальных случаях остаемся на текущем пути.
       return _currentPathConfig;
-    } else {
+    }
+    // --- Логика для НЕЗАЛОГИНЕННОГО пользователя ---
+    else {
+      // Разрешаем обработку коллбэка OAuth
+      if (intendedPath is OAuthCallbackPath) {
+        return intendedPath;
+      }
+      // Разрешаем обработку токена приглашения (он приведет на страницу логина)
       if (intendedPath is JoinTeamByTokenPath) {
         authState.setPendingInviteToken(intendedPath.token);
         return const AuthPath();
       }
-      // Здесь LandingPath уже обработан выше, так что это условие не сработает, но оставляем для ясности
-      if (kIsWeb && intendedPath is LandingPath) {
-        return const LandingPath();
-      }
-      if (intendedPath is OAuthCallbackPath) {
-        return intendedPath;
-      }
+      // Все остальные пути для незалогиненного ведут на страницу аутентификации.
+      // LandingPath был обработан в самом начале.
       return const AuthPath();
     }
   }
