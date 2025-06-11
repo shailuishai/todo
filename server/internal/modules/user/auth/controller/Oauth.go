@@ -15,7 +15,6 @@ import (
 
 const nativeRedirectURISessionCookie = "native_final_redirect_uri_session"
 
-// Oauth - без изменений, он уже готов
 func (c *AuthController) Oauth(w http.ResponseWriter, r *http.Request) {
 	op := "AuthController.Oauth"
 	provider := chi.URLParam(r, "provider")
@@ -24,6 +23,7 @@ func (c *AuthController) Oauth(w http.ResponseWriter, r *http.Request) {
 	clientRedirectURI := r.URL.Query().Get("redirect_uri")
 	nativeFinalRedirectURI := r.URL.Query().Get("native_final_redirect_uri")
 
+	// Usecase сам выберет нужный конфиг на основе clientRedirectURI
 	authURL, _, err := c.uc.GetAuthURL(provider, clientRedirectURI)
 	if err != nil {
 		log.Warn("failed to get auth URL from usecase", "error", err)
@@ -52,7 +52,6 @@ func (c *AuthController) Oauth(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
 }
 
-// <<< ИЗМЕНЕНИЕ: OAuthExchange теперь должен передавать redirect_uri >>>
 func (c *AuthController) OAuthExchange(w http.ResponseWriter, r *http.Request) {
 	op := "AuthController.OAuthExchange"
 	log := c.log.With(slog.String("op", op))
@@ -61,7 +60,7 @@ func (c *AuthController) OAuthExchange(w http.ResponseWriter, r *http.Request) {
 		Code        string `json:"code"`
 		State       string `json:"state"`
 		Provider    string `json:"provider"`
-		RedirectURI string `json:"redirect_uri"` // <<< Фронтенд должен прислать этот URI
+		RedirectURI string `json:"redirect_uri"`
 	}
 
 	if err := render.DecodeJSON(r.Body, &req); err != nil {
@@ -73,11 +72,10 @@ func (c *AuthController) OAuthExchange(w http.ResponseWriter, r *http.Request) {
 	log = log.With("provider", req.Provider, "state", req.State)
 
 	if req.Code == "" || req.State == "" || req.Provider == "" || req.RedirectURI == "" {
-		resp.SendError(w, r, http.StatusBadRequest, "Missing code, state, provider, or redirect_uri")
+		resp.SendError(w, r, http.StatusBadRequest, "Missing required fields")
 		return
 	}
 
-	// <<< Передаем RedirectURI в UseCase >>>
 	accessToken, refreshToken, err := c.uc.OAuthExchange(req.Provider, req.State, req.Code, req.RedirectURI)
 	if err != nil {
 		log.Error("usecase OAuthExchange failed", "error", err)
@@ -105,7 +103,6 @@ func (c *AuthController) OAuthExchange(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, resp.AccessToken(accessToken))
 }
 
-// <<< ИЗМЕНЕНИЕ: OauthCallback теперь передает пустой redirectURI >>>
 func (c *AuthController) OauthCallback(w http.ResponseWriter, r *http.Request) {
 	op := "AuthController.OauthCallback (Native Flow)"
 	provider := chi.URLParam(r, "provider")
@@ -131,7 +128,7 @@ func (c *AuthController) OauthCallback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	// <<< Передаем пустой redirectURI, чтобы usecase использовал дефолтный >>>
+	// Передаем пустой redirectURI, чтобы usecase использовал дефолтный (нативный)
 	_, isNewUser, appAccessToken, appRefreshToken, err := c.uc.Callback(provider, state, code, "")
 	if err != nil {
 		log.Error("Usecase Callback processing failed for native client", "error", err)

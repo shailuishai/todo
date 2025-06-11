@@ -25,7 +25,6 @@ import (
 	"time"
 )
 
-// ... (структуры и NewAuthUseCase без изменений) ...
 type OAuthProviderConfig struct {
 	Google *oauth2.Config
 	Yandex *oauth2.Config
@@ -46,23 +45,26 @@ func NewAuthUseCase(log *slog.Logger, repo auth.Repo, appCfg *config.Config, pro
 	yandexSecret := os.Getenv("YANDEX_SECRET")
 
 	if googleKey == "" || googleSecret == "" {
-		log.Warn("Google OAuth credentials (GOOGLE_KEY or GOOGLE_SECRET) are not set. Google OAuth will be unavailable.")
+		log.Warn("Google OAuth credentials are not set. Google OAuth will be unavailable.")
 	}
 	if yandexKey == "" || yandexSecret == "" {
-		log.Warn("Yandex OAuth credentials (YANDEX_KEY or YANDEX_SECRET) are not set. Yandex OAuth will be unavailable.")
+		log.Warn("Yandex OAuth credentials are not set. Yandex OAuth will be unavailable.")
 	}
 
+	// ВАЖНО: RedirectURL здесь теперь должен быть URL бэкенда для нативного потока.
+	// В прод конфиге это должно быть что-то вроде https://todo-vd2m.onrender.com/v1/auth/google/callback
+	// Для веб-потока мы будем его переопределять.
 	googleCfg := &oauth2.Config{
 		ClientID:     googleKey,
 		ClientSecret: googleSecret,
-		RedirectURL:  appCfg.OAuthConfig.GoogleRedirectURL, // Для ВЕБА этот URL теперь указывает на фронтенд.
+		RedirectURL:  appCfg.OAuthConfig.GoogleRedirectURL,
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
 		Endpoint:     google.Endpoint,
 	}
 	yandexCfg := &oauth2.Config{
 		ClientID:     yandexKey,
 		ClientSecret: yandexSecret,
-		RedirectURL:  appCfg.OAuthConfig.YandexRedirectURL, // Для ВЕБА этот URL теперь указывает на фронтенд.
+		RedirectURL:  appCfg.OAuthConfig.YandexRedirectURL,
 		Scopes:       []string{"login:email", "login:info", "login:avatar"},
 		Endpoint:     yandex.Endpoint,
 	}
@@ -76,7 +78,6 @@ func NewAuthUseCase(log *slog.Logger, repo auth.Repo, appCfg *config.Config, pro
 	}
 }
 
-// ... (SignUp, SignIn, RefreshToken, RefreshTokenNative без изменений) ...
 func (uc *AuthUseCase) SignUp(email string, login string, password string) error {
 	op := "AuthUseCase.SignUp"
 	log := uc.log.With(slog.String("op", op), slog.String("email", email), slog.String("login", login))
@@ -92,14 +93,14 @@ func (uc *AuthUseCase) SignUp(email string, login string, password string) error
 		Email:         email,
 		Login:         login,
 		PasswordHash:  &hashStr,
-		VerifiedEmail: false, // По умолчанию false, должен подтвердить
+		VerifiedEmail: false,
 		IsAdmin:       false,
 	}
 
 	_, err = uc.repo.CreateUser(userAuthDTO)
 	if err != nil {
 		log.Warn("failed to create user in repo", "error", err)
-		return err // Возвращаем ошибку из репозитория (ErrEmailExists, ErrLoginExists)
+		return err
 	}
 	log.Info("user signed up successfully")
 	return nil
@@ -126,9 +127,9 @@ func (uc *AuthUseCase) SignIn(email string, login string, password string) (stri
 	if err != nil {
 		log.Warn("failed to get user from repo", "error", err)
 		if errors.Is(err, gouser.ErrUserNotFound) {
-			return "", "", gouser.ErrUserNotFound // Используем общую ошибку "неверные данные"
+			return "", "", gouser.ErrUserNotFound
 		}
-		return "", "", err // Другие ошибки репозитория
+		return "", "", err
 	}
 
 	if userAuthDTO.PasswordHash == nil {
@@ -138,7 +139,7 @@ func (uc *AuthUseCase) SignIn(email string, login string, password string) (stri
 
 	if err := bcrypt.CompareHashAndPassword([]byte(*userAuthDTO.PasswordHash), []byte(password)); err != nil {
 		log.Warn("password mismatch for user", "userID", userAuthDTO.UserId)
-		return "", "", gouser.ErrUserNotFound // Используем общую ошибку "неверные данные"
+		return "", "", gouser.ErrUserNotFound
 	}
 
 	if !userAuthDTO.VerifiedEmail {
@@ -162,7 +163,6 @@ func (uc *AuthUseCase) SignIn(email string, login string, password string) (stri
 	return accessToken, refreshToken, nil
 }
 
-// RefreshToken для веба (использует cookie)
 func (uc *AuthUseCase) RefreshToken(r *http.Request) (string, error) {
 	op := "AuthUseCase.RefreshToken (Web)"
 	log := uc.log.With(slog.String("op", op))
@@ -177,7 +177,7 @@ func (uc *AuthUseCase) RefreshToken(r *http.Request) (string, error) {
 	claims, err := appjwt.ValidateJWT(refreshTokenValue)
 	if err != nil {
 		log.Warn("invalid or expired refresh token from cookie", "error", err)
-		return "", err // ValidateJWT возвращает ErrInvalidToken или ErrExpiredToken
+		return "", err
 	}
 
 	userID := claims.UserID
@@ -205,7 +205,6 @@ func (uc *AuthUseCase) RefreshToken(r *http.Request) (string, error) {
 	return newAccessToken, nil
 }
 
-// RefreshTokenNative для нативных клиентов (использует токен из тела запроса)
 func (uc *AuthUseCase) RefreshTokenNative(tokenString string) (newAccessToken string, newRefreshToken string, err error) {
 	op := "AuthUseCase.RefreshTokenNative"
 	log := uc.log.With(slog.String("op", op))
@@ -252,7 +251,6 @@ func (uc *AuthUseCase) RefreshTokenNative(tokenString string) (newAccessToken st
 	return generatedAccessToken, generatedRefreshToken, nil
 }
 
-// GetAuthURL - без изменений, он уже принимает redirectURI
 func (uc *AuthUseCase) GetAuthURL(provider, clientRedirectURI string) (url string, state string, err error) {
 	op := "AuthUseCase.GetAuthURL"
 	log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
@@ -293,12 +291,10 @@ func (uc *AuthUseCase) GetAuthURL(provider, clientRedirectURI string) (url strin
 	return authURL, stateUUID, nil
 }
 
-// <<< ИЗМЕНЕНИЕ: OAuthExchange теперь принимает redirectURI и передает его дальше >>>
 func (uc *AuthUseCase) OAuthExchange(provider, state, code, redirectURI string) (accessToken string, refreshToken string, err error) {
 	op := "AuthUseCase.OAuthExchange"
 	log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
 
-	// Передаем redirectURI в Callback
 	_, _, appAccessToken, appRefreshToken, err := uc.Callback(provider, state, code, redirectURI)
 	if err != nil {
 		log.Error("underlying callback logic failed during exchange", "error", err)
@@ -309,10 +305,10 @@ func (uc *AuthUseCase) OAuthExchange(provider, state, code, redirectURI string) 
 	return appAccessToken, appRefreshToken, nil
 }
 
-// <<< ИЗМЕНЕНИЕ: Callback теперь принимает redirectURI для правильной работы Exchange >>>
+// <<< ИЗМЕНЕННЫЙ МЕТОД >>>
 func (uc *AuthUseCase) Callback(provider, state, code, redirectURI string) (userID uint, isNewUser bool, accessToken string, refreshToken string, err error) {
 	op := "AuthUseCase.Callback"
-	log := uc.log.With(slog.String("op", op), slog.String("provider", provider), slog.String("state_from_request", state))
+	log := uc.log.With(slog.String("op", op), slog.String("provider", provider), slog.String("redirectURI_param", redirectURI))
 
 	var oauthCfg *oauth2.Config
 	var userInfoURL string
@@ -345,15 +341,14 @@ func (uc *AuthUseCase) Callback(provider, state, code, redirectURI string) (user
 		return 0, false, "", "", gouser.ErrUnsupportedProvider
 	}
 
-	// <<< КЛЮЧЕВОЕ ИЗМЕНЕНИЕ >>>
-	// Создаем копию конфига, чтобы установить правильный RedirectURL для этого конкретного вызова
+	// Создаем копию конфига, чтобы динамически установить RedirectURL
 	cfgCopy := *oauthCfg
 	if redirectURI != "" {
 		// Если URI передан (веб-поток), используем его
 		cfgCopy.RedirectURL = redirectURI
 	}
-	// Если URI не передан (нативный поток), используется cfgCopy.RedirectURL изначального конфига,
-	// который должен указывать на бэкенд.
+	// Если URI не передан (нативный поток), используется RedirectURL из оригинального oauthCfg,
+	// который мы теперь должны настроить на URL бэкенда.
 
 	oauthToken, err := cfgCopy.Exchange(context.Background(), code)
 	if err != nil {
@@ -362,7 +357,6 @@ func (uc *AuthUseCase) Callback(provider, state, code, redirectURI string) (user
 	}
 	log.Info("OAuth code exchanged for token successfully", slog.Bool("refresh_token_exists_from_provider", oauthToken.RefreshToken != ""))
 
-	// ... (остальной код метода Callback без изменений) ...
 	if oauthToken.AccessToken == "" {
 		log.Error("exchanged oauth token but AccessToken from provider is empty", "provider", provider)
 		return 0, false, "", "", errors.New("oauth provider returned empty access token")
@@ -417,7 +411,6 @@ func (uc *AuthUseCase) Callback(provider, state, code, redirectURI string) (user
 	return oauthUserDTO.UserId, wasNewUser, appAccessToken, appRefreshToken, nil
 }
 
-// ... (остальные методы без изменений) ...
 func (uc *AuthUseCase) fetchOAuthUserInfo(provider, userInfoURL string, token *oauth2.Token) (*auth.UserAuth, error) {
 	log := uc.log.With(slog.String("op", "AuthUseCase.fetchOAuthUserInfo"), slog.String("provider", provider))
 
@@ -430,7 +423,7 @@ func (uc *AuthUseCase) fetchOAuthUserInfo(provider, userInfoURL string, token *o
 
 	if provider == "yandex" {
 		req.Header.Set("Authorization", "OAuth "+token.AccessToken)
-	} else { // Google и другие обычно Bearer
+	} else {
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	}
 	req.Header.Set("User-Agent", "ToDoAppServer/1.0")
