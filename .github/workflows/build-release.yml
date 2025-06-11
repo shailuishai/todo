@@ -22,7 +22,7 @@ jobs:
         with:
           channel: 'stable'
 
-      # 3. ИСПРАВЛЕНИЕ: Устанавливаем полный набор зависимостей
+      # 3. Устанавливаем системные зависимости для сборки
       - name: Install Linux dependencies
         run: |
           sudo apt-get update -y
@@ -33,10 +33,10 @@ jobs:
         run: flutter build linux --target-platform=linux-x64
         working-directory: ./client
 
-      # 5. Устанавливаем инструмент для сборки AppImage
+      # 5. ИСПРАВЛЕНИЕ: Скачиваем appimage-builder с правильного URL
       - name: Download appimage-builder
         run: |
-          wget https://github.com/AppImage/appimage-builder/releases/download/v1.1.0/appimage-builder-1.1.0-x86_64.AppImage -O appimage-builder
+          wget "https://github.com/AppImageCrafters/appimage-builder/releases/download/v1.1.0/appimage-builder-1.1.0-x86_64.AppImage" -O appimage-builder
           chmod +x appimage-builder
           sudo mv appimage-builder /usr/local/bin/
 
