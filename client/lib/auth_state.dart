@@ -1,6 +1,5 @@
 // lib/auth_state.dart
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io' show HttpServer, Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
@@ -27,7 +26,7 @@ class AuthState extends ChangeNotifier {
   UserProfile? _currentUser;
   String? _emailPendingConfirmation;
   String? _oauthErrorMessage;
-  String? _pendingInviteToken; // <<< ПОЛЕ ДЛЯ ТОКЕНА ПРИГЛАШЕНИЯ >>>
+  String? _pendingInviteToken;
 
 
   StreamController<String?> _oauthRedirectControllerWeb = StreamController.broadcast();
@@ -46,7 +45,7 @@ class AuthState extends ChangeNotifier {
   UserProfile? get currentUser => _currentUser;
   String? get emailPendingConfirmation => _emailPendingConfirmation;
   String? get oauthErrorMessage => _oauthErrorMessage;
-  String? get pendingInviteToken => _pendingInviteToken; // <<< ГЕТТЕР ДЛЯ ТОКЕНА >>>
+  String? get pendingInviteToken => _pendingInviteToken;
 
 
   AuthState({required ApiService apiService}) : _apiService = apiService {
@@ -209,33 +208,43 @@ class AuthState extends ChangeNotifier {
     }
   }
 
+  // ИЗМЕНЕННЫЙ МЕТОД
   Future<void> initiateOAuth(String provider) async {
-    _isLoading = true; _oauthErrorMessage = null; _errorMessage = null; _emailPendingConfirmation = null; notifyListeners();
-    String backendInitiationUrl = _apiService.getOAuthUrl(provider);
+    _isLoading = true;
+    _oauthErrorMessage = null;
+    _errorMessage = null;
+    notifyListeners();
 
     if (kIsWeb) {
-      debugPrint('AuthState (initiateOAuth): Web. URL: $backendInitiationUrl');
+      // Формируем полный URL для коллбэка на наш фронтенд
+      final frontendCallbackUrl = Uri.base.origin + '/oauth/callback/$provider';
+      debugPrint("Frontend callback URL will be: $frontendCallbackUrl");
+
+      // Запрашиваем у бэкенда URL для редиректа на Google, передавая наш URL коллбэка
+      final String backendInitiationUrl = _apiService.getOAuthUrl(provider, redirectUri: frontendCallbackUrl);
+
+      debugPrint('AuthState (initiateOAuth): Web. Redirecting to: $backendInitiationUrl');
       _oauthRedirectControllerWeb.add(backendInitiationUrl);
-      Future.delayed(const Duration(seconds: 10), () {
-        if (_isLoading) {
-          _isLoading = false;
-          _oauthErrorMessage = "Не удалось инициировать OAuth через $provider.";
-          notifyListeners();
-        }
-      });
-    } else {
-      backendInitiationUrl += '?native_final_redirect_uri=${Uri.encodeComponent(nativeClientLandingUri)}';
+
+    } else { // Нативный поток остается без изменений
+      final backendInitiationUrl = _apiService.getOAuthUrl(provider) + '?native_final_redirect_uri=${Uri.encodeComponent(nativeClientLandingUri)}';
       debugPrint('AuthState (initiateOAuth): Native. Backend URL: $backendInitiationUrl. Landing: $nativeClientLandingUri');
       _nativeOAuthCompleter = Completer<bool>();
       try {
         await _startNativeOAuthHttpServer();
         final uri = Uri.parse(backendInitiationUrl);
         if (await canLaunchUrl(uri)) {
+          // Для десктопа лучше не закрывать приложение
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else {
           throw Exception('Could not launch $uri for provider $provider');
         }
         bool success = await _nativeOAuthCompleter!.future;
+        if (success && !kIsWeb && Platform.isLinux) {
+          // Попытка закрыть окно браузера - может не сработать для всех браузеров
+          // Это больше UX-улучшение, не критичное для функционала
+          debugPrint("Attempting to close browser window on Linux is not directly supported via url_launcher.");
+        }
         if (!success && _oauthErrorMessage == null) {
           _oauthErrorMessage = "Авторизация через $provider не была завершена или была отменена.";
         }
@@ -249,6 +258,50 @@ class AuthState extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  // НОВЫЙ МЕТОД ДЛЯ ВЕБ-ПОТОКА
+  Future<bool> handleOAuthCallbackFromUrl(Uri uri, String provider) async {
+    debugPrint("AuthState (handleOAuthCallbackFromUrl): Received URI from frontend callback page for provider '$provider'");
+    _isLoading = true;
+    _oauthErrorMessage = null;
+    notifyListeners();
+
+    final code = uri.queryParameters['code'];
+    final state = uri.queryParameters['state'];
+    final error = uri.queryParameters['error'];
+
+    if (error != null) {
+      _oauthErrorMessage = "Ошибка от провайдера OAuth: $error";
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    if (code == null || state == null) {
+      _oauthErrorMessage = "Необходимые параметры 'code' или 'state' отсутствуют в URL";
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    try {
+      await _apiService.oAuthExchange(provider: provider, code: code, state: state);
+      // Если oAuthExchange прошел успешно, токен уже сохранен в ApiService.
+      // Теперь просто проверяем статус, чтобы получить данные пользователя.
+      await _checkInitialAuthStatus();
+      return _isLoggedIn;
+    } on ApiException catch (e) {
+      _oauthErrorMessage = "Ошибка при обмене кода на токен: ${e.message}";
+    } on NetworkException catch (e) {
+      _oauthErrorMessage = "Сетевая ошибка: ${e.message}";
+    } catch (e) {
+      _oauthErrorMessage = "Неизвестная ошибка: ${e.toString()}";
+    }
+
+    _isLoading = false;
+    notifyListeners();
+    return false;
   }
 
   Future<void> _startNativeOAuthHttpServer() async {
@@ -278,6 +331,7 @@ class AuthState extends ChangeNotifier {
     debugPrint('AuthState (_nativeOAuthLandingHandler): Received: ${request.requestedUri}');
     bool success = false;
     String responseMessage = "Ошибка авторизации. Пожалуйста, попробуйте снова. Можете закрыть эту вкладку.";
+    String script = '<script>window.close();</script>'; // Скрипт для закрытия окна
 
     try {
       final accessToken = request.requestedUri.queryParameters['access_token'];
@@ -295,8 +349,6 @@ class AuthState extends ChangeNotifier {
         if (refreshToken != null && refreshToken.isNotEmpty) {
           await _secureStorage.write(key: _refreshTokenKeySecure, value: refreshToken);
           debugPrint('AuthState (_nativeOAuthLandingHandler): Native refresh token saved to secure storage.');
-        } else {
-          debugPrint('AuthState (_nativeOAuthLandingHandler): Refresh token not found/empty in callback for native client.');
         }
 
         await _checkInitialAuthStatus();
@@ -304,7 +356,7 @@ class AuthState extends ChangeNotifier {
         if (_isLoggedIn) {
           _oauthErrorMessage = null;
           success = true;
-          responseMessage = 'Авторизация успешна! Можете вернуться в приложение.';
+          responseMessage = 'Авторизация успешна! Это окно сейчас закроется.';
         } else {
           _oauthErrorMessage = _errorMessage ?? "Не удалось войти после OAuth через $providerFromQuery.";
           responseMessage = _oauthErrorMessage ?? 'Ошибка входа после OAuth. Можете закрыть эту вкладку.';
@@ -322,48 +374,10 @@ class AuthState extends ChangeNotifier {
         _nativeOAuthCompleter?.complete(success);
       }
     }
-    return shelf.Response.ok(responseMessage, headers: {'content-type': 'text/html; charset=utf-8'});
-  }
 
-  Future<void> handleOAuthCallback(Uri uri) async {
-    debugPrint("AuthState (handleOAuthCallback Web): Received URI: $uri. Attempting to complete OAuth flow.");
-    _isLoading = true;
-    _oauthErrorMessage = null;
-    notifyListeners();
-
-    // Задержка в 100 миллисекунд. Это небольшой хак, который дает браузеру
-    // гарантированное время на обработку Set-Cookie из заголовка редиректа.
-    // В большинстве случаев это не нужно, но это надежный способ избежать race condition.
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // Явно вызываем метод для обмена refresh_token (cookie) на access_token.
-    final newAccessToken = await _apiService.exchangeRefreshTokenForAccessToken();
-
-    if (newAccessToken != null) {
-      debugPrint("AuthState (handleOAuthCallback Web): Successfully got a new access token. Finalizing login...");
-      // Теперь, когда у нас есть access_token, мы можем получить профиль пользователя.
-      // _checkInitialAuthStatus здесь идеально подходит, так как он уже умеет
-      // получать профиль и обновлять состояние.
-      await _checkInitialAuthStatus();
-
-      if (!_isLoggedIn) {
-        // Это странный случай: токен получили, а профиль нет.
-        _oauthErrorMessage = _errorMessage ?? "Не удалось получить данные пользователя после успешной авторизации.";
-        debugPrint("AuthState (handleOAuthCallback Web): Got token, but failed to get user profile.");
-      }
-    } else {
-      _isLoggedIn = false;
-      _currentUser = null;
-      _oauthErrorMessage = "Не удалось завершить OAuth авторизацию. Не удалось получить токен доступа из cookie.";
-      debugPrint("AuthState (handleOAuthCallback Web): Failed to exchange refresh token cookie for an access token.");
-    }
-
-    // Если мы не успешно залогинились, нужно убрать индикатор загрузки и обновить UI
-    if (!_isLoggedIn) {
-      _isLoading = false;
-      notifyListeners();
-    }
-    // Если залогинились, _checkInitialAuthStatus уже вызвал notifyListeners().
+    // Отправляем HTML с сообщением и скриптом закрытия
+    final responseBody = '<html><body><p>$responseMessage</p>$script</body></html>';
+    return shelf.Response.ok(responseBody, headers: {'content-type': 'text/html; charset=utf-8'});
   }
 
   Future<bool> sendConfirmationEmail(String email) async {
@@ -431,7 +445,6 @@ class AuthState extends ChangeNotifier {
     return false;
   }
 
-  // <<< НОВЫЙ МЕТОД ДЛЯ PATCH-запросов >>>
   Future<bool> patchUserProfile({
     String? theme,
     String? accentColor,
@@ -461,20 +474,16 @@ class AuthState extends ChangeNotifier {
       return true;
     }
 
-    // Сохраняем текущее состояние для отката в случае ошибки
     final oldUser = _currentUser;
-    // Оптимистично обновляем UI
     _currentUser = _applyPatchToLocalUser(patchData);
     notifyListeners();
 
     try {
       final updatedProfileFromServer = await _apiService.patchUserProfile(patchData);
-      // Обновляем состояние данными с сервера для полной синхронизации
       _currentUser = updatedProfileFromServer;
       notifyListeners();
       return true;
     } catch (e) {
-      // Откатываем UI к предыдущему состоянию в случае ошибки
       _currentUser = oldUser;
       _errorMessage = "Ошибка сохранения настроек: $e";
       notifyListeners();
@@ -485,9 +494,6 @@ class AuthState extends ChangeNotifier {
   UserProfile? _applyPatchToLocalUser(Map<String, dynamic> patchData) {
     if (_currentUser == null) return null;
 
-    // Это простой способ обновить локальный объект, чтобы UI отреагировал мгновенно.
-    // Нам нужно создать новый объект UserProfile из старого, применив изменения.
-    // Мы можем сделать это, создав копию json и обновив его.
     final currentJson = _currentUser!.toJson();
     currentJson.addAll(patchData);
     return UserProfile.fromJson(currentJson);

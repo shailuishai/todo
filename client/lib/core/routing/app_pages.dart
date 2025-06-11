@@ -1,4 +1,5 @@
 // lib/core/routing/app_pages.dart
+import 'package:client/screens/oauth_callback_screen.dart'; // <<< НОВЫЙ ИМПОРТ
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../screens/auth_screen.dart';
@@ -23,9 +24,9 @@ class AppRouteSegments {
   static const String task = 'task';
   static const String joinTeam = 'join-team';
   static const String processingInvite = 'processing-invite';
-  // ИЗМЕНЕНИЕ: ДОБАВЛЕНЫ СЕГМЕНТЫ ДЛЯ OAUTH
-  static const String oauthCallbackSuccess = 'oauth-callback-success';
-  static const String oauthCallbackError = 'oauth-callback-error';
+  // ИЗМЕНЕНИЕ: НОВЫЙ СЕГМЕНТ ДЛЯ КОЛЛБЭКА
+  static const String oauth = 'oauth';
+  static const String callback = 'callback';
 }
 
 class AppRoutes {
@@ -46,9 +47,9 @@ class AppRoutes {
 
   static String joinTeamByToken(String token) => '/${AppRouteSegments.joinTeam}/$token';
   static const String processingInvite = '/${AppRouteSegments.processingInvite}';
-  // ИЗМЕНЕНИЕ: ДОБАВЛЕНЫ РОУТЫ ДЛЯ OAUTH
-  static const String oauthCallbackSuccess = '/${AppRouteSegments.oauthCallbackSuccess}';
-  static const String oauthCallbackError = '/${AppRouteSegments.oauthCallbackError}';
+
+  // ИЗМЕНЕНИЕ: НОВЫЙ РОУТ ДЛЯ КОЛЛБЭКА
+  static String oAuthCallback(String provider) => '/${AppRouteSegments.oauth}/${AppRouteSegments.callback}/$provider';
 }
 
 
@@ -62,10 +63,13 @@ List<Page<dynamic>> buildPagesForPath(AppRoutePath path, AuthState authState) {
     return pages;
   }
 
-  // ИЗМЕНЕНИЕ: Добавлена обработка OAuth путей, чтобы показывать страницу загрузки
-  // во время завершения аутентификации.
-  if (path is OAuthSuccessPath || path is OAuthErrorPath) {
-    pages.add(_createPage(const Scaffold(body: Center(child: CircularProgressIndicator())), const ValueKey('OAuthCallbackPage'), '/oauth-callback'));
+  // ИЗМЕНЕНИЕ: Добавлена обработка OAuth путей
+  if (path is OAuthCallbackPath) {
+    pages.add(_createPage(
+        OAuthCallbackScreen(provider: path.provider),
+        ValueKey('OAuthCallbackPage-${path.provider}'),
+        AppRoutes.oAuthCallback(path.provider)
+    ));
     return pages;
   }
 
@@ -82,32 +86,22 @@ List<Page<dynamic>> buildPagesForPath(AppRoutePath path, AuthState authState) {
   }
 
   // Кейс 4: Пользователь авторизован
-  // Базовая страница - HomePage. Ее параметры зависят от текущего пути.
   String homeSubRouteForBase = AppRouteSegments.allTasks;
   bool homeShowRightSidebarForBase = true;
-  String? teamIdToShowForHomePage; // Для отображения TeamDetailScreen внутри HomePage
-  String? taskIdToShowForHomePage; // Для отображения TaskDetailScreen внутри HomePage (если вы решите вернуть это)
+  String? teamIdToShowForHomePage;
+  String? taskIdToShowForHomePage;
 
   if (path is HomeSubPath) {
     homeSubRouteForBase = path.subRoute;
     homeShowRightSidebarForBase = path.showRightSidebar;
   } else if (path is HomePath) {
-    // homeSubRouteForBase и homeShowRightSidebarForBase остаются дефолтными
+    // defaults
   } else if (path is TeamDetailPath) {
-    // Если мы на TeamDetailPath, HomePage должен содержать этот TeamDetailScreen
-    homeSubRouteForBase = AppRouteSegments.teams; // Логично, что основа - список команд
+    homeSubRouteForBase = AppRouteSegments.teams;
     teamIdToShowForHomePage = path.teamId;
-    homeShowRightSidebarForBase = true; // TeamDetailScreen имеет свой правый сайдбар
+    homeShowRightSidebarForBase = true;
   } else if (path is TaskDetailPath || path is JoinTeamProcessingPath || path is JoinTeamByTokenPath) {
-    // Для этих "верхних" страниц, HomePage под ними будет дефолтным
-    // (allTasks), или можно использовать _previousPathBeforeTaskDetail, если он есть.
-    // Но AppRouterDelegate уже передает _previousPathBeforeTaskDetail через _currentPathConfig
-    // так что здесь мы можем просто полагаться на то, что если path это TaskDetailPath,
-    // то HomePage будет построен на основе того, что было до TaskDetailPath.
-    // Эта логика сложна для buildPagesForPath, лучше если AppRouterDelegate сам передаст сюда
-    // УЖЕ СКОРРЕКТИРОВАННЫЙ базовый путь для HomePage, если это TaskDetail.
-    // Пока что, если это не HomeSubPath, HomePath или TeamDetailPath, HomePage будет дефолтным.
-    // Это значит, что если мы зашли на /task/123, то HomePage будет /home/all-tasks
+    // defaults
   }
 
   pages.add(_createPage(
@@ -115,15 +109,11 @@ List<Page<dynamic>> buildPagesForPath(AppRoutePath path, AuthState authState) {
         initialSubRoute: homeSubRouteForBase,
         showRightSidebarInitially: homeShowRightSidebarForBase,
         teamIdToShow: teamIdToShowForHomePage,
-        // taskIdToShow: taskIdToShowForHomePage, // Если TaskDetail будет частью HomePage
       ),
       ValueKey('HomePage-$homeSubRouteForBase-${teamIdToShowForHomePage ?? 'no-team'}'),
-      // URL для HomePage здесь не так критичен, т.к. фактический URL будет от _currentPathConfig
-      // Но для согласованности, если это teamId, то путь к команде
       teamIdToShowForHomePage != null ? AppRoutes.teamDetail(teamIdToShowForHomePage) : AppRoutes.homeSub(homeSubRouteForBase)
   ));
 
-  // Добавляем дочерние страницы поверх HomePage
   if (path is TaskDetailPath) {
     pages.add(_createPage(
         TaskDetailScreen(taskId: path.taskId),
@@ -137,9 +127,7 @@ List<Page<dynamic>> buildPagesForPath(AppRoutePath path, AuthState authState) {
         AppRoutes.processingInvite
     ));
   }
-  // TeamDetailPath уже обработан тем, что teamIdToShowForHomePage передается в HomePage.
 
-  // Если после всех этих проверок pages все еще пуст (очень маловероятно для залогиненного пользователя)
   if (pages.isEmpty) {
     debugPrint("[buildPagesForPath] CRITICAL - Logged in user, but pages list is empty for path: ${path.runtimeType}. Defaulting to Home.");
     pages.add(_createPage(

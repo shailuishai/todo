@@ -14,18 +14,16 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
       return const LandingPath();
     }
 
-    final firstSegment = uri.pathSegments.first;
+    final segments = uri.pathSegments;
 
-    // ИЗМЕНЕНИЕ: Добавлена обработка OAuth коллбэков
-    if (firstSegment == AppRouteSegments.oauthCallbackSuccess) {
-      debugPrint("[AppRouteInformationParser] Parsed OAuthSuccessPath");
-      return const OAuthSuccessPath();
+    // ИЗМЕНЕНИЕ: Обработка нового пути /oauth/callback/:provider
+    if (segments.length == 3 && segments[0] == AppRouteSegments.oauth && segments[1] == AppRouteSegments.callback) {
+      final provider = segments[2];
+      debugPrint("[AppRouteInformationParser] Parsed OAuthCallbackPath for provider: $provider");
+      return OAuthCallbackPath(provider);
     }
-    if (firstSegment == AppRouteSegments.oauthCallbackError) {
-      final error = uri.queryParameters['error_description'];
-      debugPrint("[AppRouteInformationParser] Parsed OAuthErrorPath with error: $error");
-      return OAuthErrorPath(error: error);
-    }
+
+    final firstSegment = segments.first;
 
     if (firstSegment == AppRouteSegments.landing) {
       debugPrint("[AppRouteInformationParser] Parsed LandingPath");
@@ -38,30 +36,24 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
     }
 
     if (firstSegment == AppRouteSegments.home) {
-      if (uri.pathSegments.length == 1) {
+      if (segments.length == 1) {
         debugPrint("[AppRouteInformationParser] Parsed HomeSubPath (default for /home): ${AppRouteSegments.allTasks}");
         return const HomeSubPath(AppRouteSegments.allTasks, showRightSidebar: true);
       }
-      if (uri.pathSegments.length == 2) {
-        final subRouteSegment = uri.pathSegments[1];
+      if (segments.length == 2) {
+        final subRouteSegment = segments[1];
         bool showRightSidebar = true;
 
-        if ([
-          AppRouteSegments.settings,
-          AppRouteSegments.trash,
-        ].contains(subRouteSegment)) {
+        if ([AppRouteSegments.settings, AppRouteSegments.trash].contains(subRouteSegment)) {
           showRightSidebar = false;
         }
-
         if (subRouteSegment == AppRouteSegments.teams || subRouteSegment == AppRouteSegments.calendar) {
           showRightSidebar = true;
         }
-
         final validHomeSubRoutes = [
           AppRouteSegments.settings, AppRouteSegments.allTasks, AppRouteSegments.personalTasks,
           AppRouteSegments.teams, AppRouteSegments.trash, AppRouteSegments.calendar,
         ];
-
         if (validHomeSubRoutes.contains(subRouteSegment)) {
           debugPrint("[AppRouteInformationParser] Parsed HomeSubPath: $subRouteSegment, showRightSidebar: $showRightSidebar");
           return HomeSubPath(subRouteSegment, showRightSidebar: showRightSidebar);
@@ -74,24 +66,24 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
     }
 
     if (firstSegment == AppRouteSegments.task) {
-      if (uri.pathSegments.length == 2) {
-        final taskId = uri.pathSegments[1];
+      if (segments.length == 2) {
+        final taskId = segments[1];
         debugPrint("[AppRouteInformationParser] Parsed TaskDetailPath with ID: $taskId");
         return TaskDetailPath(taskId);
       }
     }
 
     if (firstSegment == AppRouteSegments.team) {
-      if (uri.pathSegments.length == 2) {
-        final teamId = uri.pathSegments[1];
+      if (segments.length == 2) {
+        final teamId = segments[1];
         debugPrint("[AppRouteInformationParser] Parsed TeamDetailPath with ID: $teamId");
         return TeamDetailPath(teamId);
       }
     }
 
     if (firstSegment == AppRouteSegments.joinTeam) {
-      if (uri.pathSegments.length == 2) {
-        final token = uri.pathSegments[1];
+      if (segments.length == 2) {
+        final token = segments[1];
         if (token.isNotEmpty) {
           debugPrint("[AppRouteInformationParser] Parsed JoinTeamByTokenPath with token: $token");
           return JoinTeamByTokenPath(token);
@@ -107,7 +99,7 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
     }
 
     debugPrint("[AppRouteInformationParser] URI not matched ($uri), returning UnknownPath.");
-    return const UnknownPath(); // Для всех неопознанных путей
+    return const UnknownPath();
   }
 
   @override
@@ -137,14 +129,11 @@ class AppRouteInformationParser extends RouteInformationParser<AppRoutePath> {
       return RouteInformation(uri: Uri.parse(AppRoutes.processingInvite));
     }
     // ИЗМЕНЕНИЕ: Добавлена обработка OAuth путей
-    if (configuration is OAuthSuccessPath) {
-      return RouteInformation(uri: Uri.parse(AppRoutes.oauthCallbackSuccess));
-    }
-    if (configuration is OAuthErrorPath) {
-      return RouteInformation(uri: Uri.parse(AppRoutes.oauthCallbackError));
+    if (configuration is OAuthCallbackPath) {
+      return RouteInformation(uri: Uri.parse(AppRoutes.oAuthCallback(configuration.provider)));
     }
     if (configuration is UnknownPath) {
-      return RouteInformation(uri: Uri.parse(AppRoutes.landing)); // Неизвестные пути ведут на лендинг
+      return RouteInformation(uri: Uri.parse(AppRoutes.landing));
     }
     debugPrint("[AppRouteInformationParser] restoreRouteInformation: Unknown configuration type: ${configuration.runtimeType}");
     return null;

@@ -49,12 +49,8 @@ class LoadingPath extends AppRoutePath {
   const LoadingPath();
 }
 
-// ИЗМЕНЕНИЕ: ДОБАВЛЕНЫ КЛАССЫ ДЛЯ ПУТЕЙ OAUTH
-class OAuthSuccessPath extends AppRoutePath {
-  const OAuthSuccessPath();
-}
-
-class OAuthErrorPath extends AppRoutePath {
-  final String? error;
-  const OAuthErrorPath({this.error});
+// ИЗМЕНЕНИЕ: НОВЫЙ КЛАСС ДЛЯ КОЛЛБЭКА
+class OAuthCallbackPath extends AppRoutePath {
+  final String provider;
+  const OAuthCallbackPath(this.provider);
 }

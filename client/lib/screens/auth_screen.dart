@@ -420,6 +420,8 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     if (_authStateInstance?.isLoading ?? true) return;
     _authStateInstance?.clearErrorMessage();
     _authStateInstance?.clearOAuthError();
+    // Просто вызываем initiateOAuth с провайдером.
+    // AuthState сам разберется, веб это или натив.
     _authStateInstance?.initiateOAuth(provider);
   }
 

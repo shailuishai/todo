@@ -58,7 +58,6 @@ void main() async {
         ChangeNotifierProvider.value(value: teamProvider),
         ChangeNotifierProvider.value(value: routerDelegate),
 
-        // <<< ИСПРАВЛЕНИЕ: ThemeProvider теперь зависит от AuthState >>>
         ChangeNotifierProxyProvider<AuthState, ThemeProvider>(
           create: (context) => ThemeProvider(context.read<AuthState>()),
           update: (context, auth, previous) => ThemeProvider(auth),
@@ -122,50 +121,16 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final AppRouteInformationParser _routeInformationParser = AppRouteInformationParser();
-  StreamSubscription? _uriLinkSubscription;
 
+  // Этот initState больше не нужен для обработки URI,
+  // так как этим будет заниматься OAuthCallbackScreen
   @override
   void initState() {
     super.initState();
-    if (kIsWeb) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _handleInitialWebUri();
-        }
-      });
-    }
-  }
-
-  void _handleInitialWebUri() {
-    if (!kIsWeb || !mounted) return;
-    try {
-      final initialUri = Uri.parse(html_lib.window.location.href);
-
-      const String successSuffix = 'oauth-callback-success';
-      const String errorSuffix = 'oauth-callback-error';
-
-      if (initialUri.pathSegments.isNotEmpty && (initialUri.pathSegments.last == successSuffix || initialUri.pathSegments.last == errorSuffix)) {
-        final authState = Provider.of<AuthState>(context, listen: false);
-
-        if (initialUri.pathSegments.last == successSuffix) {
-          debugPrint("[MyApp] OAuth success redirect detected.");
-          authState.handleOAuthCallback(initialUri);
-        } else {
-          final errorDesc = initialUri.queryParameters['error_description'] ?? 'Unknown error';
-          authState.setOAuthError("Ошибка аутентификации: $errorDesc");
-        }
-
-        html_lib.window.history.replaceState(null, '', '/');
-        Provider.of<AppRouterDelegate>(context, listen: false).navigateTo(const HomePath());
-      }
-    } catch (e) {
-      debugPrint("[MyApp] Error processing initial web URI: $e");
-    }
   }
 
   @override
   void dispose() {
-    _uriLinkSubscription?.cancel();
     super.dispose();
   }
 

@@ -81,7 +81,6 @@ class UserProfile {
   };
 }
 
-// --- AuthResponse, Exceptions, ApiService (начало) - без изменений ---
 class AuthResponse {
   final String accessToken;
   final String? refreshToken;
@@ -324,25 +323,6 @@ class ApiService {
     return null;
   }
 
-  /// Exchanges the httpOnly refresh token cookie for a new access token.
-  /// This is the final step in the web OAuth flow.
-  /// Returns the new access token on success, or null on failure.
-  Future<String?> exchangeRefreshTokenForAccessToken() async {
-    debugPrint("ApiService: Attempting to exchange refresh_token cookie for access_token.");
-    // Мы можем просто вызвать внутренний метод, который делает всю работу.
-    // Нам не нужно обрабатывать здесь TokenRefreshedException, так как это первая попытка.
-    final newTokens = await _tryRefreshTokenInternal();
-    if (newTokens != null && newTokens['access_token'] != null) {
-      final newAccessToken = newTokens['access_token']!;
-      // Сохраняем полученный токен в памяти и SharedPreferences
-      await _saveAccessToken(newAccessToken);
-      debugPrint("ApiService: Successfully exchanged cookie for a new access token.");
-      return newAccessToken;
-    }
-    debugPrint("ApiService: Failed to exchange cookie for access token. _tryRefreshTokenInternal returned null.");
-    return null;
-  }
-
   Future<T> _retryRequest<T>(Future<T> Function() requestFunction) async {
     try {
       return await requestFunction();
@@ -351,6 +331,40 @@ class ApiService {
     }
   }
 
+  Future<AuthResponse> oAuthExchange({
+    required String provider,
+    required String code,
+    required String state,
+  }) async {
+    final response = await _httpClient.post(
+      Uri.parse('$_baseApiUrl/auth/oauth/exchange'),
+      headers: await _getHeaders(includeAuth: false),
+      body: json.encode({
+        'provider': provider,
+        'code': code,
+        'state': state,
+      }),
+    );
+    final Map<String, dynamic> responseBody = json.decode(utf8.decode(response.bodyBytes));
+    if (response.statusCode == 200) {
+      final authData = AuthResponse.fromJson(responseBody);
+      await _saveAccessToken(authData.accessToken);
+      // Нативный refreshToken здесь не обрабатываем, так как это веб-поток
+      return authData;
+    }
+    throw ApiException(response.statusCode, responseBody['error'] as String? ?? 'Ошибка обмена OAuth кода');
+  }
+
+  String getOAuthUrl(String provider, {String? redirectUri}) {
+    final uri = Uri.parse('$_baseApiUrl/auth/$provider');
+    if (kIsWeb && redirectUri != null) {
+      return uri.replace(queryParameters: {'redirect_uri': redirectUri}).toString();
+    }
+    return uri.toString();
+  }
+
+  // ... (остальные методы без изменений)
+  // ... (getChatHistory, getWebSocketChannel, ... signIn, signUp, etc.)
   Future<Map<String, dynamic>> getChatHistory(String teamId, {String? beforeMessageId, int limit = 50}) async {
     return _retryRequest(() async {
       final queryParams = <String, String>{'limit': limit.toString()};
@@ -551,7 +565,7 @@ class ApiService {
       }
     }
   }
-  String getOAuthUrl(String provider) => '$_baseApiUrl/auth/$provider';
+
   Future<void> sendConfirmationEmail(String email) async {
     final response = await _httpClient.post(
       Uri.parse('$_baseApiUrl/email/send-code'),
