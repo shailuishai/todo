@@ -1,42 +1,88 @@
-version: 1
+# .github/workflows/build-release.yml
+name: Build & Release Flutter App
 
-script:
-  # Этот скрипт будет выполняться ИЗ папки appimage_builder
-  - echo ">>>> Cleaning old AppDir..."
-  - rm -rf AppDir || true
-  - mkdir -p AppDir
-  - echo ">>>> Copying compiled application..."
-  # Копируем всё из ../build/linux/x64/release/bundle в нашу рабочую папку AppDir
-  - cp -r ../build/linux/x64/release/bundle/* AppDir/
-  - echo ">>>> Copying .desktop file and icon..."
-  - cp client.desktop AppDir/
-  - cp client.png AppDir/
-  - echo ">>>> Preparation completed."
+on:
+  push:
+    tags:
+      - 'v*'
 
-AppDir:
-  path: ./AppDir
+jobs:
+  build-linux:
+    name: Build Linux AppImage (x86_64)
+    runs-on: ubuntu-latest
 
-  app_info:
-    id: com.yourcompany.todo
-    name: ToDo
-    icon: client
-    version: 1.0.0
-    exec: client
-    exec_args: "" # Аргументы можно оставить пустыми
+    steps:
+      # 1. Загружаем код из репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  # <<< ГЛАВНОЕ ИЗМЕНЕНИЕ: ИСПОЛЬЗУЕМ PACMAN >>>
-  pacman:
-    # Список пакетов, от которых зависит Flutter на Arch Linux
-    # GTK3 и другие базовые библиотеки
-    include:
-      - gtk3
-      - libnotify
-      - libsecret
-      - libxss
-      - at-spi2-core
+      # 2. Устанавливаем Flutter SDK
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
 
-AppImage:
-  arch: x86_64
-  # Замените DIIASA/ToDo на ваше имя пользователя и репозиторий на GitHub для автообновлений
-  update-information: "gh-releases-zsync|DIIASA|ToDo|latest|ToDo-*-x86_64.AppImage.zsync"
-  sign-key: None
+      # <<< НОВЫЙ ШАГ: Установка системных зависимостей для сборки >>>
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev
+
+      # 4. Собираем Linux билд
+      - name: Build Flutter Linux
+        run: flutter build linux --target-platform=linux-x64
+        working-directory: ./client
+
+      # 5. Устанавливаем инструмент для сборки AppImage
+      - name: Download appimage-builder
+        run: |
+          wget https://github.com/AppImage/appimage-builder/releases/download/v1.1.0/appimage-builder-1.1.0-x86_64.AppImage -O appimage-builder
+          chmod +x appimage-builder
+          sudo mv appimage-builder /usr/local/bin/
+
+      # 6. Создаем рецепт для AppImage на лету
+      - name: Create AppImage Recipe
+        run: |
+          cat > appimage-builder.yml <<EOF
+          version: 1
+          script:
+            - cp -r client/build/linux/x64/release/bundle/* AppDir/
+            - cp client/assets/icons/logo.svg AppDir/com.yourcompany.todo.svg
+            - cp client/appimage_builder/client.desktop AppDir/com.yourcompany.todo.desktop
+
+          AppDir:
+            path: \$(pwd)/AppDir
+            app_info:
+              id: com.yourcompany.todo
+              name: ToDo
+              icon: com.yourcompany.todo
+              version: ${{ github.ref_name }}
+              exec: client
+            apt:
+              arch: amd64
+              sources:
+                - sourceline: "deb http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse"
+              include:
+                - libgtk-3-0
+                - libsecret-1-0
+                - libnotify4
+                - libayatana-appindicator3-1
+          
+          AppImage:
+            arch: x86_64
+            update-information: "gh-releases-zsync|DIIASA|ToDo|latest|ToDo-*-x86_64.AppImage.zsync"
+          EOF
+
+      # 7. Запускаем сборку AppImage
+      - name: Build AppImage
+        run: appimage-builder --recipe appimage-builder.yml
+
+      # 8. Переименовываем артефакт для релиза
+      - name: Rename Artifact
+        run: mv ToDo-*.AppImage ToDo-${{ github.ref_name }}-Linux-x86_64.AppImage
+
+      # 9. Создаем релиз и загружаем в него AppImage
+      - name: Create GitHub Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ToDo-*.AppImage
