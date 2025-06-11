@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:universal_html/html.dart' as html; // Для User-Agent
 
@@ -14,7 +13,6 @@ import '../core/routing/app_router_delegate.dart';
 import '../core/routing/app_route_path.dart';
 import '../core/utils/responsive_utils.dart';
 import '../theme_provider.dart';
-import '../widgets/auth/auth_screen_logo.dart';
 import '../auth_state.dart';
 import '../widgets/sidebar/app_logo.dart';
 
@@ -34,20 +32,16 @@ class _LandingScreenState extends State<LandingScreen> {
   @override
   void initState() {
     super.initState();
-    // Определение ОС и архитектуры должно происходить только для веба,
-    // так как лендинг предназначен только для веба.
     if (kIsWeb) {
       _detectOSAndArchFromUserAgent();
     }
-    // Для нативных платформ эта информация не нужна, т.к. экран не будет показан.
   }
 
   void _detectOSAndArchFromUserAgent() {
-    // Этот метод останется только для kIsWeb
     final userAgent = html.window.navigator.userAgent.toLowerCase();
     if (userAgent.contains("windows") || userAgent.contains("win")) {
       _detectedOS = "Windows";
-    } else if (userAgent.contains("linux") && !userAgent.contains("android")) { // Уточняем, что это не Android Linux
+    } else if (userAgent.contains("linux") && !userAgent.contains("android")) {
       _detectedOS = "Linux";
     } else if (userAgent.contains("macintosh") || userAgent.contains("mac os x")) {
       _detectedOS = "macOS";
@@ -62,7 +56,7 @@ class _LandingScreenState extends State<LandingScreen> {
     } else if (userAgent.contains("x86_64") || userAgent.contains("amd64") || userAgent.contains("win64")) {
       _detectedArch = "x64";
     } else if (userAgent.contains("x86")) {
-      _detectedArch = "x86"; // Менее вероятно для современных систем, но возможно
+      _detectedArch = "x86";
     }
 
     if (_detectedOS == "Android" || _detectedOS == "iOS") {
@@ -72,33 +66,45 @@ class _LandingScreenState extends State<LandingScreen> {
     if (mounted) {
       setState(() {});
     }
-    debugPrint("[LandingScreen] Detected OS: $_detectedOS, Arch: $_detectedArch from UA: $userAgent");
   }
 
-
+  // <<< ИСПРАВЛЕННЫЙ МЕТОД >>>
   void _scrollToDownloadSection() {
-    final context = _downloadSectionKey.currentContext;
-    if (context != null) {
-      Scrollable.ensureVisible(
-        context,
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.easeInOutCubic,
-      );
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _downloadSectionKey.currentContext;
+      if (context != null) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOutCubic,
+        );
+      } else {
+        debugPrint("[LandingScreen] Download section context not found. Cannot scroll.");
+      }
+    });
   }
 
   Future<void> _launchURL(String urlString) async {
-    if (urlString == "#") { // Обработка заглушек
+    // Обработка заглушек для скачивания
+    if (urlString == "#") {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Файл для скачивания еще не загружен.')),
+        const SnackBar(content: Text('Файл для скачивания еще не готов.')),
       );
       return;
     }
-    final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+
+    // <<< ИСПРАВЛЕНИЕ: Формируем абсолютный URL для локальных файлов из папки web >>>
+    Uri url;
+    if (urlString.startsWith('/')) {
+      url = Uri.parse(Uri.base.origin + urlString);
+    } else {
+      url = Uri.parse(urlString);
+    }
+
+    if (!await launchUrl(url, mode: LaunchMode.platformDefault)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось открыть ссылку: $urlString')),
+          SnackBar(content: Text('Не удалось открыть ссылку: $url')),
         );
       }
     }
@@ -106,8 +112,6 @@ class _LandingScreenState extends State<LandingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Эта проверка должна быть в AppRouterDelegate.
-    // Если мы все же попали сюда не на вебе, показываем заглушку.
     if (!kIsWeb) {
       return const Scaffold(
         body: Center(
@@ -137,7 +141,7 @@ class _LandingScreenState extends State<LandingScreen> {
             child: Container(color: Colors.transparent),
           ),
         ),
-        title: Padding( // Добавил Padding для лого и названия
+        title: Padding(
           padding: EdgeInsets.only(left: isMobile ? 16.0 : 8.0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -152,7 +156,7 @@ class _LandingScreenState extends State<LandingScreen> {
                 "ToDo",
                 style: textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  fontSize: isMobile ? 18 : 20, // Адаптивный размер
+                  fontSize: isMobile ? 18 : 20,
                   color: colorScheme.onSurface,
                 ),
               ),
@@ -164,7 +168,7 @@ class _LandingScreenState extends State<LandingScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
               child: TextButton.icon(
-                icon: const Icon(Icons.download_for_offline_outlined), // Изменил иконку
+                icon: const Icon(Icons.download_for_offline_outlined),
                 label: const Text("Скачать"),
                 onPressed: _scrollToDownloadSection,
                 style: TextButton.styleFrom(foregroundColor: colorScheme.onSurface),
@@ -180,9 +184,9 @@ class _LandingScreenState extends State<LandingScreen> {
           ),
           const SizedBox(width: 4),
           Padding(
-            padding: EdgeInsets.only(right: isMobile ? 12.0 : 16.0), // Увеличил отступ для мобильных
+            padding: EdgeInsets.only(right: isMobile ? 12.0 : 16.0),
             child: ElevatedButton.icon(
-              icon: const Icon(Icons.app_registration_rounded, size: 18), // Изменил иконку
+              icon: const Icon(Icons.app_registration_rounded, size: 18),
               label: Text(isMobile ? "Вход" : "Войти / Регистрация"),
               onPressed: () {
                 Provider.of<AppRouterDelegate>(context, listen: false).navigateTo(const AuthPath());
@@ -197,7 +201,7 @@ class _LandingScreenState extends State<LandingScreen> {
       ),
       body: Scrollbar(
         controller: _scrollController,
-        thumbVisibility: kIsWeb, // Показываем скроллбар всегда на вебе
+        thumbVisibility: kIsWeb,
         child: ListView(
           controller: _scrollController,
           children: [
@@ -336,32 +340,28 @@ class _LandingScreenState extends State<LandingScreen> {
     if (isSvg) {
       imageWidget = SvgPicture.asset(
         assetPath,
-        fit: BoxFit.contain, // .contain чтобы SVG полностью влез и сохранил пропорции
-        // Убрал colorFilter, так как он может мешать отображению сложных SVG.
-        // Если ваш SVG монохромный и вы хотите его окрашивать, верните colorFilter
-        // colorFilter: ColorFilter.mode(colorScheme.primary, BlendMode.srcIn),
+        fit: BoxFit.contain,
       );
     } else {
       imageWidget = Image.asset(
         assetPath,
-        fit: BoxFit.cover, // .cover для растровых, чтобы заполнить область, может обрезать
+        fit: BoxFit.cover,
         errorBuilder: (c,o,s) => Icon(Icons.image_not_supported_rounded, size: 100, color: colorScheme.outline.withOpacity(0.5)),
       );
     }
 
     Widget imageContent = Container(
-      // Устанавливаем максимальную ширину, а высота будет определяться через AspectRatio
       constraints: BoxConstraints(
-        maxWidth: isMobile ? 320 : 480, // Максимальная ширина для изображения
-        maxHeight: isMobile ? (320 / imageAspectRatio) : (480 / imageAspectRatio), // Максимальная высота на основе соотношения сторон
+        maxWidth: isMobile ? 320 : 480,
+        maxHeight: isMobile ? (320 / imageAspectRatio) : (480 / imageAspectRatio),
       ),
       child: AspectRatio(
-        aspectRatio: imageAspectRatio, // Используем переданное соотношение сторон
+        aspectRatio: imageAspectRatio,
         child: Material(
-          elevation: 8.0, // Увеличил тень для лучшего эффекта
+          elevation: 8.0,
           borderRadius: BorderRadius.circular(16),
           shadowColor: colorScheme.shadow.withOpacity(0.25),
-          clipBehavior: Clip.antiAlias, // Для применения borderRadius к дочернему ClipRRect
+          clipBehavior: Clip.antiAlias,
           child: imageWidget,
         ),
       ),
@@ -400,7 +400,7 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   Widget _buildDownloadSectionWrapper(BuildContext context, ThemeData currentTheme, ColorScheme colorScheme, bool isMobile, String detectedOS, String detectedArch) {
-    final textTheme = currentTheme.textTheme; // Получаем textTheme из currentTheme
+    final textTheme = currentTheme.textTheme;
     return Container(
       key: _downloadSectionKey,
       padding: EdgeInsets.symmetric(horizontal: isMobile ? 20 : 40, vertical: isMobile ? 50 : 80),
@@ -425,11 +425,9 @@ class _LandingScreenState extends State<LandingScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
-              // Кнопка для автоматически определенной платформы
               _buildPlatformSpecificDownloadButton(context, detectedOS, detectedArch, colorScheme),
               const SizedBox(height: 30),
-              // Таблица с другими версиями
-              _buildDownloadTable(context, currentTheme, colorScheme, isMobile), // <<< ПЕРЕДАЕМ theme
+              _buildDownloadTable(context, currentTheme, colorScheme, isMobile),
               const SizedBox(height: 24),
               TextButton.icon(
                 icon: const Icon(Icons.open_in_browser_rounded),
@@ -462,23 +460,19 @@ class _LandingScreenState extends State<LandingScreen> {
     if (os == "Windows") {
       buttonText = "Скачать для Windows";
       buttonIcon = Icons.desktop_windows_rounded;
-      downloadUrl = arch == "ARM64" ? "#download-windows-arm64" : "#download-windows-x64";
+      downloadUrl = "#";
     } else if (os == "Linux") {
       buttonText = "Скачать для Linux";
       buttonIcon = Icons.laptop_chromebook_rounded;
-      downloadUrl = arch == "ARM64" ? "#download-linux-arm64" : "#download-linux-x64";
+      downloadUrl = "#";
     } else if (os == "macOS") {
       buttonText = "Скачать для macOS";
       buttonIcon = Icons.laptop_mac_rounded;
-      downloadUrl = arch == "ARM64" ? "#download-macos-arm64" : "#download-macos-x64";
+      downloadUrl = "#";
     } else if (os == "Android") {
       buttonText = "Скачать для Android";
       buttonIcon = Icons.android_rounded;
-      downloadUrl = "#download-android-apk";
-    }
-
-    if (downloadUrl == null && os != "Web" && os != "iOS" && os != "Unknown") {
-      downloadUrl = "#download-${os.toLowerCase()}";
+      downloadUrl = "#";
     }
 
     if (downloadUrl == null) {
@@ -499,8 +493,8 @@ class _LandingScreenState extends State<LandingScreen> {
     );
   }
 
-  Widget _buildDownloadTable(BuildContext context, ThemeData currentTheme, ColorScheme colorScheme, bool isMobile) { // <<< ИЗМЕНЕН ПАРАМЕТР
-    final textTheme = currentTheme.textTheme; // Получаем textTheme из currentTheme
+  Widget _buildDownloadTable(BuildContext context, ThemeData currentTheme, ColorScheme colorScheme, bool isMobile) {
+    final textTheme = currentTheme.textTheme;
     DataCell buildCell(String text, {String? url, bool isHeader = false, bool isPlatform = false}) {
       Widget content = Text(
         text,
@@ -528,7 +522,7 @@ class _LandingScreenState extends State<LandingScreen> {
     }
 
     return Theme(
-      data: currentTheme.copyWith( // <<< ИСПОЛЬЗУЕМ currentTheme
+      data: currentTheme.copyWith(
           dividerTheme: DividerThemeData(
             color: colorScheme.outlineVariant.withOpacity(0.3),
             thickness: 0.8,
@@ -613,8 +607,9 @@ class _LandingScreenState extends State<LandingScreen> {
                 spacing: isMobile ? 10 : 20,
                 runSpacing: 8,
                 children: [
-                  TextButton(onPressed: () { /* TODO: Implement */ }, child: const Text("Контакты")),
-                  TextButton(onPressed: () => _launchURL("assets/documents/privacy_policy.pdf"), child: const Text("Политика (PDF)")),
+                  // <<< ИСПРАВЛЕНИЕ КНОПОК >>>
+                  TextButton(onPressed: () => _launchURL("mailto:support.todoapp@yandex.by?subject=Вопрос по ToDo App"), child: const Text("Контакты")),
+                  TextButton(onPressed: () => _launchURL("/documents/privacy_policy.pdf"), child: const Text("Политика (PDF)")),
                   TextButton(onPressed: () => _launchURL("https://github.com/DIIASA/ToDo"), child: const Text("GitHub")),
                 ],
               ),

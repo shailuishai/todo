@@ -1,0 +1,42 @@
+version: 1
+
+script:
+  # Этот скрипт будет выполняться ИЗ папки appimage_builder
+  - echo ">>>> Cleaning old AppDir..."
+  - rm -rf AppDir || true
+  - mkdir -p AppDir
+  - echo ">>>> Copying compiled application..."
+  # Копируем всё из ../build/linux/x64/release/bundle в нашу рабочую папку AppDir
+  - cp -r ../build/linux/x64/release/bundle/* AppDir/
+  - echo ">>>> Copying .desktop file and icon..."
+  - cp client.desktop AppDir/
+  - cp client.png AppDir/
+  - echo ">>>> Preparation completed."
+
+AppDir:
+  path: ./AppDir
+
+  app_info:
+    id: com.yourcompany.todo
+    name: ToDo
+    icon: client
+    version: 1.0.0
+    exec: client
+    exec_args: "" # Аргументы можно оставить пустыми
+
+  # <<< ГЛАВНОЕ ИЗМЕНЕНИЕ: ИСПОЛЬЗУЕМ PACMAN >>>
+  pacman:
+    # Список пакетов, от которых зависит Flutter на Arch Linux
+    # GTK3 и другие базовые библиотеки
+    include:
+      - gtk3
+      - libnotify
+      - libsecret
+      - libxss
+      - at-spi2-core
+
+AppImage:
+  arch: x86_64
+  # Замените DIIASA/ToDo на ваше имя пользователя и репозиторий на GitHub для автообновлений
+  update-information: "gh-releases-zsync|DIIASA|ToDo|latest|ToDo-*-x86_64.AppImage.zsync"
+  sign-key: None
