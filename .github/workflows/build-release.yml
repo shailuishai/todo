@@ -1,5 +1,5 @@
 # .github/workflows/build-release.yml
-name: Build & Release Linux AppImage
+name: Build & Release Flutter App
 
 on:
   push:
@@ -8,39 +8,42 @@ on:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    name: Build and Release AppImage
+    runs-on: ubuntu-22.04 # Используем более свежую LTS версию
 
     steps:
       # 1. Загружаем код
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # 2. Устанавливаем Flutter (можно использовать более новую версию)
-      - uses: subosito/flutter-action@v2
+      # 2. Устанавливаем Flutter SDK
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 3. Устанавливаем зависимости для сборки Flutter
-      - name: "Install build dependencies"
+      # 3. Устанавливаем системные зависимости
+      - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build clang libgtk-3-dev libsecret-1-dev
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build clang libgtk-3-dev libsecret-1-dev
 
       # 4. Собираем Flutter приложение
       - name: Build Flutter app
         run: flutter build linux --release
-        working-directory: ./client # Указываем, что проект в папке client
+        working-directory: ./client # Указываем, где находится Flutter проект
 
-      # 5. Собираем AppImage с помощью Docker-образа из примера
+      # 5. Собираем AppImage с помощью Docker-образа
       - name: Build AppImage using appimage-builder
-        uses: docker://appimagecrafters/appimage-builder:0.8.5
+        uses: docker://appimagecrafters/appimage-builder:latest # Используем latest, он должен быть стабильнее
         with:
-          # Указываем, что рецепт находится в client/packaging/AppImageBuilder.yml
+          # <<< КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Явно указываем entrypoint и args >>>
+          entrypoint: appimage-builder
           args: --recipe client/packaging/AppImageBuilder.yml --skip-test
 
-      # 6. Создаем релиз и загружаем артефакты
-      - name: Release AppImage
+      # 6. Создаем релиз и загружаем артефакт
+      - name: Create GitHub Release and Upload Asset
         uses: softprops/action-gh-release@v2
         with:
-          # `softprops/action-gh-release` сам найдет тег и создаст релиз
-          # Файлы будут загружены из папки, где их создал appimage-builder
-          files: './*.AppImage*'
+          # Загружаем все файлы .AppImage из корня проекта
+          files: ./*.AppImage*
