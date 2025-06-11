@@ -82,12 +82,12 @@ type Controller interface {
 type UseCase interface {
 	SignUp(email string, login string, password string) error
 	SignIn(email string, login string, password string) (accessToken string, refreshToken string, err error)
-	GetAuthURL(provider, clientRedirectURI string) (url string, state string, err error)                                     // <<< ИЗМЕНЕНИЕ: принимает clientRedirectURI
-	Callback(provider, state, code string) (userID uint, isNewUser bool, accessToken string, refreshToken string, err error) // Оставляем
+	GetAuthURL(provider, clientRedirectURI string) (url string, state string, err error)                                                  // <<< ИЗМЕНЕНИЕ: принимает clientRedirectURI
+	Callback(provider, state, code, redirectURI string) (userID uint, isNewUser bool, accessToken string, refreshToken string, err error) // Оставляем
 	RefreshToken(r *http.Request) (accessToken string, err error)
 	RefreshTokenNative(tokenString string) (newAccessToken string, newRefreshToken string, err error)
 	GetUserProfileAfterOAuth(userID uint) (*profile.UserProfileResponse, error)
-	OAuthExchange(provider, state, code string) (accessToken string, refreshToken string, err error) // <<< НОВЫЙ МЕТОД
+	OAuthExchange(provider, state, code, redirectURI string) (accessToken string, refreshToken string, err error) // <<< НОВЫЙ МЕТОД
 }
 
 type Repo interface {

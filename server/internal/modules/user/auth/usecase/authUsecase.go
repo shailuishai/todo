@@ -1,3 +1,4 @@
+// internal/modules/user/auth/usecase/authUsecase.go
 package usecase
 
 import (
@@ -18,12 +19,13 @@ import (
 	"server/config"
 	gouser "server/internal/modules/user"
 	"server/internal/modules/user/auth"
-	"server/internal/modules/user/profile" // <<< Убедись, что этот импорт корректен
-	appjwt "server/pkg/lib/jwt"            // Переименовал jwt в appjwt, чтобы не конфликтовать с github.com/golang-jwt/jwt
+	"server/internal/modules/user/profile"
+	appjwt "server/pkg/lib/jwt"
 	"strings"
 	"time"
 )
 
+// ... (структуры и NewAuthUseCase без изменений) ...
 type OAuthProviderConfig struct {
 	Google *oauth2.Config
 	Yandex *oauth2.Config
@@ -33,8 +35,8 @@ type AuthUseCase struct {
 	log          *slog.Logger
 	repo         auth.Repo
 	oauthConfigs OAuthProviderConfig
-	profileUC    profile.UseCase  // Зависимость от ProfileUseCase
-	jwtConfig    config.JWTConfig // <<< Добавим JWTConfig для генерации токенов
+	profileUC    profile.UseCase
+	jwtConfig    config.JWTConfig
 }
 
 func NewAuthUseCase(log *slog.Logger, repo auth.Repo, appCfg *config.Config, profileUC profile.UseCase) *AuthUseCase {
@@ -53,14 +55,14 @@ func NewAuthUseCase(log *slog.Logger, repo auth.Repo, appCfg *config.Config, pro
 	googleCfg := &oauth2.Config{
 		ClientID:     googleKey,
 		ClientSecret: googleSecret,
-		RedirectURL:  appCfg.OAuthConfig.GoogleRedirectURL, // Этот redirect_uri для бэкенда
+		RedirectURL:  appCfg.OAuthConfig.GoogleRedirectURL, // Для ВЕБА этот URL теперь указывает на фронтенд.
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
 		Endpoint:     google.Endpoint,
 	}
 	yandexCfg := &oauth2.Config{
 		ClientID:     yandexKey,
 		ClientSecret: yandexSecret,
-		RedirectURL:  appCfg.OAuthConfig.YandexRedirectURL, // Этот redirect_uri для бэкенда
+		RedirectURL:  appCfg.OAuthConfig.YandexRedirectURL, // Для ВЕБА этот URL теперь указывает на фронтенд.
 		Scopes:       []string{"login:email", "login:info", "login:avatar"},
 		Endpoint:     yandex.Endpoint,
 	}
@@ -70,10 +72,11 @@ func NewAuthUseCase(log *slog.Logger, repo auth.Repo, appCfg *config.Config, pro
 		repo:         repo,
 		oauthConfigs: OAuthProviderConfig{Google: googleCfg, Yandex: yandexCfg},
 		profileUC:    profileUC,
-		jwtConfig:    appCfg.JWTConfig, // <<< Сохраняем JWTConfig
+		jwtConfig:    appCfg.JWTConfig,
 	}
 }
 
+// ... (SignUp, SignIn, RefreshToken, RefreshTokenNative без изменений) ...
 func (uc *AuthUseCase) SignUp(email string, login string, password string) error {
 	op := "AuthUseCase.SignUp"
 	log := uc.log.With(slog.String("op", op), slog.String("email", email), slog.String("login", login))
@@ -192,9 +195,6 @@ func (uc *AuthUseCase) RefreshToken(r *http.Request) (string, error) {
 		return "", gouser.ErrInternal
 	}
 
-	// Проверяем, не отозван ли токен (если есть такая логика, например, черный список)
-	// ...
-
 	newAccessToken, err := appjwt.GenerateAccessToken(userAuthDTO.UserId, userAuthDTO.IsAdmin)
 	if err != nil {
 		log.Error("failed to generate new access token", "userID", userID, "error", err)
@@ -218,7 +218,6 @@ func (uc *AuthUseCase) RefreshTokenNative(tokenString string) (newAccessToken st
 	claims, err := appjwt.ValidateJWT(tokenString)
 	if err != nil {
 		log.Warn("invalid or expired refresh token from request body", "error", err)
-		// ValidateJWT вернет ErrInvalidToken или ErrExpiredToken
 		return "", "", err
 	}
 
@@ -237,19 +236,15 @@ func (uc *AuthUseCase) RefreshTokenNative(tokenString string) (newAccessToken st
 		return "", "", gouser.ErrInternal
 	}
 
-	// Генерируем новый Access Token
 	generatedAccessToken, err := appjwt.GenerateAccessToken(userAuthDTO.UserId, userAuthDTO.IsAdmin)
 	if err != nil {
 		log.Error("failed to generate new access token for native", "userID", userID, "error", err)
 		return "", "", gouser.ErrInternal
 	}
 
-	// Опционально: генерируем новый Refresh Token (для ротации)
 	generatedRefreshToken, err := appjwt.GenerateRefreshToken(userAuthDTO.UserId, userAuthDTO.IsAdmin)
 	if err != nil {
 		log.Error("failed to generate new refresh token for native", "userID", userID, "error", err)
-		// Если не удалось сгенерировать новый RT, можно вернуть старый или ошибку.
-		// Для простоты вернем ошибку, но можно и вернуть только AT.
 		return "", "", gouser.ErrInternal
 	}
 
@@ -257,6 +252,7 @@ func (uc *AuthUseCase) RefreshTokenNative(tokenString string) (newAccessToken st
 	return generatedAccessToken, generatedRefreshToken, nil
 }
 
+// GetAuthURL - без изменений, он уже принимает redirectURI
 func (uc *AuthUseCase) GetAuthURL(provider, clientRedirectURI string) (url string, state string, err error) {
 	op := "AuthUseCase.GetAuthURL"
 	log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
@@ -277,11 +273,8 @@ func (uc *AuthUseCase) GetAuthURL(provider, clientRedirectURI string) (url strin
 		return "", "", gouser.ErrUnsupportedProvider
 	}
 
-	// Создаем копию конфига, чтобы не изменять оригинальный
 	cfgCopy := *oauthCfg
 
-	// Если клиент передал свой redirect_uri (веб-клиент), используем его.
-	// Иначе используем тот, что по умолчанию в конфиге (для нативного клиента).
 	if clientRedirectURI != "" {
 		cfgCopy.RedirectURL = clientRedirectURI
 		log.Info("Using client-provided redirect URI for web flow", "uri", clientRedirectURI)
@@ -300,15 +293,13 @@ func (uc *AuthUseCase) GetAuthURL(provider, clientRedirectURI string) (url strin
 	return authURL, stateUUID, nil
 }
 
-// OAuthExchange - НОВЫЙ МЕТОД для обмена кода на токены.
-// Он практически дублирует логику `Callback`, но возвращает токены напрямую.
-func (uc *AuthUseCase) OAuthExchange(provider, state, code string) (accessToken string, refreshToken string, err error) {
+// <<< ИЗМЕНЕНИЕ: OAuthExchange теперь принимает redirectURI и передает его дальше >>>
+func (uc *AuthUseCase) OAuthExchange(provider, state, code, redirectURI string) (accessToken string, refreshToken string, err error) {
 	op := "AuthUseCase.OAuthExchange"
 	log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
 
-	// Вся логика верификации и обмена токенов точно такая же, как в Callback
-	// Мы можем просто вызвать Callback и вернуть его результаты.
-	_, _, appAccessToken, appRefreshToken, err := uc.Callback(provider, state, code)
+	// Передаем redirectURI в Callback
+	_, _, appAccessToken, appRefreshToken, err := uc.Callback(provider, state, code, redirectURI)
 	if err != nil {
 		log.Error("underlying callback logic failed during exchange", "error", err)
 		return "", "", err
@@ -318,21 +309,20 @@ func (uc *AuthUseCase) OAuthExchange(provider, state, code string) (accessToken 
 	return appAccessToken, appRefreshToken, nil
 }
 
-// Callback теперь возвращает и accessToken, и refreshToken нашего приложения
-func (uc *AuthUseCase) Callback(provider, state, code string) (userID uint, isNewUser bool, accessToken string, refreshToken string, err error) {
+// <<< ИЗМЕНЕНИЕ: Callback теперь принимает redirectURI для правильной работы Exchange >>>
+func (uc *AuthUseCase) Callback(provider, state, code, redirectURI string) (userID uint, isNewUser bool, accessToken string, refreshToken string, err error) {
 	op := "AuthUseCase.Callback"
 	log := uc.log.With(slog.String("op", op), slog.String("provider", provider), slog.String("state_from_request", state))
 
 	var oauthCfg *oauth2.Config
 	var userInfoURL string
 
-	// Проверяем state и извлекаем сохраненный provider
 	savedDataProvider, isValidState, err := uc.repo.VerifyStateCode(state)
 	if err != nil {
 		log.Error("failed to verify oauth state from repo", "state", state, "error", err)
 		return 0, false, "", "", gouser.ErrInternal
 	}
-	if !isValidState || savedDataProvider != provider { // Проверяем, что сохраненный провайдер совпадает
+	if !isValidState || savedDataProvider != provider {
 		log.Warn("invalid oauth state or provider mismatch", "state", state, "expected_provider", savedDataProvider, "actual_provider", provider)
 		return 0, false, "", "", gouser.ErrInvalidState
 	}
@@ -342,29 +332,37 @@ func (uc *AuthUseCase) Callback(provider, state, code string) (userID uint, isNe
 	case "google":
 		oauthCfg = uc.oauthConfigs.Google
 		if oauthCfg.ClientID == "" {
-			log.Error("Google OAuth client ID is not configured.")
 			return 0, false, "", "", gouser.ErrAuthProviderNotConfigured
 		}
 		userInfoURL = "https://www.googleapis.com/oauth2/v3/userinfo"
 	case "yandex":
 		oauthCfg = uc.oauthConfigs.Yandex
 		if oauthCfg.ClientID == "" {
-			log.Error("Yandex OAuth client ID is not configured.")
 			return 0, false, "", "", gouser.ErrAuthProviderNotConfigured
 		}
 		userInfoURL = "https://login.yandex.ru/info?format=json"
-	default: // Эта проверка уже была, но на всякий случай
-		log.Warn("unsupported oauth provider in callback after state verification")
+	default:
 		return 0, false, "", "", gouser.ErrUnsupportedProvider
 	}
 
-	oauthToken, err := oauthCfg.Exchange(context.Background(), code)
+	// <<< КЛЮЧЕВОЕ ИЗМЕНЕНИЕ >>>
+	// Создаем копию конфига, чтобы установить правильный RedirectURL для этого конкретного вызова
+	cfgCopy := *oauthCfg
+	if redirectURI != "" {
+		// Если URI передан (веб-поток), используем его
+		cfgCopy.RedirectURL = redirectURI
+	}
+	// Если URI не передан (нативный поток), используется cfgCopy.RedirectURL изначального конфига,
+	// который должен указывать на бэкенд.
+
+	oauthToken, err := cfgCopy.Exchange(context.Background(), code)
 	if err != nil {
-		log.Error("failed to exchange oauth code for token", "provider", provider, "error", err)
+		log.Error("failed to exchange oauth code for token", "provider", provider, "redirect_uri_used", cfgCopy.RedirectURL, "error", err)
 		return 0, false, "", "", fmt.Errorf("oauth exchange failed: %w", err)
 	}
 	log.Info("OAuth code exchanged for token successfully", slog.Bool("refresh_token_exists_from_provider", oauthToken.RefreshToken != ""))
 
+	// ... (остальной код метода Callback без изменений) ...
 	if oauthToken.AccessToken == "" {
 		log.Error("exchanged oauth token but AccessToken from provider is empty", "provider", provider)
 		return 0, false, "", "", errors.New("oauth provider returned empty access token")
@@ -402,9 +400,6 @@ func (uc *AuthUseCase) Callback(provider, state, code string) (userID uint, isNe
 	} else {
 		log.Info("existing user found by email from oauth data", "userID", existingUser.UserId)
 		oauthUserDTO = existingUser
-		// Здесь можно обновить LastLoginAt или аватар (если он из OAuth и отличается)
-		// Например, обновить аватар, если он есть в oauthUserDTO и отличается от existingUser.AvatarS3Key
-		// Это потребует логики загрузки аватара в S3 здесь. Пока пропустим.
 	}
 
 	appAccessToken, err := appjwt.GenerateAccessToken(oauthUserDTO.UserId, oauthUserDTO.IsAdmin)
@@ -422,6 +417,7 @@ func (uc *AuthUseCase) Callback(provider, state, code string) (userID uint, isNe
 	return oauthUserDTO.UserId, wasNewUser, appAccessToken, appRefreshToken, nil
 }
 
+// ... (остальные методы без изменений) ...
 func (uc *AuthUseCase) fetchOAuthUserInfo(provider, userInfoURL string, token *oauth2.Token) (*auth.UserAuth, error) {
 	log := uc.log.With(slog.String("op", "AuthUseCase.fetchOAuthUserInfo"), slog.String("provider", provider))
 
@@ -457,10 +453,9 @@ func (uc *AuthUseCase) fetchOAuthUserInfo(provider, userInfoURL string, token *o
 		log.Error("oauth provider returned non-200 status for user info", "status", resp.Status, "body", string(bodyBytes))
 		return nil, fmt.Errorf("oauth provider user info error: %s, body: %s", resp.Status, string(bodyBytes))
 	}
-	return parseOAuthUserInfo(provider, resp.Body, log) // Передаем логгер
+	return parseOAuthUserInfo(provider, resp.Body, log)
 }
 
-// parseOAuthUserInfo теперь принимает логгер
 func parseOAuthUserInfo(provider string, body io.Reader, log *slog.Logger) (*auth.UserAuth, error) {
 	user := &auth.UserAuth{}
 	decoder := json.NewDecoder(body)
@@ -469,40 +464,39 @@ func parseOAuthUserInfo(provider string, body io.Reader, log *slog.Logger) (*aut
 	switch provider {
 	case "google":
 		var googleData struct {
-			Sub           string `json:"sub"` // Google User ID
+			Sub           string `json:"sub"`
 			Email         string `json:"email"`
 			GivenName     string `json:"given_name"`
 			FamilyName    string `json:"family_name"`
 			Picture       string `json:"picture"`
 			EmailVerified bool   `json:"email_verified"`
-			Name          string `json:"name"` // Полное имя
+			Name          string `json:"name"`
 		}
 		if err := decoder.Decode(&googleData); err != nil {
 			log.Error("failed to decode google user info", "error", err)
 			return nil, fmt.Errorf("decode google user info: %w", err)
 		}
 		user.Email = googleData.Email
-		user.Login = googleData.GivenName // Используем GivenName как логин
-		if user.Login == "" {             // Фоллбэк, если GivenName пустой
+		user.Login = googleData.GivenName
+		if user.Login == "" {
 			if googleData.Name != "" {
-				user.Login = strings.Fields(googleData.Name)[0] // Первое слово из полного имени
+				user.Login = strings.Fields(googleData.Name)[0]
 			} else {
-				user.Login = strings.Split(googleData.Email, "@")[0] // Часть email до @
+				user.Login = strings.Split(googleData.Email, "@")[0]
 			}
 		}
-		// Убираем недопустимые символы из логина, если они есть
 		user.Login = strings.Map(func(r rune) rune {
 			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
 				return r
 			}
-			return -1 // Удаляем символ
+			return -1
 		}, user.Login)
 		if len(user.Login) > 50 {
 			user.Login = user.Login[:50]
-		} // Обрезаем, если слишком длинный
+		}
 		if user.Login == "" {
 			user.Login = "guser_" + googleData.Sub[:8]
-		} // Крайний случай
+		}
 
 		user.VerifiedEmail = googleData.EmailVerified
 		log.Info("Parsed Google user info", "email", user.Email, "login", user.Login, "verified", user.VerifiedEmail)
@@ -512,7 +506,7 @@ func parseOAuthUserInfo(provider string, body io.Reader, log *slog.Logger) (*aut
 			Login           string `json:"login"`
 			FirstName       string `json:"first_name"`
 			DefaultAvatarID string `json:"default_avatar_id"`
-			ID              string `json:"id"` // ID пользователя Яндекса
+			ID              string `json:"id"`
 		}
 		if err := decoder.Decode(&yandexData); err != nil {
 			log.Error("failed to decode yandex user info", "error", err)
@@ -520,7 +514,7 @@ func parseOAuthUserInfo(provider string, body io.Reader, log *slog.Logger) (*aut
 		}
 		user.Email = yandexData.DefaultEmail
 		user.Login = yandexData.Login
-		if user.Login == "" { // Фоллбэк, если Login пустой
+		if user.Login == "" {
 			if yandexData.FirstName != "" {
 				user.Login = yandexData.FirstName
 			} else {
@@ -540,7 +534,7 @@ func parseOAuthUserInfo(provider string, body io.Reader, log *slog.Logger) (*aut
 			user.Login = "yauser_" + yandexData.ID[:8]
 		}
 
-		user.VerifiedEmail = true // Яндекс email считается подтвержденным
+		user.VerifiedEmail = true
 		log.Info("Parsed Yandex user info", "email", user.Email, "login", user.Login)
 	default:
 		return nil, gouser.ErrUnsupportedProvider
@@ -548,7 +542,6 @@ func parseOAuthUserInfo(provider string, body io.Reader, log *slog.Logger) (*aut
 	return user, nil
 }
 
-// GetUserProfileAfterOAuth - реализация метода интерфейса
 func (uc *AuthUseCase) GetUserProfileAfterOAuth(userID uint) (*profile.UserProfileResponse, error) {
 	op := "AuthUseCase.GetUserProfileAfterOAuth"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("userID", uint64(userID)))
