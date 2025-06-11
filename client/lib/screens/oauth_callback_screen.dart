@@ -1,4 +1,6 @@
 // lib/screens/oauth_callback_screen.dart
+import 'package:client/core/routing/app_router_delegate.dart';
+import 'package:client/core/routing/app_route_path.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../auth_state.dart';
@@ -19,7 +21,6 @@ class _OAuthCallbackScreenState extends State<OAuthCallbackScreen> {
   @override
   void initState() {
     super.initState();
-    // Вызываем обработчик сразу после построения первого кадра
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _handleCallback();
@@ -29,8 +30,8 @@ class _OAuthCallbackScreenState extends State<OAuthCallbackScreen> {
 
   Future<void> _handleCallback() async {
     final authState = Provider.of<AuthState>(context, listen: false);
+    final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
 
-    // Получаем полный текущий URL из браузера
     final currentUri = Uri.parse(html.window.location.href);
 
     // Очищаем URL от параметров, чтобы избежать повторной обработки при обновлении
@@ -39,13 +40,16 @@ class _OAuthCallbackScreenState extends State<OAuthCallbackScreen> {
 
     final success = await authState.handleOAuthCallbackFromUrl(currentUri, widget.provider);
 
-    // После завершения обработки, AppRouterDelegate сам перенаправит
-    // на нужный экран (Home или Auth) на основе нового состояния isLoggedIn.
-    // Если произошла ошибка, AuthState сохранит ее, и она отобразится на экране Auth.
-    if (!success && mounted) {
-      setState(() {
-        _errorMessage = authState.oauthErrorMessage ?? 'Произошла неизвестная ошибка авторизации.';
-      });
+    // После завершения обработки, независимо от результата,
+    // мы явно говорим роутеру, куда идти.
+    if (mounted) {
+      if (success) {
+        // ЯВНОЕ ПЕРЕНАПРАВЛЕНИЕ НА ДОМАШНЮЮ СТРАНИЦУ
+        routerDelegate.navigateTo(const HomePath());
+      } else {
+        // Если была ошибка, AuthState сохранит ее, и мы перенаправим на страницу логина.
+        routerDelegate.navigateTo(const AuthPath());
+      }
     }
   }
 

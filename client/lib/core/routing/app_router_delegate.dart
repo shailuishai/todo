@@ -33,57 +33,43 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     }
   }
 
-  // Главная функция принятия решений о пути на основе текущего состояния.
   AppRoutePath _getAppropriatePathForCurrentState(AppRoutePath? intendedPath) {
     debugPrint("[RouterDelegate] _getAppropriatePathForCurrentState: Intended: ${intendedPath?.runtimeType}, Current: ${_currentPathConfig.runtimeType}, isLoggedIn: ${authState.isLoggedIn}");
 
-    // Если authState еще не завершил проверку, всегда показываем загрузку.
     if (!authState.initialAuthCheckCompleted) {
       return const LoadingPath();
     }
 
-    // Если это коллбэк OAuth, он всегда должен обрабатываться, независимо от статуса логина.
     if (intendedPath is OAuthCallbackPath) {
       return intendedPath;
     }
 
-    // Если пользователь залогинен
     if (authState.isLoggedIn) {
-      // 1. Обрабатываем токен приглашения в приоритете
       if (authState.pendingInviteToken != null) {
         return JoinTeamByTokenPath(authState.pendingInviteToken!);
       }
-      // 2. Если пытаются попасть на страницы для неавторизованных, редиректим на home
       if (intendedPath is AuthPath || intendedPath is LandingPath || intendedPath is OAuthCallbackPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
-      // 3. Если это валидный путь для залогиненного, используем его
       if (intendedPath is HomePath || intendedPath is HomeSubPath || intendedPath is TeamDetailPath || intendedPath is TaskDetailPath || intendedPath is JoinTeamProcessingPath) {
         return intendedPath!;
       }
-      // 4. Если мы пришли с Loading, Auth, Landing или OAuthCallback, но intendedPath не задан - идем на home
       if (_currentPathConfig is LoadingPath || _currentPathConfig is AuthPath || _currentPathConfig is LandingPath || _currentPathConfig is OAuthCallbackPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
-      // 5. В остальных случаях, если intendedPath невалиден, остаемся на текущем пути
       return _currentPathConfig;
     }
-    // Если пользователь НЕ залогинен
     else {
-      // 1. Если это коллбэк OAuth, разрешаем его
       if (intendedPath is OAuthCallbackPath) {
         return intendedPath;
       }
-      // 2. Если пришли с токеном приглашения, сохраняем его и идем на Auth
       if (intendedPath is JoinTeamByTokenPath) {
         authState.setPendingInviteToken(intendedPath.token);
         return const AuthPath();
       }
-      // 3. В вебе разрешаем явно посетить страницу лендинга
       if (kIsWeb && intendedPath is LandingPath) {
         return const LandingPath();
       }
-      // 4. Все остальные пути ведут на страницу аутентификации.
       return const AuthPath();
     }
   }
@@ -101,11 +87,15 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     final pathFromUrl = _parsedPathFromUrlWhileLoading;
     _parsedPathFromUrlWhileLoading = null;
 
+    // Пересчитываем конфигурацию на основе нового состояния
     _currentPathConfig = _getAppropriatePathForCurrentState(pathFromUrl ?? _currentPathConfig);
 
     if (_currentPathConfig is JoinTeamByTokenPath && authState.isLoggedIn) {
+      // Обработка токена приглашения - это особый случай с асинхронной операцией
       _handleJoinTeamByTokenPath(_currentPathConfig as JoinTeamByTokenPath);
     } else {
+      // Для всех остальных изменений состояния просто уведомляем слушателей,
+      // чтобы Navigator перестроился с новой конфигурацией.
       notifyListeners();
     }
   }
