@@ -8,50 +8,47 @@ on:
       - 'v*'
 
 jobs:
-  build-linux:
-    name: Build Linux AppImage
-    runs-on: ubuntu-latest # Используем стандартный раннер GitHub
+  build-linux-appimage:
+    name: Build Linux AppImage (x86_64)
+    runs-on: ubuntu-latest
 
     steps:
-      # 1. Загружаем код из репозитория
-      - uses: actions/checkout@v4
+      # 1. Загружаем код всего репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # 2. Устанавливаем Flutter
-      - uses: subosito/flutter-action@v2
+      # 2. Устанавливаем Flutter SDK
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 3. Собираем Linux билд
-      # Важно: предполагается, что ваш Flutter проект находится в папке 'client'
+      # 3. Собираем Linux билд, указав путь к проекту
       - name: Build Flutter Linux
-        run: |
-          cd client
-          flutter build linux
+        run: flutter build linux --target-platform=linux-x64
+        working-directory: ./client # <--- Указываем, где находится Flutter проект
 
-      # 4. Устанавливаем инструмент для сборки AppImage
-      # Скачиваем его напрямую, чтобы не зависеть от pip или системных пакетов
+      # 4. Устанавливаем appimage-builder
       - name: Download appimage-builder
         run: |
           wget https://github.com/AppImage/appimage-builder/releases/download/v1.1.0/appimage-builder-1.1.0-x86_64.AppImage -O appimage-builder
           chmod +x appimage-builder
           sudo mv appimage-builder /usr/local/bin/
 
-      # 5. Создаем простой рецепт для AppImage на лету
+      # 5. Создаем рецепт для AppImage в корне проекта
       - name: Create AppImage Recipe
         run: |
-          # Этот рецепт будет создан в корне репозитория
           cat > appimage-builder.yml <<EOF
           version: 1
           script:
-            # Копируем уже собранный бандл в рабочую директорию AppDir
+            # Копируем уже собранный бандл из папки client/build/...
             - cp -r client/build/linux/x64/release/bundle/* AppDir/
-            # Копируем иконку
+            # Копируем иконку из ассетов
             - cp client/assets/icons/logo.svg AppDir/com.yourcompany.todo.svg
-            # Копируем desktop-файл
+            # Копируем .desktop файл
             - cp client/appimage_builder/client.desktop AppDir/com.yourcompany.todo.desktop
-
           AppDir:
-            path: $(pwd)/AppDir
+            path: \$(pwd)/AppDir
             app_info:
               id: com.yourcompany.todo
               name: ToDo
@@ -65,15 +62,13 @@ jobs:
               include:
                 - libgtk-3-0
                 - libsecret-1-0
-                - libnotify4
-                - libayatana-appindicator3-1
-          
           AppImage:
             arch: x86_64
+            # Замените DIIASA/ToDo на ваше имя пользователя и репозиторий
             update-information: "gh-releases-zsync|DIIASA|ToDo|latest|ToDo-*-x86_64.AppImage.zsync"
           EOF
 
-      # 6. Запускаем сборку AppImage
+      # 6. Запускаем сборку AppImage из корня проекта
       - name: Build AppImage
         run: appimage-builder --recipe appimage-builder.yml
 
@@ -85,4 +80,5 @@ jobs:
       - name: Create GitHub Release and Upload Asset
         uses: softprops/action-gh-release@v2
         with:
+          # Загружаем все файлы, подходящие под маску
           files: ToDo-*.AppImage
