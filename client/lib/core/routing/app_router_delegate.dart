@@ -36,6 +36,11 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   AppRoutePath _getAppropriatePathForCurrentState(AppRoutePath? intendedPath) {
     debugPrint("[RouterDelegate] _getAppropriatePathForCurrentState: Intended: ${intendedPath?.runtimeType}, Current: ${_currentPathConfig.runtimeType}, isLoggedIn: ${authState.isLoggedIn}");
 
+    // <<< НОВОЕ ПРАВИЛО: Лендинг всегда имеет приоритет и не редиректит >>>
+    if (intendedPath is LandingPath) {
+      return const LandingPath();
+    }
+
     if (!authState.initialAuthCheckCompleted) {
       return const LoadingPath();
     }
@@ -48,32 +53,33 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
       if (authState.pendingInviteToken != null) {
         return JoinTeamByTokenPath(authState.pendingInviteToken!);
       }
-      if (intendedPath is AuthPath || intendedPath is LandingPath || intendedPath is OAuthCallbackPath) {
+      // Убираем LandingPath из условия редиректа для залогиненного пользователя
+      if (intendedPath is AuthPath || intendedPath is OAuthCallbackPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
       if (intendedPath is HomePath || intendedPath is HomeSubPath || intendedPath is TeamDetailPath || intendedPath is TaskDetailPath || intendedPath is JoinTeamProcessingPath) {
         return intendedPath!;
       }
-      if (_currentPathConfig is LoadingPath || _currentPathConfig is AuthPath || _currentPathConfig is LandingPath || _currentPathConfig is OAuthCallbackPath) {
+      // Убираем LandingPath из условия редиректа
+      if (_currentPathConfig is LoadingPath || _currentPathConfig is AuthPath || _currentPathConfig is OAuthCallbackPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
       return _currentPathConfig;
-    }
-    else {
-      if (intendedPath is OAuthCallbackPath) {
-        return intendedPath;
-      }
+    } else {
       if (intendedPath is JoinTeamByTokenPath) {
         authState.setPendingInviteToken(intendedPath.token);
         return const AuthPath();
       }
+      // Здесь LandingPath уже обработан выше, так что это условие не сработает, но оставляем для ясности
       if (kIsWeb && intendedPath is LandingPath) {
         return const LandingPath();
+      }
+      if (intendedPath is OAuthCallbackPath) {
+        return intendedPath;
       }
       return const AuthPath();
     }
   }
-
 
   void _onAuthStateChanged() {
     debugPrint("[RouterDelegate] Auth state changed. LoggedIn: ${authState.isLoggedIn}, CheckCompleted: ${authState.initialAuthCheckCompleted}");
@@ -87,15 +93,11 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     final pathFromUrl = _parsedPathFromUrlWhileLoading;
     _parsedPathFromUrlWhileLoading = null;
 
-    // Пересчитываем конфигурацию на основе нового состояния
     _currentPathConfig = _getAppropriatePathForCurrentState(pathFromUrl ?? _currentPathConfig);
 
     if (_currentPathConfig is JoinTeamByTokenPath && authState.isLoggedIn) {
-      // Обработка токена приглашения - это особый случай с асинхронной операцией
       _handleJoinTeamByTokenPath(_currentPathConfig as JoinTeamByTokenPath);
     } else {
-      // Для всех остальных изменений состояния просто уведомляем слушателей,
-      // чтобы Navigator перестроился с новой конфигурацией.
       notifyListeners();
     }
   }

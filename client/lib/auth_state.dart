@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io' show HttpServer, Platform;
 
 import 'package:client/core/routing/app_pages.dart';
+import 'package:client/themes.dart'; // <<< НОВЫЙ ИМПОРТ ДЛЯ ЦВЕТОВ
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -227,7 +228,6 @@ class AuthState extends ChangeNotifier {
       _oauthRedirectControllerWeb.add(fullUrlToLaunch);
 
     } else {
-      // ИЗМЕНЕНИЕ: Убираем finally, переносим остановку сервера в хендлер
       final fullUrlToLaunch = Uri.parse(backendInitiationUrl).replace(queryParameters: {'native_final_redirect_uri': nativeClientLandingUri}).toString();
       debugPrint('Native OAuth: Full URL to launch: $fullUrlToLaunch. Landing: $nativeClientLandingUri');
 
@@ -245,11 +245,9 @@ class AuthState extends ChangeNotifier {
       } catch (e) {
         _oauthErrorMessage = "Ошибка запуска OAuth $provider: $e";
         if (!(_nativeOAuthCompleter?.isCompleted == true)) _nativeOAuthCompleter?.complete(false);
-        // Если произошла ошибка, сервер тоже нужно остановить
         await _stopNativeOAuthHttpServer();
       }
 
-      // Сбрасываем состояние загрузки после завершения (успешного или нет)
       _isLoading = false;
       notifyListeners();
     }
@@ -326,12 +324,19 @@ class AuthState extends ChangeNotifier {
     }
   }
 
-  // ИЗМЕНЕННЫЙ ХЕНДЛЕР
+  // <<< ИЗМЕНЕННЫЙ ХЕНДЛЕР С ДОБАВЛЕНИЕМ СТИЛЕЙ >>>
   Future<shelf.Response> _nativeOAuthLandingHandler(shelf.Request request) async {
     debugPrint('AuthState (_nativeOAuthLandingHandler): Received: ${request.requestedUri}');
     bool success = false;
-    String responseMessage = "Ошибка авторизации. Пожалуйста, попробуйте снова.";
-    String script = '<script>setTimeout(function() { window.close(); }, 500);</script>';
+    String responseTitle = "Ошибка авторизации";
+    String responseMessage = "Произошла неизвестная ошибка. Пожалуйста, попробуйте снова.";
+    String iconSvg = '''
+    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#B3261E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    ''';
 
     try {
       final accessToken = request.requestedUri.queryParameters['access_token'];
@@ -342,47 +347,104 @@ class AuthState extends ChangeNotifier {
 
       if (errorParam != null || errorDescriptionParam != null) {
         _oauthErrorMessage = "Ошибка OAuth от $providerFromQuery: ${errorDescriptionParam ?? errorParam}";
-        responseMessage = 'Ошибка авторизации: ${errorDescriptionParam ?? errorParam}';
+        responseMessage = 'Ошибка от провайдера: ${errorDescriptionParam ?? errorParam}';
       } else if (accessToken != null && accessToken.isNotEmpty) {
         await _apiService.saveAccessTokenForNative(accessToken);
-        debugPrint('AuthState (_nativeOAuthLandingHandler): Access token saved.');
         if (refreshToken != null && refreshToken.isNotEmpty) {
           await _secureStorage.write(key: _refreshTokenKeySecure, value: refreshToken);
-          debugPrint('AuthState (_nativeOAuthLandingHandler): Native refresh token saved.');
         }
-
         await _checkInitialAuthStatus();
 
         if (_isLoggedIn) {
-          _oauthErrorMessage = null;
           success = true;
-          responseMessage = 'Авторизация успешна!';
+          responseTitle = "Авторизация успешна!";
+          responseMessage = 'Теперь вы можете вернуться в приложение.';
+          iconSvg = '''
+          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#4CAF50" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          ''';
         } else {
           _oauthErrorMessage = _errorMessage ?? "Не удалось войти после OAuth через $providerFromQuery.";
-          responseMessage = _oauthErrorMessage ?? 'Ошибка входа после OAuth.';
+          responseMessage = _oauthErrorMessage ?? 'Не удалось получить данные пользователя после авторизации.';
         }
       } else {
         _oauthErrorMessage = "Токены не найдены в URL после OAuth через $providerFromQuery.";
-        responseMessage = 'Ошибка авторизации: токены не предоставлены.';
+        responseMessage = 'Ошибка: токены не были получены от сервера.';
       }
     } catch (e) {
       _oauthErrorMessage = "Внутренняя ошибка обработки OAuth: $e";
-      responseMessage = 'Внутренняя ошибка сервера.';
+      responseMessage = 'Произошла внутренняя ошибка в приложении.';
       debugPrint('AuthState (_nativeOAuthLandingHandler) Error: $e');
     } finally {
       if (!(_nativeOAuthCompleter?.isCompleted == true)) {
         _nativeOAuthCompleter?.complete(success);
       }
-      // ОСТАНАВЛИВАЕМ СЕРВЕР ПОСЛЕ ОБРАБОТКИ, НО ПЕРЕД ОТПРАВКОЙ ОТВЕТА
-      // Чтобы избежать гонки, сделаем это асинхронно с небольшой задержкой
       Future.delayed(const Duration(seconds: 1), () => _stopNativeOAuthHttpServer());
     }
 
-    final responseBody = '<html><head><meta charset="utf-8"></head><body><p>$responseMessage</p><p>Это окно закроется автоматически.</p>$script</body></html>';
+    // Используем цвета из темы
+    final theme = getDarkTheme(const Color(0xFF5457FF));
+    final colorScheme = theme.colorScheme;
+    final String backgroundColor = '#${colorScheme.background.value.toRadixString(16).substring(2)}';
+    final String surfaceColor = '#${colorScheme.surface.value.toRadixString(16).substring(2)}';
+    final String textColor = '#${colorScheme.onSurface.value.toRadixString(16).substring(2)}';
+    final String textSecondaryColor = '#${colorScheme.onSurfaceVariant.value.toRadixString(16).substring(2)}';
+
+    final responseBody = '''
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Авторизация</title>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+            body { 
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+                display: flex; 
+                justify-content: center; 
+                align-items: center; 
+                height: 100vh; 
+                margin: 0; 
+                background-color: $backgroundColor; 
+                color: $textColor;
+                text-align: center;
+            }
+            .container {
+                background-color: $surfaceColor;
+                padding: 40px;
+                border-radius: 16px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+                max-width: 400px;
+                width: 90%;
+            }
+            h1 {
+                font-size: 24px;
+                font-weight: 700;
+                margin-top: 20px;
+                margin-bottom: 8px;
+            }
+            p {
+                font-size: 16px;
+                color: $textSecondaryColor;
+                line-height: 1.5;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            $iconSvg
+            <h1>$responseTitle</h1>
+            <p>$responseMessage</p>
+        </div>
+    </body>
+    </html>
+    ''';
     return shelf.Response.ok(responseBody, headers: {'content-type': 'text/html; charset=utf-8'});
   }
 
-  // ... (остальные методы без изменений) ...
   Future<bool> sendConfirmationEmail(String email) async {
     _isLoading = true; _errorMessage = null; _oauthErrorMessage = null; notifyListeners();
     try {
