@@ -55,9 +55,8 @@ jwt:
   cookie_domain: "todo-vd2m.onrender.com" # Домен вашего бэкенда
 
 oauth:
-  # <<< ИЗМЕНЕНИЕ: URL колбэков для вашего бэкенда на Render >>>
-  google_redirect_url: "https://todo-vd2m.onrender.com/v1/auth/google/callback"
-  yandex_redirect_url: "https://todo-vd2m.onrender.com/v1/auth/yandex/callback"
-  # <<< ИЗМЕНЕНИЕ: URL редиректов на ваш фронтенд на Vercel >>>
-  frontend_redirect_success_url: "https://todo-rho-sage.vercel.app/oauth-callback-success"
-  frontend_redirect_error_url: "https://todo-rho-sage.vercel.app/oauth-callback-error"
+  google_redirect_url: "https://todo-rho-sage.vercel.app/oauth/callback/google"
+  yandex_redirect_url: "https://todo-rho-sage.vercel.app/oauth/callback/yandex"
+
+  frontend_redirect_success_url: "https://todo-rho-sage.vercel.app/"
+  frontend_redirect_error_url: "https://todo-rho-sage.vercel.app/auth?error=true"

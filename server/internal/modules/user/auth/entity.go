@@ -72,37 +72,31 @@ type Controller interface {
 	SignUp(w http.ResponseWriter, r *http.Request)
 	SignIn(w http.ResponseWriter, r *http.Request)
 	Oauth(w http.ResponseWriter, r *http.Request)
-	OauthCallback(w http.ResponseWriter, r *http.Request)
+	OauthCallback(w http.ResponseWriter, r *http.Request) // Оставляем для нативных клиентов
 	RefreshToken(w http.ResponseWriter, r *http.Request)
 	RefreshTokenNative(w http.ResponseWriter, r *http.Request)
 	Logout(w http.ResponseWriter, r *http.Request)
-	OauthFinalizePage(w http.ResponseWriter, r *http.Request)
-	OauthExchangeCode(w http.ResponseWriter, r *http.Request)
+	OAuthExchange(w http.ResponseWriter, r *http.Request) // <<< НОВЫЙ МЕТОД
 }
 
 type UseCase interface {
 	SignUp(email string, login string, password string) error
 	SignIn(email string, login string, password string) (accessToken string, refreshToken string, err error)
-	GetAuthURL(provider string) (url string, state string, err error)
-	Callback(provider, state, code string) (userID uint, isNewUser bool, accessToken string, refreshToken string, err error)
+	GetAuthURL(provider, clientRedirectURI string) (url string, state string, err error)                                     // <<< ИЗМЕНЕНИЕ: принимает clientRedirectURI
+	Callback(provider, state, code string) (userID uint, isNewUser bool, accessToken string, refreshToken string, err error) // Оставляем
 	RefreshToken(r *http.Request) (accessToken string, err error)
 	RefreshTokenNative(tokenString string) (newAccessToken string, newRefreshToken string, err error)
-	// GetUserProfileAfterOAuth теперь возвращает UserProfileResponse, который включает настройки
 	GetUserProfileAfterOAuth(userID uint) (*profile.UserProfileResponse, error)
-	StoreFinalizeTokens(code, tokens string) error
-	RetrieveFinalizeTokens(code string) (string, error)
+	OAuthExchange(provider, state, code string) (accessToken string, refreshToken string, err error) // <<< НОВЫЙ МЕТОД
 }
 
-// Repo определяет интерфейсы для взаимодействия с хранилищем данных (БД и кэш).
 type Repo interface {
 	// DB methods
-	CreateUser(user *UserAuth) (userID uint, err error) // Принимает UserAuth DTO
-	GetUserByEmail(email string) (*UserAuth, error)     // Возвращает UserAuth DTO
-	GetUserByLogin(login string) (*UserAuth, error)     // Возвращает UserAuth DTO
-	GetUserById(id uint) (*UserAuth, error)             // Возвращает UserAuth DTO
+	CreateUser(user *UserAuth) (userID uint, err error)
+	GetUserByEmail(email string) (*UserAuth, error)
+	GetUserByLogin(login string) (*UserAuth, error)
+	GetUserById(id uint) (*UserAuth, error)
 	// Cache methods
 	SaveStateCode(state string, providerData string) error
 	VerifyStateCode(state string) (providerData string, isValid bool, err error)
-	RetrieveFinalizeTokens(code string) (string, error)
-	StoreFinalizeTokens(code, tokens string) error
 }

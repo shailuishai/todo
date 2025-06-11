@@ -257,7 +257,7 @@ func (uc *AuthUseCase) RefreshTokenNative(tokenString string) (newAccessToken st
 	return generatedAccessToken, generatedRefreshToken, nil
 }
 
-func (uc *AuthUseCase) GetAuthURL(provider string) (url string, state string, err error) {
+func (uc *AuthUseCase) GetAuthURL(provider, clientRedirectURI string) (url string, state string, err error) {
 	op := "AuthUseCase.GetAuthURL"
 	log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
 
@@ -266,37 +266,56 @@ func (uc *AuthUseCase) GetAuthURL(provider string) (url string, state string, er
 	case "google":
 		oauthCfg = uc.oauthConfigs.Google
 		if oauthCfg.ClientID == "" {
-			log.Error("Google OAuth client ID is not configured.")
 			return "", "", gouser.ErrAuthProviderNotConfigured
 		}
 	case "yandex":
 		oauthCfg = uc.oauthConfigs.Yandex
 		if oauthCfg.ClientID == "" {
-			log.Error("Yandex OAuth client ID is not configured.")
 			return "", "", gouser.ErrAuthProviderNotConfigured
 		}
 	default:
-		log.Warn("unsupported oauth provider requested")
 		return "", "", gouser.ErrUnsupportedProvider
 	}
 
+	// Создаем копию конфига, чтобы не изменять оригинальный
+	cfgCopy := *oauthCfg
+
+	// Если клиент передал свой redirect_uri (веб-клиент), используем его.
+	// Иначе используем тот, что по умолчанию в конфиге (для нативного клиента).
+	if clientRedirectURI != "" {
+		cfgCopy.RedirectURL = clientRedirectURI
+		log.Info("Using client-provided redirect URI for web flow", "uri", clientRedirectURI)
+	} else {
+		log.Info("Using default redirect URI from config for native flow", "uri", cfgCopy.RedirectURL)
+	}
+
 	stateUUID := uuid.NewString()
-	if err := uc.repo.SaveStateCode(stateUUID, provider); err != nil { // Сохраняем provider вместе со state
+	if err := uc.repo.SaveStateCode(stateUUID, provider); err != nil {
 		log.Error("failed to save oauth state to repo", "error", err)
 		return "", "", gouser.ErrInternal
 	}
 
-	// Для Yandex иногда нужен параметр `force_confirm=yes`, чтобы всегда показывать страницу подтверждения,
-	// если это необходимо для тестов или специфичного UX.
-	// opts := []oauth2.AuthCodeOption{}
-	// if provider == "yandex" {
-	// 	opts = append(opts, oauth2.SetAuthURLParam("force_confirm", "yes"))
-	// }
-	// authURL := oauthCfg.AuthCodeURL(stateUUID, opts...)
-	authURL := oauthCfg.AuthCodeURL(stateUUID, oauth2.AccessTypeOnline) // AccessTypeOnline для Google
-
-	log.Info("OAuth URL generated", "url", authURL, "state", stateUUID)
+	authURL := cfgCopy.AuthCodeURL(stateUUID, oauth2.AccessTypeOnline)
+	log.Info("OAuth URL generated", "url", authURL, "state", stateUUID, "redirect_uri", cfgCopy.RedirectURL)
 	return authURL, stateUUID, nil
+}
+
+// OAuthExchange - НОВЫЙ МЕТОД для обмена кода на токены.
+// Он практически дублирует логику `Callback`, но возвращает токены напрямую.
+func (uc *AuthUseCase) OAuthExchange(provider, state, code string) (accessToken string, refreshToken string, err error) {
+	op := "AuthUseCase.OAuthExchange"
+	log := uc.log.With(slog.String("op", op), slog.String("provider", provider))
+
+	// Вся логика верификации и обмена токенов точно такая же, как в Callback
+	// Мы можем просто вызвать Callback и вернуть его результаты.
+	_, _, appAccessToken, appRefreshToken, err := uc.Callback(provider, state, code)
+	if err != nil {
+		log.Error("underlying callback logic failed during exchange", "error", err)
+		return "", "", err
+	}
+
+	log.Info("OAuth exchange successful")
+	return appAccessToken, appRefreshToken, nil
 }
 
 // Callback теперь возвращает и accessToken, и refreshToken нашего приложения
@@ -545,17 +564,4 @@ func (uc *AuthUseCase) GetUserProfileAfterOAuth(userID uint) (*profile.UserProfi
 		return nil, err
 	}
 	return userProfile, nil
-}
-
-func (uc *AuthUseCase) StoreFinalizeTokens(code, tokens string) error {
-	// Делегируем в репозиторий (который использует кеш)
-	// Этот метод нужно добавить в ваш интерфейс auth.Repo
-	return uc.repo.StoreFinalizeTokens(code, tokens)
-}
-
-// RetrieveFinalizeTokens извлекает и удаляет токены по одноразовому коду
-func (uc *AuthUseCase) RetrieveFinalizeTokens(code string) (string, error) {
-	// Делегируем в репозиторий
-	// Этот метод нужно добавить в ваш интерфейс auth.Repo
-	return uc.repo.RetrieveFinalizeTokens(code)
 }

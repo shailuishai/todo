@@ -385,9 +385,8 @@ func (app *App) SetupRoutes() {
 		r.Post("/refresh-token", authCtrl.RefreshToken)
 		r.Post("/refresh-token-native", authCtrl.RefreshTokenNative)
 		r.Get("/{provider}", authCtrl.Oauth)
-		r.Get("/{provider}/callback", authCtrl.OauthCallback)
-		r.Get("/oauth/finalize", authCtrl.OauthFinalizePage)
-		r.Post("/oauth/exchange-code", authCtrl.OauthExchangeCode)
+		r.Get("/{provider}/callback", authCtrl.OauthCallback) // Для нативных клиентов
+		r.Post("/oauth/exchange", authCtrl.OAuthExchange)
 		r.With(AuthUserMiddleware).Post("/logout", authCtrl.Logout)
 	})
 
