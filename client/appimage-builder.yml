@@ -1,14 +1,13 @@
 version: 1
 
 script:
-  # Этот скрипт будет выполняться из корня Flutter-проекта (`client/`)
+  # 1. Очистка предыдущей сборки
   - rm -rf AppDir || true
-  # Копируем весь скомпилированный бандл
-  - cp -r build/linux/x64/release/bundle AppDir
-  # Копируем иконку. Имя иконки должно совпадать с ключом 'icon' в app_info.
-  - cp appimage_builder/client.png AppDir/
-  # Копируем desktop-файл
+  # 2. Создаем AppDir и копируем бинарь
+  - mkdir -p AppDir
+  - cp build/linux/x64/release/bundle/* AppDir/  # Копируем содержимое bundle в корень AppDir
   - cp appimage_builder/client.desktop AppDir/
+  - cp appimage_builder/client.png AppDir/
 
 AppDir:
   path: ./AppDir
@@ -16,13 +15,11 @@ AppDir:
   app_info:
     id: com.yourcompany.todo
     name: ToDo
-    icon: client # Имя файла иконки БЕЗ расширения
-    version: 1.0.0 # Версия будет заменена в CI
-    exec: bundle/client # Путь к исполняемому файлу внутри AppDir
+    icon: client
+    version: 1.0.0
+    exec: client  # Исполняемый файл находится в корне AppDir
     exec_args: $@
 
-  # Используем apt для зависимостей, как в официальном примере,
-  # это самый надежный метод для CI
   apt:
     arch: amd64
     sources:
@@ -33,7 +30,6 @@ AppDir:
       - libnotify4
       - libayatana-appindicator3-1
 
-  # Эта секция необязательна, но полезна для уменьшения размера
   files:
     exclude:
       - usr/share/man
