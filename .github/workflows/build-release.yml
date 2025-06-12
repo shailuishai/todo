@@ -1,67 +1,166 @@
-name: Build & Release Flutter AppImage
+# Имя нашего workflow, которое будет отображаться в GitHub Actions
+name: Build and Release
+
+# Триггеры для запуска workflow
 on:
+  # Запускать, когда создается новый тег, который начинается с 'v' (например, v1.0.0, v1.2.3)
   push:
     tags:
       - 'v*'
+  # Позволяет запускать этот workflow вручную со страницы Actions в GitHub
+  workflow_dispatch:
+
+# Устанавливаем права для workflow. Нам нужна запись в 'contents' для создания релиза.
+permissions:
+  contents: write
 
 jobs:
-  build-and-release:
-    name: Build and Release AppImage
-    runs-on: ubuntu-22.04
+  # --- ЗАДАЧА СБОРКИ ДЛЯ LINUX (.AppImage) ---
+  build-linux:
+    name: Build Linux AppImage
+    runs-on: ubuntu-latest # Используем последнюю версию Ubuntu
+
     steps:
-      # 1. Checkout repository
+      # 1. Клонируем репозиторий
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Set up Flutter
-      - name: Set up Flutter
+      # 2. Устанавливаем Flutter SDK
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable' # Используем стабильный канал Flutter
+
+      # 3. Устанавливаем зависимости для сборки под Linux
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      # 4. Запускаем flutter pub get в директории 'client'
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: ./client # <--- Важный шаг: указываем рабочую директорию
+
+      # 5. Собираем AppImage с помощью специального action
+      - name: Build Flutter AppImage
+        uses: local-actions/flutter-build-appimage@v1
+        with:
+          project-path: ./client # <--- Указываем путь к проекту
+
+      # 6. Загружаем собранный файл как артефакт, чтобы передать его в задачу создания релиза
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build # Имя артефакта
+          path: client/build/linux/x64/release/bundle/*.AppImage # Путь к файлу
+
+  # --- ЗАДАЧА СБОРКИ ДЛЯ WINDOWS (.exe) ---
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest # Используем последнюю версию Windows
+
+    steps:
+      # 1. Клонируем репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем Flutter SDK
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 3. Install system dependencies
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ninja-build clang libgtk-3-dev libsecret-1-dev fuse
-
-      # 4. Add missing GPG keys for Ubuntu Focal
-      # ЭТОТ ШАГ ТЕПЕРЬ КРИТИЧЕСКИ ВАЖЕН! Он позволяет runner'у (Ubuntu 22.04)
-      # доверять репозиториям Focal (Ubuntu 20.04), которые использует appimage-builder.
-      - name: Add missing GPG keys for Ubuntu Focal
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ca-certificates
-          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3B4FE6ACC0B21F32
-          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 871920D1991BC93C
-
-      # 5. Build Flutter Linux release
-      - name: Build Flutter Linux release
-        run: flutter build linux --release
+      # 3. Запускаем flutter pub get
+      - name: Get Flutter dependencies
+        run: flutter pub get
         working-directory: ./client
 
-      # 6. Install appimage-builder via pip
-      - name: Install appimage-builder
-        run: |
-          sudo apt-get install -y python3-pip
-          pip3 install appimage-builder
+      # 4. Включаем поддержку сборки для Windows
+      - name: Enable Windows desktop support
+        run: flutter config --enable-windows-desktop
 
-      # 7. Run AppImage build using the corrected recipe
-      - name: Build AppImage with appimage-builder
-        run: |
-          appimage-builder --recipe appimage-builder.yml --skip-test
+      # 5. Собираем .exe файл
+      - name: Build Windows executable
+        run: flutter build windows --release
         working-directory: ./client
 
-      # 8. Rename AppImage for consistency
-      # ПРИМЕЧАНИЕ: appimage-builder создает файл с именем вида 'ToDo-1.0.26-x86_64.AppImage'.
-      # Этот шаг переименовывает его для единообразия.
-      - name: Rename AppImage
-        run: |
-          find . -name "*.AppImage" -exec mv {} ../ToDo-${{ github.ref_name }}-Linux-x86_64.AppImage \;
-        working-directory: ./client/ToDo-1.0.0-x86_64.AppImage/ # Путь может отличаться, find найдет сам
+      # 6. Архивируем результат в ZIP для удобства
+      - name: Archive Release folder
+        run: Compress-Archive -Path client/build/windows/x64/runner/Release -DestinationPath client/build/windows/x64/Release.zip
 
-      # 9. Create GitHub Release and Upload Asset
-      - name: Create GitHub Release and Upload Asset
+      # 7. Загружаем архив как артефакт
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: client/build/windows/x64/Release.zip
+
+  # --- ЗАДАЧА СБОРКИ ДЛЯ ANDROID (.apk) ---
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Клонируем репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем Java (необходима для сборки под Android)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 3. Устанавливаем Flutter SDK
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      # 4. Запускаем flutter pub get
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: ./client
+
+      # 5. Собираем .apk файл
+      - name: Build Android APK
+        run: flutter build apk --release
+        working-directory: ./client
+
+      # 6. Загружаем .apk как артефакт
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: client/build/app/outputs/flutter-apk/app-release.apk
+
+  # --- ЗАДАЧА СОЗДАНИЯ РЕЛИЗА ---
+  create-release:
+    name: Create GitHub Release
+    # Эта задача зависит от успешного выполнения всех задач сборки
+    needs: [build-linux, build-windows, build-android]
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Скачиваем все артефакты (AppImage, zip, apk), собранные в предыдущих задачах
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts # Скачиваем в папку 'artifacts'
+
+      # 2. Создаем релиз на GitHub и прикрепляем к нему наши файлы
+      - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: ToDo-*.AppImage
+          # Имя тега будет названием релиза. Например, 'v1.0.0'
+          tag_name: ${{ github.ref }}
+          # Имя релиза
+          name: Release ${{ github.ref_name }}
+          # Описание релиза (можно оставить пустым или генерировать автоматически)
+          body: |
+            Автоматически сгенерированный релиз для версии ${{ github.ref_name }}
+          # Файлы, которые нужно прикрепить. '*' найдет все файлы во всех подпапках.
+          files: |
+            ./artifacts/*/*
