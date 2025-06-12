@@ -33,7 +33,7 @@ jobs:
       - name: Build and Release with fastforge
         # Указываем, что наш Flutter-проект находится в папке client/
         working-directory: ./client
-        # 1. Запускаем релиз с именем 'production' из fastforge.yaml
+        # 1. Запускаем релиз с именем 'production' из distribute_options.yaml
         # 2. Передаем GITHUB_TOKEN как переменную окружения
         run: fastforge release --name production
         env:

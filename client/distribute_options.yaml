@@ -1,4 +1,4 @@
-# client/fastforge.yaml
+# client/distribute_options.yaml
 
 # Определяем релиз, который мы будем запускать из GitHub Actions
 releases:
