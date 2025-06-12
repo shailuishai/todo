@@ -1,0 +1,26 @@
+# client/fastforge.yaml
+
+# Информация о вашем приложении
+app:
+  name: ToDo App
+  # fastforge может даже автоматически увеличивать версию
+  version: 1.0.0+1
+
+# Какие платформы собирать
+build:
+  # Настройки для Android
+  android:
+    # Собираем APK
+    format: apk
+
+  # Настройки для Windows
+  windows:
+    # Собираем EXE (это по умолчанию, можно не указывать)
+    enabled: true
+
+  # Настройки для Linux
+  linux:
+    # Собираем AppImage
+    format: appimage
+    # Иконка для AppImage
+    icon: assets/icon.png
