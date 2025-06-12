@@ -1,0 +1,46 @@
+version: 1
+
+script:
+  # Этот скрипт будет выполняться из корня Flutter-проекта (`client/`)
+  - rm -rf AppDir || true
+  # Копируем весь скомпилированный бандл
+  - cp -r build/linux/x64/release/bundle AppDir
+  # Копируем иконку. Имя иконки должно совпадать с ключом 'icon' в app_info.
+  - cp packaging/client.png AppDir/
+  # Копируем desktop-файл
+  - cp packaging/client.desktop AppDir/
+
+AppDir:
+  path: ./AppDir
+
+  app_info:
+    id: com.yourcompany.todo
+    name: ToDo
+    icon: client # Имя файла иконки БЕЗ расширения
+    version: 1.0.0 # Версия будет заменена в CI
+    exec: bundle/client # Путь к исполняемому файлу внутри AppDir
+    exec_args: $@
+
+  # Используем apt для зависимостей, как в официальном примере,
+  # это самый надежный метод для CI
+  apt:
+    arch: amd64
+    sources:
+      - sourceline: "deb http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse"
+    include:
+      - libgtk-3-0
+      - libsecret-1-0
+      - libnotify4
+      - libayatana-appindicator3-1
+
+  # Эта секция необязательна, но полезна для уменьшения размера
+  files:
+    exclude:
+      - usr/share/man
+      - usr/share/doc/*/README.*
+      - usr/share/doc/*/changelog.*
+
+AppImage:
+  arch: x86_64
+  update-information: guess
+  sign-key: None
