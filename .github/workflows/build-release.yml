@@ -1,6 +1,4 @@
-# .github/workflows/build-release.yml
-name: Build & Release Flutter App
-
+name: Build & Release Flutter AppImage
 on:
   push:
     tags:
@@ -10,70 +8,52 @@ jobs:
   build-and-release:
     name: Build and Release AppImage
     runs-on: ubuntu-22.04
-
     steps:
-      # 1. Загружаем код
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Устанавливаем Flutter
+      # 2. Set up Flutter
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 3. Устанавливаем системные зависимости для сборки и для запуска AppImage
-      - name: Install build and runtime dependencies
+      # 3. Install system dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y ninja-build clang libgtk-3-dev libsecret-1-dev fuse
 
-      # 4. Собираем Flutter приложение
+      # 4. Add /usr/bin to PATH for appimage-builder
+      - name: Ensure apt-get is in PATH
+        run: echo "/usr/bin:$PATH" | sudo tee /etc/environment > /dev/null && export PATH="/usr/bin:$PATH"
+
+      # 5. Build Flutter Linux release
       - name: Build Flutter Linux release
         run: flutter build linux --release
         working-directory: ./client
 
-      # 5. Устанавливаем AppImage Tooling
-      # Скачиваем два инструмента: appimagetool для упаковки и runtime
-      - name: Install AppImage tools
+      # 6. Install appimage-builder via pip
+      - name: Install appimage-builder
         run: |
-          wget "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage" -O appimagetool
-          chmod +x appimagetool
-          wget "https://github.com/AppImage/AppImageKit/releases/download/13/runtime-x86_64" -O runtime
+          sudo apt-get install -y python3-pip
+          pip3 install appimage-builder
+        working-directory: ./client
 
-      # 6. Создаем структуру AppDir
-      - name: Create AppDir structure
+      # 7. Run AppImage build using appimage-builder.yml
+      - name: Build AppImage with appimage-builder
         run: |
-          mkdir -p AppDir/usr/bin
-          mkdir -p AppDir/usr/lib
-          # Копируем скомпилированный бандл
-          cp -r client/build/linux/x64/release/bundle/* AppDir/usr/
-          # Переименовываем исполняемый файл для удобства
-          mv AppDir/usr/client AppDir/usr/bin/client
-          # Копируем иконку и desktop файл
-          cp client/appimage_builder/client.png AppDir/
-          cp client/appimage_builder/client.desktop AppDir/
-          # Создаем симлинк для иконки
-          ln -s ../client.png AppDir/usr/share/icons/hicolor/256x256/apps/com.yourcompany.todo.png
-          # Копируем desktop файл в нужное место
-          mkdir -p AppDir/usr/share/applications
-          cp client/appimage_builder/client.desktop AppDir/usr/share/applications/com.yourcompany.todo.desktop
+          appimage-builder --recipe appimage-builder.yml --skip-test
+        working-directory: ./client
 
-
-      # 7. Копируем зависимости в AppDir
-      # Вместо appimage-builder, который не работает, используем linuxdeploy
-      - name: Download linuxdeploy and deploy dependencies
+      # 8. Rename AppImage for consistency
+      - name: Rename AppImage
         run: |
-          wget "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" -O linuxdeploy
-          chmod +x linuxdeploy
-          # Запускаем linuxdeploy, чтобы он скопировал все нужные .so файлы в AppDir
-          ./linuxdeploy --appdir AppDir --output appimage
+          mv client/*.AppImage ToDo-${{ github.ref_name }}-Linux-x86_64.AppImage
+        working-directory: ./client
 
-      # 8. Финальная сборка AppImage с помощью appimagetool
-      - name: Build Final AppImage
-        run: ./appimagetool AppDir ToDo-${{ github.ref_name }}-Linux-x86_64.AppImage
-
-      # 9. Создаем релиз и загружаем артефакт
+      # 9. Create GitHub Release and Upload Asset
       - name: Create GitHub Release and Upload Asset
         uses: softprops/action-gh-release@v2
         with:

@@ -1,7 +1,6 @@
-# client/appimage_builder/client.desktop
 [Desktop Entry]
 Name=ToDo
 Exec=client
-Icon=com.yourcompany.todo
+Icon=client
 Type=Application
-Categories=Utility;Office;
+Categories=Utility;
