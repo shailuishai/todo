@@ -9,41 +9,72 @@ on:
 jobs:
   build-and-release:
     name: Build and Release AppImage
-    runs-on: ubuntu-22.04 # Используем более свежую LTS версию
+    runs-on: ubuntu-22.04
 
     steps:
       # 1. Загружаем код
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Устанавливаем Flutter SDK
+      # 2. Устанавливаем Flutter
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 3. Устанавливаем системные зависимости
-      - name: Install build dependencies
+      # 3. Устанавливаем системные зависимости для сборки и для запуска AppImage
+      - name: Install build and runtime dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ninja-build clang libgtk-3-dev libsecret-1-dev
+          sudo apt-get install -y ninja-build clang libgtk-3-dev libsecret-1-dev fuse
 
       # 4. Собираем Flutter приложение
-      - name: Build Flutter app
+      - name: Build Flutter Linux release
         run: flutter build linux --release
-        working-directory: ./client # Указываем, где находится Flutter проект
+        working-directory: ./client
 
-      # 5. Собираем AppImage с помощью Docker-образа
-      - name: Build AppImage using appimage-builder
-        uses: docker://appimagecrafters/appimage-builder:latest # Используем latest, он должен быть стабильнее
-        with:
-          # <<< КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Явно указываем entrypoint и args >>>
-          entrypoint: appimage-builder
-          args: --recipe client/packaging/AppImageBuilder.yml --skip-test
+      # 5. Устанавливаем AppImage Tooling
+      # Скачиваем два инструмента: appimagetool для упаковки и runtime
+      - name: Install AppImage tools
+        run: |
+          wget "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+          wget "https://github.com/AppImage/AppImageKit/releases/download/13/runtime-x86_64" -O runtime
 
-      # 6. Создаем релиз и загружаем артефакт
+      # 6. Создаем структуру AppDir
+      - name: Create AppDir structure
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/lib
+          # Копируем скомпилированный бандл
+          cp -r client/build/linux/x64/release/bundle/* AppDir/usr/
+          # Переименовываем исполняемый файл для удобства
+          mv AppDir/usr/client AppDir/usr/bin/client
+          # Копируем иконку и desktop файл
+          cp client/appimage_builder/client.png AppDir/
+          cp client/appimage_builder/client.desktop AppDir/
+          # Создаем симлинк для иконки
+          ln -s ../client.png AppDir/usr/share/icons/hicolor/256x256/apps/com.yourcompany.todo.png
+          # Копируем desktop файл в нужное место
+          mkdir -p AppDir/usr/share/applications
+          cp client/appimage_builder/client.desktop AppDir/usr/share/applications/com.yourcompany.todo.desktop
+
+
+      # 7. Копируем зависимости в AppDir
+      # Вместо appimage-builder, который не работает, используем linuxdeploy
+      - name: Download linuxdeploy and deploy dependencies
+        run: |
+          wget "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" -O linuxdeploy
+          chmod +x linuxdeploy
+          # Запускаем linuxdeploy, чтобы он скопировал все нужные .so файлы в AppDir
+          ./linuxdeploy --appdir AppDir --output appimage
+
+      # 8. Финальная сборка AppImage с помощью appimagetool
+      - name: Build Final AppImage
+        run: ./appimagetool AppDir ToDo-${{ github.ref_name }}-Linux-x86_64.AppImage
+
+      # 9. Создаем релиз и загружаем артефакт
       - name: Create GitHub Release and Upload Asset
         uses: softprops/action-gh-release@v2
         with:
-          # Загружаем все файлы .AppImage из корня проекта
-          files: ./*.AppImage*
+          files: ToDo-*.AppImage
