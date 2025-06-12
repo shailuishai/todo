@@ -1,41 +1,59 @@
 version: 1
 
 script:
+  # Выполняется из корня проекта ./client
   - rm -rf AppDir || true
   - mkdir -p AppDir
+
+  # Копируем скомпилированный бандл Flutter.
+  # Это правильный способ, так как он сохраняет всю структуру (исполняемый файл, .so, data).
   - cp -r build/linux/x64/release/bundle/* AppDir/
-  # Создаем директории для иконок
-  - mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps
-  - cp appimage_builder/client.png AppDir/usr/share/icons/hicolor/256x256/apps/
-  - cp appimage_builder/client.png AppDir/ # Для совместимости
-  - cp appimage_builder/client.desktop AppDir/
+
+  # Создаем правильную директорию для иконки
+  - mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+
+  # Копируем иконку в созданную директорию
+  - cp appimage_builder/client.png AppDir/usr/share/icons/hicolor/256x256/apps/com.yourcompany.todo.png
+
+  # Копируем .desktop файл
+  - cp appimage_builder/client.desktop AppDir/com.yourcompany.todo.desktop
 
 AppDir:
   path: ./AppDir
 
   app_info:
+    # ID вашего приложения
     id: com.yourcompany.todo
     name: ToDo
-    icon: client
-    version: 1.0.0
-    exec: client
+    # Имя иконки БЕЗ РАСШИРЕНИЯ. Оно должно соответствовать имени файла иконки
+    # в .../apps/ и имени, указанному в .desktop файле.
+    icon: com.yourcompany.todo
+    version: 1.0.0 # Эта версия будет заменена appimage-builder на основе git-тега
+
+    # ИСПРАВЛЕНО: Путь к исполняемому файлу внутри AppDir
+    exec: bundle/client
     exec_args: $@
 
   apt:
     arch: amd64
     sources:
-      - sourceline: "deb [trusted=yes] http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse"
+      # [trusted=yes] - это хороший хак для CI, чтобы избежать проблем с GPG ключами
+      - sourceline: "[trusted=yes] deb http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse"
     include:
       - libgtk-3-0
       - libsecret-1-0
+      # Добавим зависимости, которые могут потребоваться вашим плагинам
       - libnotify4
       - libayatana-appindicator3-1
+      - libjson-glib-1.0-0
 
   files:
+    # Хорошая практика для уменьшения размера
     exclude:
       - usr/share/man
       - usr/share/doc/*/README.*
       - usr/share/doc/*/changelog.*
+      - usr/share/doc/*/copyright
 
 AppImage:
   arch: x86_64
