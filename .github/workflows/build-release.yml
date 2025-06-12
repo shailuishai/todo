@@ -25,9 +25,12 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ninja-build clang libgtk-3-dev libsecret-1-dev fuse
 
-      # 4. Add /usr/bin to PATH for appimage-builder
-      - name: Ensure apt-get is in PATH
-        run: echo "/usr/bin:$PATH" | sudo tee /etc/environment > /dev/null && export PATH="/usr/bin:$PATH"
+      # 4. Add missing GPG keys for Ubuntu Focal
+      - name: Add missing GPG keys
+        run: |
+          sudo apt-get install -y gnupg dirmngr
+          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 3B4FE6ACC0B21F32
+          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 871920D1991BC93C
 
       # 5. Build Flutter Linux release
       - name: Build Flutter Linux release
