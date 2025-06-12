@@ -3,10 +3,10 @@ name: Build and Release
 
 # Триггеры для запуска workflow
 on:
-  # Запускать, когда создается новый тег, который начинается с 'v' (например, v1.0.0, v1.2.3)
+  # Запускать при каждом пуше в ветку main
   push:
-    tags:
-      - 'v*'
+    branches:
+      - 'main'
   # Позволяет запускать этот workflow вручную со страницы Actions в GitHub
   workflow_dispatch:
 
