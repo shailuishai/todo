@@ -6,9 +6,9 @@ script:
   # Копируем весь скомпилированный бандл
   - cp -r build/linux/x64/release/bundle AppDir
   # Копируем иконку. Имя иконки должно совпадать с ключом 'icon' в app_info.
-  - cp packaging/client.png AppDir/
+  - cp appimage_builder/client.png AppDir/
   # Копируем desktop-файл
-  - cp packaging/client.desktop AppDir/
+  - cp appimage_builder/client.desktop AppDir/
 
 AppDir:
   path: ./AppDir
