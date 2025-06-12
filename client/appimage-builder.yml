@@ -1,42 +1,64 @@
-version: 1
+name: Build & Release Flutter AppImage
+on:
+  push:
+    tags:
+      - 'v*'
 
-script:
-  # 1. Очистка предыдущей сборки
-  - rm -rf AppDir || true
-  # 2. Создаем AppDir и копируем бинарь
-  - mkdir -p AppDir
-  - cp build/linux/x64/release/bundle/* AppDir/  # Копируем содержимое bundle в корень AppDir
-  - cp appimage_builder/client.desktop AppDir/
-  - cp appimage_builder/client.png AppDir/
+jobs:
+  build-and-release:
+    name: Build and Release AppImage
+    runs-on: ubuntu-22.04
+    steps:
+      # 1. Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-AppDir:
-  path: ./AppDir
+      # 2. Set up Flutter
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
 
-  app_info:
-    id: com.yourcompany.todo
-    name: ToDo
-    icon: client
-    version: 1.0.0
-    exec: client  # Исполняемый файл находится в корне AppDir
-    exec_args: $@
+      # 3. Install system dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build clang libgtk-3-dev libsecret-1-dev fuse
 
-  apt:
-    arch: amd64
-    sources:
-      - sourceline: "deb [trusted=yes] http://archive.ubuntu.com/ubuntu/ focal main restricted universe multiverse"
-    include:
-      - libgtk-3-0
-      - libsecret-1-0
-      - libnotify4
-      - libayatana-appindicator3-1
+      # 4. Add missing GPG keys for Ubuntu Focal
+      - name: Add missing GPG keys
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ca-certificates
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3B4FE6ACC0B21F32
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 871920D1991BC93C
 
-  files:
-    exclude:
-      - usr/share/man
-      - usr/share/doc/*/README.*
-      - usr/share/doc/*/changelog.*
+      # 5. Build Flutter Linux release
+      - name: Build Flutter Linux release
+        run: flutter build linux --release
+        working-directory: ./client
 
-AppImage:
-  arch: x86_64
-  update-information: guess
-  sign-key: None
+      # 6. Install appimage-builder via pip
+      - name: Install appimage-builder
+        run: |
+          sudo apt-get install -y python3-pip
+          pip3 install appimage-builder
+        working-directory: ./client
+
+      # 7. Run AppImage build using appimage-builder.yml
+      - name: Build AppImage with appimage-builder
+        run: |
+          appimage-builder --recipe appimage-builder.yml --skip-test
+        working-directory: ./client
+
+      # 8. Rename AppImage for consistency
+      - name: Rename AppImage
+        run: |
+          mv client/*.AppImage ToDo-${{ github.ref_name }}-Linux-x86_64.AppImage
+        working-directory: ./client
+
+      # 9. Create GitHub Release and Upload Asset
+      - name: Create GitHub Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ToDo-*.AppImage
