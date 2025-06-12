@@ -18,47 +18,7 @@ jobs:
   # --- ЗАДАЧА СБОРКИ ДЛЯ LINUX (.AppImage) ---
   build-linux:
     name: Build Linux AppImage
-    runs-on: ubuntu-latest # Используем последнюю версию Ubuntu
-
-    steps:
-      # 1. Клонируем репозиторий
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # 2. Устанавливаем Flutter SDK
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable' # Используем стабильный канал Flutter
-
-      # 3. Устанавливаем зависимости для сборки под Linux
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-
-      # 4. Запускаем flutter pub get в директории 'client'
-      - name: Get Flutter dependencies
-        run: flutter pub get
-        working-directory: ./client # <--- Важный шаг: указываем рабочую директорию
-
-      # 5. Собираем AppImage с помощью специального action
-      - name: Build Flutter AppImage
-        uses: local-actions/flutter-build-appimage@v1
-        with:
-          project-path: ./client # <--- Указываем путь к проекту
-
-      # 6. Загружаем собранный файл как артефакт, чтобы передать его в задачу создания релиза
-      - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-build # Имя артефакта
-          path: client/build/linux/x64/release/bundle/*.AppImage # Путь к файлу
-
-  # --- ЗАДАЧА СБОРКИ ДЛЯ WINDOWS (.exe) ---
-  build-windows:
-    name: Build Windows Executable
-    runs-on: windows-latest # Используем последнюю версию Windows
+    runs-on: ubuntu-latest
 
     steps:
       # 1. Клонируем репозиторий
@@ -71,25 +31,80 @@ jobs:
         with:
           channel: 'stable'
 
-      # 3. Запускаем flutter pub get
+      # 3. Устанавливаем зависимости для сборки под Linux
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev fuse
+
+      # 4. Запускаем flutter pub get
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: ./client
 
-      # 4. Включаем поддержку сборки для Windows
+      # 5. Собираем релизную версию для Linux
+      - name: Build Flutter Linux release
+        run: flutter build linux --release
+        working-directory: ./client
+
+      # 6. Скачиваем утилиту для создания AppImage
+      - name: Download appimagetool
+        run: |
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool-x86_64.AppImage
+
+      # 7. Создаем AppImage
+      - name: Build AppImage
+        run: ./appimagetool-x86_64.AppImage ./client/build/linux/x64/release/bundle/
+
+      # 8. Загружаем собранный файл как артефакт
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          # appimagetool создает файл в текущей директории, используем wildcard для поиска
+          path: ./*.AppImage
+
+  # --- ЗАДАЧА СБОРКИ ДЛЯ WINDOWS (.exe) ---
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+
+    steps:
+      # 1. Клонируем репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем Flutter SDK
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      # 3. Включаем поддержку сборки для Windows
       - name: Enable Windows desktop support
         run: flutter config --enable-windows-desktop
 
-      # 5. Собираем .exe файл
+      # 4. ОЧИЩАЕМ СТАРЫЕ СБОРКИ (НОВЫЙ ШАГ)
+      - name: Run Flutter Clean
+        run: flutter clean
+        working-directory: ./client
+
+      # 5. Запускаем flutter pub get
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: ./client
+
+      # 6. Собираем .exe файл
       - name: Build Windows executable
         run: flutter build windows --release
         working-directory: ./client
 
-      # 6. Архивируем результат в ZIP для удобства
+      # 7. Архивируем результат в ZIP для удобства
       - name: Archive Release folder
         run: Compress-Archive -Path client/build/windows/x64/runner/Release -DestinationPath client/build/windows/x64/Release.zip
 
-      # 7. Загружаем архив как артефакт
+      # 8. Загружаем архив как артефакт
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
