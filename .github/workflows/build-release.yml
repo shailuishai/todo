@@ -1,4 +1,4 @@
-# .github/workflows/fastforge_release.yml
+# .github/workflows/release.yml
 
 name: Fastforge Release
 
@@ -13,6 +13,9 @@ permissions:
 
 jobs:
   release:
+    # Важно: fastforge сам управляет сборкой на разных ОС.
+    # Для Windows/macOS он может использовать сторонние сервисы (например, Codemagic),
+    # но для Linux/Android/Web достаточно ubuntu-latest.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +31,10 @@ jobs:
 
       # Запускаем сборку и релиз ОДНОЙ КОМАНДОЙ
       - name: Build and Release with fastforge
-        # Указываем, что проект находится в папке client
+        # Указываем, что наш Flutter-проект находится в папке client/
         working-directory: ./client
-        run: fastforge release --github-token ${{ secrets.GITHUB_TOKEN }}
+        # 1. Запускаем релиз с именем 'production' из fastforge.yaml
+        # 2. Передаем GITHUB_TOKEN как переменную окружения
+        run: fastforge release --name production
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

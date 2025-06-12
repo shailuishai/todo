@@ -1,26 +1,34 @@
 # client/fastforge.yaml
 
-# Информация о вашем приложении
-app:
-  name: ToDo App
-  # fastforge может даже автоматически увеличивать версию
-  version: 1.0.0+1
+# Определяем релиз, который мы будем запускать из GitHub Actions
+releases:
+  - name: production # Мы будем вызывать этот релиз по имени 'production'
+    jobs:
+      # --- Задание для Android ---
+      - name: release-android
+        package:
+          platform: android
+          target: apk
+        # Указываем, что результат нужно опубликовать на GitHub
+        publish:
+          target: github
 
-# Какие платформы собирать
-build:
-  # Настройки для Android
-  android:
-    # Собираем APK
-    format: apk
+      # --- Задание для Windows ---
+      - name: release-windows
+        package:
+          platform: windows
+          target: exe
+        # Указываем, что результат нужно опубликовать на GitHub
+        publish:
+          target: github
 
-  # Настройки для Windows
-  windows:
-    # Собираем EXE (это по умолчанию, можно не указывать)
-    enabled: true
-
-  # Настройки для Linux
-  linux:
-    # Собираем AppImage
-    format: appimage
-    # Иконка для AppImage
-    icon: assets/icon.png
+      # --- Задание для Linux ---
+      - name: release-linux
+        package:
+          platform: linux
+          target: appimage
+          # Указываем иконку для AppImage
+          icon: assets/icon.png
+        # Указываем, что результат нужно опубликовать на GitHub
+        publish:
+          target: github
