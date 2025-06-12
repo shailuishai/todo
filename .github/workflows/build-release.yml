@@ -16,7 +16,6 @@ permissions:
 
 jobs:
   # --- ЗАДАЧА СБОРКИ ДЛЯ LINUX (.AppImage) ---
-  # --- ЗАДАЧА СБОРКИ ДЛЯ LINUX (.AppImage) ---
   build-linux:
     name: Build Linux AppImage
     runs-on: ubuntu-latest
@@ -32,14 +31,13 @@ jobs:
         with:
           channel: 'stable'
 
-      # 3. Устанавливаем зависимости для сборки под Linux
+      # 3. Устанавливаем системные зависимости
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          # ДОБАВЛЕНА НОВАЯ ЗАВИСИМОСТЬ В КОНЕЦ СТРОКИ
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev fuse libsecret-1-dev
 
-      # 4. Запускаем flutter pub get
+      # 4. Получаем зависимости Flutter
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: ./client
@@ -49,17 +47,33 @@ jobs:
         run: flutter build linux --release
         working-directory: ./client
 
-      # 6. Скачиваем утилиту для создания AppImage
+      # 6. !! НОВЫЙ ШАГ: Готовим файлы для AppImage !!
+      - name: Prepare files for AppImage
+        run: |
+          APPDIR=client/build/linux/x64/release/bundle
+
+          cp client/assets/icon.png $APPDIR/icon.png
+
+          echo "[Desktop Entry]
+          Name=ToDo 
+          Exec=client
+          Icon=icon
+          Type=Application
+          Categories=Utility;" > $APPDIR/client.desktop
+
+          chmod +x $APPDIR/client
+
+      # 7. Скачиваем утилиту для создания AppImage
       - name: Download appimagetool
         run: |
           wget -q "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"
           chmod +x appimagetool-x86_64.AppImage
 
-      # 7. Создаем AppImage
+      # 8. Создаем AppImage
       - name: Build AppImage
         run: ./appimagetool-x86_64.AppImage ./client/build/linux/x64/release/bundle/
 
-      # 8. Загружаем собранный файл как артефакт
+      # 9. Загружаем собранный файл как артефакт
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
