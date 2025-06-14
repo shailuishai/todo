@@ -77,8 +77,8 @@ jobs:
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linux-build
-          path: ./*.AppImage
+          name: ToDo_Linux-x86_64
+          path: ./ToDo_Linux-x86_64.AppImage
 
   # --- ЗАДАЧА СБОРКИ ДЛЯ WINDOWS (.exe) ---
   build-windows:
@@ -123,8 +123,8 @@ jobs:
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: client/build/windows/x64/Release.zip
+          name: ToDo_Windows-x86_64
+          path: client/build/windows/x64/ToDo_Windows-x86_64.zip
 
   # --- ЗАДАЧА СБОРКИ ДЛЯ ANDROID (.apk) ---
   build-android:
@@ -163,8 +163,8 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-build
-          path: client/build/app/outputs/flutter-apk/app-release.apk
+          name: ToDo
+          path: client/build/app/outputs/flutter-apk/ToDo.apk
 
   # --- ЗАДАЧА СОЗДАНИЯ РЕЛИЗА ---
   create-release:
@@ -191,8 +191,7 @@ jobs:
           name: "Latest Build"
           # Описание релиза. Добавим хеш коммита для информации.
           body: |
-            Автоматическая сборка из ветки main.
-            Коммит: `${{ github.sha }}`
+            latest
           # Файлы, которые нужно прикрепить.
           files: |
             ./artifacts/*/*

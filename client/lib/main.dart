@@ -153,7 +153,7 @@ class _MyAppState extends State<MyApp> {
         ));
 
         return MaterialApp.router(
-          title: 'ChronosHub',
+          title: 'ToDo',
           theme: currentTheme,
           debugShowCheckedModeBanner: false,
           routerDelegate: routerDelegate,
