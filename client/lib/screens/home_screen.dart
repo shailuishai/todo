@@ -1,8 +1,7 @@
-// lib/screens/home_screen.dart
-import 'package:client/core/utils/responsive_utils.dart';
-import 'package:client/widgets/tasks/task_edit_dialog.dart';
+import 'package:ToDo/screens/tasks_hub_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/utils/responsive_utils.dart';
 import '../models/task_model.dart';
 import '../team_provider.dart';
 import '../widgets/sidebar/sidebar.dart';
@@ -37,7 +36,50 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+// <<< ИЗМЕНЕНИЕ: Добавлен `with SingleTickerProviderStateMixin` для TabController >>>
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+  // <<< НОВЫЙ КОД ДЛЯ МОБИЛЬНОЙ НАВИГАЦИИ >>>
+  late int _mobilePageIndex;
+  late final List<Widget> _mobilePages;
+
+  @override
+  void initState() {
+    super.initState();
+    _mobilePageIndex = _getInitialMobilePageIndex();
+    // Определяем список страниц, которые будут в мобильной навигации
+    _mobilePages = [
+      const TasksHubScreen(),
+      const TeamsScreen(),
+      const SettingsScreen(),
+    ];
+  }
+
+  // Определяем начальный индекс для BottomNavigationBar на основе роута
+  int _getInitialMobilePageIndex() {
+    final subRoute = widget.initialSubRoute;
+    if (subRoute == AppRouteSegments.teams || widget.teamIdToShow != null) {
+      return 1;
+    }
+    if (subRoute == AppRouteSegments.settings) {
+      return 2;
+    }
+    // Все остальные связанные с задачами роуты ведут на хаб задач
+    return 0;
+  }
+
+  // Обновляем индекс при изменении виджета (например, при навигации через URL)
+  @override
+  void didUpdateWidget(covariant HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final newIndex = _getInitialMobilePageIndex();
+    if (_mobilePageIndex != newIndex) {
+      setState(() {
+        _mobilePageIndex = newIndex;
+      });
+    }
+  }
+  // <<< КОНЕЦ НОВОГО КОДА >>>
+
 
   Widget _getCurrentPageContent(BuildContext context) {
     final theme = Theme.of(context); // Получаем тему для стилизации
@@ -119,102 +161,37 @@ class _HomePageState extends State<HomePage> {
     return 0;
   }
 
-  String _getPageTitleForAppBar() {
-    if (widget.teamIdToShow != null) {
-      final teamProvider = Provider.of<TeamProvider>(context, listen: false);
-      return teamProvider.currentTeamDetail?.name ?? "Команда";
-    }
-    if (widget.taskIdToShow != null && Provider.of<AppRouterDelegate>(context, listen:false).currentConfiguration is! TaskDetailPath) {
-      return "Детали задачи";
-    }
-    final subRouteSegment = widget.initialSubRoute;
-    if (subRouteSegment == AppRouteSegments.settings) return "Настройки";
-    if (subRouteSegment.isEmpty || subRouteSegment == AppRouteSegments.allTasks) return "Все задачи";
-    if (subRouteSegment == AppRouteSegments.personalTasks) return "Личные задачи";
-    if (subRouteSegment == AppRouteSegments.teams) return "Команды";
-    if (subRouteSegment == AppRouteSegments.trash) return "Корзина";
-    if (subRouteSegment == AppRouteSegments.calendar) return "Календарь";
-    return "ChronosHub";
-  }
+  // <<< ИЗМЕНЕНИЕ: Метод больше не нужен, т.к. AppBar на мобильных не имеет заголовка >>>
+  // String _getPageTitleForAppBar() { ... }
 
-  int _getActiveBottomNavIndex() {
-    if (widget.teamIdToShow != null) {
-      return 2;
-    }
-    final subRouteSegment = widget.initialSubRoute;
-    if (subRouteSegment.isEmpty || subRouteSegment == AppRouteSegments.allTasks) return 0;
-    if (subRouteSegment == AppRouteSegments.personalTasks) return 1;
-    if (subRouteSegment == AppRouteSegments.teams) return 2;
-    if (subRouteSegment == AppRouteSegments.settings) return 3;
-    if (subRouteSegment == AppRouteSegments.trash || subRouteSegment == AppRouteSegments.calendar) return 0;
-    return 0;
-  }
+  // <<< ИЗМЕНЕНИЕ: Этот метод больше не нужен, логика перенесена в initState и didUpdateWidget >>>
+  // int _getActiveBottomNavIndex() { ... }
 
   List<BottomNavigationBarItem> _buildBottomNavigationBarItems(BuildContext context) {
     return const [
-      BottomNavigationBarItem(icon: Icon(Icons.list_alt_rounded), label: "Все задачи"),
-      BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded), label: "Личные"),
+      BottomNavigationBarItem(icon: Icon(Icons.task_alt_rounded), label: "Задачи"),
       BottomNavigationBarItem(icon: Icon(Icons.group_outlined), label: "Команды"),
       BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: "Настройки"),
     ];
   }
 
   void _onBottomNavItemTapped(int index, AppRouterDelegate routerDelegate) {
-    String targetSubRouteSegment;
-    bool showRightSidebarForRoute = true;
-    switch (index) {
-      case 0: targetSubRouteSegment = AppRouteSegments.allTasks; break;
-      case 1: targetSubRouteSegment = AppRouteSegments.personalTasks; break;
-      case 2: targetSubRouteSegment = AppRouteSegments.teams; showRightSidebarForRoute = false; break;
-      case 3: targetSubRouteSegment = AppRouteSegments.settings; showRightSidebarForRoute = false; break;
-      default: targetSubRouteSegment = AppRouteSegments.allTasks;
-    }
-    routerDelegate.navigateTo(HomeSubPath(targetSubRouteSegment, showRightSidebar: showRightSidebarForRoute));
-  }
+    if (_mobilePageIndex == index) return;
 
-  List<Widget> _getMobileAppBarActions(BuildContext context) {
-    if (widget.teamIdToShow != null) {
-      return [];
-    }
-    final currentSubRouteSegment = widget.initialSubRoute;
-    final bool isSettingsPage = currentSubRouteSegment == AppRouteSegments.settings;
-    final bool isTeamsListPage = currentSubRouteSegment == AppRouteSegments.teams;
-    final bool isTrashPage = currentSubRouteSegment == AppRouteSegments.trash;
-    final bool isCalendarPage = currentSubRouteSegment == AppRouteSegments.calendar;
-
-    if (isSettingsPage || isTrashPage || isCalendarPage) return [];
-
-    List<Widget> actions = [];
-    if (!isTeamsListPage) {
-      actions.addAll([
-        IconButton(icon: const Icon(Icons.filter_list_rounded), tooltip: "Фильтры", onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Фильтры (в разработке)")));
-        }),
-        IconButton(icon: const Icon(Icons.sort_rounded), tooltip: "Сортировка", onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Сортировка (в разработке)")));
-        }),
-      ]);
-    }
-    return actions;
-  }
-
-  void _showCreateTaskDialog(BuildContext context) {
-    showDialog<Task?>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return TaskEditDialog(
-          onTaskSaved: (createdTask) {
-            debugPrint("HomePage: Task created via dialog: ${createdTask.title}");
-          },
-        );
-      },
-    ).then((returnedTask) {
-      if (returnedTask != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Задача "${returnedTask.title}" добавлена!')),
-        );
-      }
+    // <<< ИЗМЕНЕНИЕ: Навигация теперь ведёт на главные экраны-хабы, а не на под-страницы >>>
+    setState(() {
+      _mobilePageIndex = index;
     });
+
+    // Навигацию через роутер можно оставить для синхронизации URL, если это нужно
+    String targetRouteSegment;
+    switch (index) {
+      case 0: targetRouteSegment = AppRouteSegments.allTasks; break; // По умолчанию для "Задач"
+      case 1: targetRouteSegment = AppRouteSegments.teams; break;
+      case 2: targetRouteSegment = AppRouteSegments.settings; break;
+      default: targetRouteSegment = AppRouteSegments.allTasks;
+    }
+    routerDelegate.navigateTo(HomeSubPath(targetRouteSegment, showRightSidebar: false));
   }
 
 
@@ -224,51 +201,47 @@ class _HomePageState extends State<HomePage> {
     final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
     final bool isMobile = ResponsiveUtil.isMobile(context);
 
-    final Widget currentPageContent = _getCurrentPageContent(context);
-    final int activeSidebarMenuIndex = _getActiveMenuIndex();
-
-    bool shouldShowRightSidebar = false; // По умолчанию скрываем
-    if (widget.teamIdToShow != null) { // Если открыты детали команды, правый сайдбар показывается (это будет контекстный)
-      shouldShowRightSidebar = true;
-    } else {
-      // Для обычных под-экранов HomePage, используем значение из AppRouterDelegate
-      final currentActualPath = routerDelegate.currentConfiguration;
-      if (currentActualPath is HomeSubPath) {
-        shouldShowRightSidebar = currentActualPath.showRightSidebar;
-      }
-    }
+    // <<< ИЗМЕНЕНИЕ: Основная логика билда теперь разделена на mobile и desktop >>>
 
     if (isMobile) {
-      Widget? mobileFab;
-      if (widget.teamIdToShow == null && widget.taskIdToShow == null &&
-          ![AppRouteSegments.settings, AppRouteSegments.teams, AppRouteSegments.trash, AppRouteSegments.calendar].contains(widget.initialSubRoute)) {
-        mobileFab = FloatingActionButton(
-          onPressed: () => _showCreateTaskDialog(context),
-          tooltip: "Добавить задачу",
-          child: const Icon(Icons.add_task_outlined),
-        );
+      // Если на мобильном открыта детальная страница (команды или задачи),
+      // она сама строит свой Scaffold с кнопкой "назад" и не нуждается в BottomNavigationBar.
+      if (widget.teamIdToShow != null || widget.taskIdToShow != null) {
+        return _getCurrentPageContent(context);
       }
 
       return Scaffold(
         appBar: AppBar(
-          title: Text(_getPageTitleForAppBar()),
-          actions: _getMobileAppBarActions(context),
-          leading: (routerDelegate.canPop() && (widget.taskIdToShow != null || widget.teamIdToShow != null))
-              ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => routerDelegate.popRoute())
-              : null,
+          title: null, // Убираем заголовок
+          automaticallyImplyLeading: false, // Убираем кнопку "назад" по умолчанию
+          elevation: 1,
         ),
-        body: currentPageContent,
-        bottomNavigationBar: (widget.teamIdToShow == null && widget.taskIdToShow == null)
-            ? BottomNavigationBar(
+        body: IndexedStack(
+          index: _mobilePageIndex,
+          children: _mobilePages,
+        ),
+        bottomNavigationBar: BottomNavigationBar(
           items: _buildBottomNavigationBarItems(context),
-          currentIndex: _getActiveBottomNavIndex(),
+          currentIndex: _mobilePageIndex,
           onTap: (index) => _onBottomNavItemTapped(index, routerDelegate),
-        )
-            : null,
-        floatingActionButton: mobileFab,
+        ),
       );
 
     } else { // Десктоп/планшет
+      final Widget currentPageContent = _getCurrentPageContent(context);
+      final int activeSidebarMenuIndex = _getActiveMenuIndex();
+
+      bool shouldShowRightSidebar = false; // По умолчанию скрываем
+      if (widget.teamIdToShow != null) { // Если открыты детали команды, правый сайдбар показывается (это будет контекстный)
+        shouldShowRightSidebar = true;
+      } else {
+        // Для обычных под-экранов HomePage, используем значение из AppRouterDelegate
+        final currentActualPath = routerDelegate.currentConfiguration;
+        if (currentActualPath is HomeSubPath) {
+          shouldShowRightSidebar = currentActualPath.showRightSidebar;
+        }
+      }
+
       return Scaffold(
         backgroundColor: theme.colorScheme.surfaceContainerLowest,
         body: Row(

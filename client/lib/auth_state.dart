@@ -2,8 +2,7 @@
 import 'dart:async';
 import 'dart:io' show HttpServer, Platform;
 
-import 'package:client/core/routing/app_pages.dart';
-import 'package:client/themes.dart'; // <<< НОВЫЙ ИМПОРТ ДЛЯ ЦВЕТОВ
+import 'package:ToDo/themes.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -12,6 +11,7 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart' as shelf_router;
 
+import 'core/routing/app_pages.dart';
 import 'services/api_service.dart';
 
 class AuthState extends ChangeNotifier {

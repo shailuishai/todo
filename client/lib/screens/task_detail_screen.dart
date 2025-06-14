@@ -1,5 +1,3 @@
-// lib/screens/task_detail_screen.dart
-import 'package:client/core/utils/responsive_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/routing/app_pages.dart';
 import '../core/routing/app_route_path.dart';
+import '../core/utils/responsive_utils.dart';
 import '../models/task_model.dart';
 import '../models/team_model.dart';
 import '../tag_provider.dart';
@@ -35,9 +34,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-        // Запускаем загрузку задачи. Если она в кеше, провайдер вернет ее быстро.
-        // Если нет - запросит с сервера.
-        // `.then()` здесь не нужен, т.к. Consumer ниже подхватит обновление.
         taskProvider.getTaskById(widget.taskId);
       }
     });
@@ -57,8 +53,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 teamId: task.teamId!,
                 members: members,
                 taskToEdit: task,
-                onTaskSaved: (updatedTask) {
-                  debugPrint("TaskDetailScreen: TeamTaskEditDialog.onTaskSaved for task ID: ${updatedTask.taskId}");
+                onTaskSaved: (Task? updatedTask) {
+                  if (updatedTask != null) {
+                    debugPrint("TaskDetailScreen: TeamTaskEditDialog.onTaskSaved for task ID: ${updatedTask.taskId}");
+                  }
                 },
               );
             },
@@ -77,8 +75,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         builder: (BuildContext dialogContext) {
           return TaskEditDialog(
             taskToEdit: task,
-            onTaskSaved: (updatedTaskFromCallback) {
-              debugPrint("[TaskDetailScreen.onTaskSaved] Received updated task from callback - ID: ${updatedTaskFromCallback.taskId}");
+            onTaskSaved: (Task? updatedTaskFromCallback) {
+              if (updatedTaskFromCallback != null) {
+                debugPrint("[TaskDetailScreen.onTaskSaved] Received updated task from callback - ID: ${updatedTaskFromCallback.taskId}");
+              }
             },
           );
         },
@@ -121,7 +121,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   void _deleteTask(BuildContext context, Task task) {
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
     final deletedTasksProvider = Provider.of<DeletedTasksProvider>(context, listen: false);
-    final authState = Provider.of<AuthState>(context, listen: false);
     final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
 
     showDialog<bool>(
@@ -211,14 +210,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           );
         }
 
-        // Если это командная задача, и детали команды еще не загружены, запускаем загрузку
-        if (task.isTeamTask && task.teamId != null) {
-          final isTeamDetailAvailable = teamProvider.currentTeamDetail?.teamId == task.teamId;
+        final nonNullTask = task;
+        final String? teamId = nonNullTask.teamId;
+
+        if (nonNullTask.isTeamTask && teamId != null) {
+          final isTeamDetailAvailable = teamProvider.currentTeamDetail?.teamId == teamId;
           final isTeamDetailLoading = teamProvider.isLoadingTeamDetail;
           if (!isTeamDetailAvailable && !isTeamDetailLoading) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                teamProvider.fetchTeamDetails(task!.teamId!);
+                teamProvider.fetchTeamDetails(teamId);
               }
             });
           }
@@ -231,14 +232,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         if (isMobile) {
           pageHeader = AppBar(
             leading: routerDelegate.canPop() ? BackButton(onPressed: () => routerDelegate.popRoute()) : null,
-            title: Text(task.title, overflow: TextOverflow.ellipsis),
+            title: Text(nonNullTask.title, overflow: TextOverflow.ellipsis),
             actions: [
               if (canEdit || canDelete)
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert),
                   onSelected: (value) {
-                    if (value == 'edit' && canEdit) _editTask(context, task!);
-                    if (value == 'delete' && canDelete) _deleteTask(context, task!);
+                    if (value == 'edit' && canEdit) _editTask(context, nonNullTask);
+                    if (value == 'delete' && canDelete) _deleteTask(context, nonNullTask);
                   },
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                     if (canEdit) const PopupMenuItem<String>(value: 'edit', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Редактировать'))),
@@ -261,7 +262,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       if (routerDelegate.canPop())
                         IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded), tooltip: "Назад", onPressed: () => routerDelegate.popRoute(), color: colorScheme.onSurfaceVariant, splashRadius: 24),
                       if (routerDelegate.canPop()) const SizedBox(width: 8),
-                      Flexible(child: Text(task.title, style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600, color: colorScheme.onSurface), overflow: TextOverflow.ellipsis, maxLines: 2)),
+                      Flexible(child: Text(nonNullTask.title, style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600, color: colorScheme.onSurface), overflow: TextOverflow.ellipsis, maxLines: 2)),
                     ],
                   ),
                 ),
@@ -270,8 +271,8 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     icon: Icon(Icons.more_vert_rounded, color: colorScheme.onSurfaceVariant),
                     tooltip: "Действия",
                     onSelected: (value) {
-                      if (value == 'edit' && canEdit) _editTask(context, task!);
-                      if (value == 'delete' && canDelete) _deleteTask(context, task!);
+                      if (value == 'edit' && canEdit) _editTask(context, nonNullTask);
+                      if (value == 'delete' && canDelete) _deleteTask(context, nonNullTask);
                     },
                     itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                       if (canEdit) const PopupMenuItem<String>(value: 'edit', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Редактировать'))),
@@ -286,19 +287,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         Widget taskInfoSection = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildDetailRow(icon: _getStatusIcon(task.status), label: 'Статус:', valueWidget: Text(task.status.title, style: theme.textTheme.bodyLarge?.copyWith(color: task.status == KanbanColumnStatus.done ? colorScheme.primary : colorScheme.onSurface, fontWeight: FontWeight.w500)), context: context, iconColor: task.status == KanbanColumnStatus.done ? colorScheme.primary : colorScheme.onSurfaceVariant),
-            _buildDetailRow(icon: task.priority.icon, label: 'Приоритет:', valueWidget: Text(task.priority.name.isNotEmpty ? task.priority.name[0].toUpperCase() + task.priority.name.substring(1) : task.priority.name, style: theme.textTheme.bodyLarge?.copyWith(color: _getPriorityColor(task.priority, colorScheme), fontWeight: FontWeight.w500)), context: context, iconColor: _getPriorityColor(task.priority, colorScheme)),
-            if (task.deadline != null) _buildDetailRow(icon: Icons.alarm_outlined, label: 'Дедлайн:', value: DateFormat('dd MMMM yyyy, HH:mm', 'ru_RU').format(task.deadline!), context: context),
-            if (task.assignedToUserId != null)
+            _buildDetailRow(icon: _getStatusIcon(nonNullTask.status), label: 'Статус:', valueWidget: Text(nonNullTask.status.title, style: theme.textTheme.bodyLarge?.copyWith(color: nonNullTask.status == KanbanColumnStatus.done ? colorScheme.primary : colorScheme.onSurface, fontWeight: FontWeight.w500)), context: context, iconColor: nonNullTask.status == KanbanColumnStatus.done ? colorScheme.primary : colorScheme.onSurfaceVariant),
+            _buildDetailRow(icon: nonNullTask.priority.icon, label: 'Приоритет:', valueWidget: Text(nonNullTask.priority.name.isNotEmpty ? nonNullTask.priority.name[0].toUpperCase() + nonNullTask.priority.name.substring(1) : nonNullTask.priority.name, style: theme.textTheme.bodyLarge?.copyWith(color: _getPriorityColor(nonNullTask.priority, colorScheme), fontWeight: FontWeight.w500)), context: context, iconColor: _getPriorityColor(nonNullTask.priority, colorScheme)),
+            if (nonNullTask.deadline != null) _buildDetailRow(icon: Icons.alarm_outlined, label: 'Дедлайн:', value: DateFormat('dd MMMM yyyy, HH:mm', 'ru_RU').format(nonNullTask.deadline!), context: context),
+            if (nonNullTask.assignedToUserId != null)
               Builder(builder: (context) {
                 Widget assigneeWidget;
                 final teamDetail = teamProvider.currentTeamDetail;
-                final bool teamDetailIsReady = task!.isTeamTask && teamDetail?.teamId == task?.teamId;
+                final bool teamDetailIsReady = nonNullTask.isTeamTask && teamDetail?.teamId == nonNullTask.teamId;
 
                 if (teamDetailIsReady) {
                   UserLite? assignee;
                   try {
-                    assignee = teamDetail!.members.firstWhere((m) => m.user.userId.toString() == task?.assignedToUserId).user;
+                    assignee = teamDetail!.members.firstWhere((m) => m.user.userId.toString() == nonNullTask.assignedToUserId).user;
                   } catch (e) { /* not found */ }
 
                   if (assignee != null) {
@@ -308,20 +309,20 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                       Expanded(child: Text(assignee.login, style: theme.textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface, fontSize: 15))),
                     ]);
                   } else {
-                    assigneeWidget = Text('ID: ${task.assignedToUserId}', style: theme.textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface, fontSize: 15));
+                    assigneeWidget = Text('ID: ${nonNullTask.assignedToUserId}', style: theme.textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface, fontSize: 15));
                   }
-                } else if (task.isTeamTask) {
+                } else if (nonNullTask.isTeamTask) {
                   assigneeWidget = Text('Загрузка...', style: theme.textTheme.bodyLarge?.copyWith(color: colorScheme.onSurfaceVariant, fontSize: 15));
                 } else {
-                  assigneeWidget = Text('ID: ${task.assignedToUserId}', style: theme.textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface, fontSize: 15));
+                  assigneeWidget = Text('ID: ${nonNullTask.assignedToUserId}', style: theme.textTheme.bodyLarge?.copyWith(color: colorScheme.onSurface, fontSize: 15));
                 }
                 return _buildDetailRow(icon: Icons.person_outline, label: 'Исполнитель:', valueWidget: assigneeWidget, context: context);
               }),
-            if (task.isTeamTask && task.teamId != null)
+            if (nonNullTask.isTeamTask && teamId != null)
               Builder(builder: (context) {
                 final teamDetail = teamProvider.currentTeamDetail;
-                final bool teamDetailIsReady = teamDetail?.teamId == task?.teamId;
-                String teamName = task?.teamName ?? 'ID: ${task?.teamId}';
+                final bool teamDetailIsReady = teamDetail?.teamId == teamId;
+                String teamName = nonNullTask.teamName ?? 'ID: ${nonNullTask.teamId}';
                 String? teamImageUrl;
 
                 if (teamDetailIsReady) {
@@ -340,26 +341,26 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     ],
                   ),
                   context: context,
-                  onTap: () => routerDelegate.navigateTo(TeamDetailPath(task!.teamId!)),
+                  onTap: () => routerDelegate.navigateTo(TeamDetailPath(teamId)),
                 );
               }),
-            _buildDetailRow(icon: Icons.create_outlined, label: 'Создана:', value: DateFormat('dd.MM.yyyy HH:mm', 'ru_RU').format(task.createdAt), context: context),
-            _buildDetailRow(icon: Icons.update_outlined, label: 'Обновлена:', value: DateFormat('dd.MM.yyyy HH:mm', 'ru_RU').format(task.updatedAt), context: context),
-            if (task.status == KanbanColumnStatus.done && task.completedAt != null) _buildDetailRow(icon: Icons.check_circle_outline, label: 'Завершена:', value: DateFormat('dd.MM.yyyy HH:mm', 'ru_RU').format(task.completedAt!), context: context, iconColor: colorScheme.primary),
-            if (task.tags.isNotEmpty) ...[
+            _buildDetailRow(icon: Icons.create_outlined, label: 'Создана:', value: DateFormat('dd.MM.yyyy HH:mm', 'ru_RU').format(nonNullTask.createdAt), context: context),
+            _buildDetailRow(icon: Icons.update_outlined, label: 'Обновлена:', value: DateFormat('dd.MM.yyyy HH:mm', 'ru_RU').format(nonNullTask.updatedAt), context: context),
+            if (nonNullTask.status == KanbanColumnStatus.done && nonNullTask.completedAt != null) _buildDetailRow(icon: Icons.check_circle_outline, label: 'Завершена:', value: DateFormat('dd.MM.yyyy HH:mm', 'ru_RU').format(nonNullTask.completedAt!), context: context, iconColor: colorScheme.primary),
+            if (nonNullTask.tags.isNotEmpty) ...[
               const SizedBox(height: 16),
               _buildSectionHeader(context, 'Теги'),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8.0,
                 runSpacing: 6.0,
-                children: task.tags.map((tagFromTask) {
+                children: nonNullTask.tags.map((tagFromTask) {
                   final tagProvider = Provider.of<TagProvider>(context, listen: false);
                   ApiTag? actualTag;
                   if (tagFromTask.type == 'user') {
                     try { actualTag = tagProvider.userTags.firstWhere((ut) => ut.id == tagFromTask.id); } catch (e) {/* ignore */}
-                  } else if (tagFromTask.type == 'team' && task!.teamId != null) {
-                    final teamIdInt = int.tryParse(task.teamId!);
+                  } else if (tagFromTask.type == 'team' && teamId != null) {
+                    final teamIdInt = int.tryParse(teamId);
                     if (teamIdInt != null) {
                       try { actualTag = tagProvider.teamTagsByTeamId[teamIdInt]?.firstWhere((tt) => tt.id == tagFromTask.id); } catch (e) {/* ignore */}
                     }
@@ -372,7 +373,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           ],
         );
 
-        Widget descriptionSection = (task.description != null && task.description!.isNotEmpty)
+        Widget descriptionSection = (nonNullTask.description != null && nonNullTask.description!.isNotEmpty)
             ? Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -388,7 +389,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: MarkdownBody(
-                  data: task.description!,
+                  data: nonNullTask.description!,
                   selectable: true,
                   onTapLink: _onTapLink,
                   imageBuilder: (Uri uri, String? title, String? alt) {

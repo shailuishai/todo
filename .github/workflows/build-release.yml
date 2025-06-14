@@ -1,40 +1,198 @@
-# .github/workflows/release.yml
+# Имя нашего workflow, которое будет отображаться в GitHub Actions
+name: Build and Release
 
-name: Fastforge Release
-
+# Триггеры для запуска workflow
 on:
+  # Запускать при каждом пуше в ветку main
   push:
     branches:
-      - main
+      - 'main'
+  # Позволяет запускать этот workflow вручную со страницы Actions в GitHub
   workflow_dispatch:
 
+# Устанавливаем права для workflow. Нам нужна запись в 'contents' для создания релиза.
 permissions:
   contents: write
 
 jobs:
-  release:
-    # Важно: fastforge сам управляет сборкой на разных ОС.
-    # Для Windows/macOS он может использовать сторонние сервисы (например, Codemagic),
-    # но для Linux/Android/Web достаточно ubuntu-latest.
+  # --- ЗАДАЧА СБОРКИ ДЛЯ LINUX (.AppImage) ---
+  build-linux:
+    name: Build Linux AppImage
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      # 1. Клонируем репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # Устанавливаем Flutter (необходимо для fastforge)
-      - uses: subosito/flutter-action@v2
+      # 2. Устанавливаем Flutter SDK
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          channel: 'stable'
 
-      # Устанавливаем fastforge
-      - name: Activate fastforge
-        run: dart pub global activate fastforge
+      # 3. Устанавливаем системные зависимости
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev fuse libsecret-1-dev
 
-      # Запускаем сборку и релиз ОДНОЙ КОМАНДОЙ
-      - name: Build and Release with fastforge
-        # Указываем, что наш Flutter-проект находится в папке client/
+      # 4. Получаем зависимости Flutter
+      - name: Get Flutter dependencies
+        run: flutter pub get
         working-directory: ./client
-        # 1. Запускаем релиз с именем 'production' из distribute_options.yaml
-        # 2. Передаем GITHUB_TOKEN как переменную окружения
-        run: fastforge release --name production
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 5. Собираем релизную версию для Linux
+      - name: Build Flutter Linux release
+        run: flutter build linux --release
+        working-directory: ./client
+
+      # 6. !! НОВЫЙ ШАГ: Готовим файлы для AppImage !!
+      - name: Prepare files for AppImage
+        run: |
+          APPDIR=client/build/linux/x64/release/bundle
+
+          cp client/assets/icon.png $APPDIR/icon.png
+
+          echo "[Desktop Entry]
+          Name=ToDo 
+          Exec=client
+          Icon=icon
+          Type=Application
+          Categories=Utility;" > $APPDIR/client.desktop
+
+          chmod +x $APPDIR/client
+
+      # 7. Скачиваем утилиту для создания AppImage
+      - name: Download appimagetool
+        run: |
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool-x86_64.AppImage
+
+      # 8. Создаем AppImage
+      - name: Build AppImage
+        run: ./appimagetool-x86_64.AppImage ./client/build/linux/x64/release/bundle/
+
+      # 9. Загружаем собранный файл как артефакт
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: ./*.AppImage
+
+  # --- ЗАДАЧА СБОРКИ ДЛЯ WINDOWS (.exe) ---
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+
+    steps:
+      # 1. Клонируем репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем Flutter SDK
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      # 3. Включаем поддержку сборки для Windows
+      - name: Enable Windows desktop support
+        run: flutter config --enable-windows-desktop
+
+      # 4. ОЧИЩАЕМ СТАРЫЕ СБОРКИ (НОВЫЙ ШАГ)
+      - name: Run Flutter Clean
+        run: flutter clean
+        working-directory: ./client
+
+      # 5. Запускаем flutter pub get
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: ./client
+
+      # 6. Собираем .exe файл
+      - name: Build Windows executable
+        run: flutter build windows --release
+        working-directory: ./client
+
+      # 7. Архивируем результат в ZIP для удобства
+      - name: Archive Release folder
+        run: Compress-Archive -Path client/build/windows/x64/runner/Release -DestinationPath client/build/windows/x64/Release.zip
+
+      # 8. Загружаем архив как артефакт
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: client/build/windows/x64/Release.zip
+
+  # --- ЗАДАЧА СБОРКИ ДЛЯ ANDROID (.apk) ---
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Клонируем репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем Java (необходима для сборки под Android)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 3. Устанавливаем Flutter SDK
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      # 4. Запускаем flutter pub get
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: ./client
+
+      # 5. Собираем .apk файл
+      - name: Build Android APK
+        run: flutter build apk --release
+        working-directory: ./client
+
+      # 6. Загружаем .apk как артефакт
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: client/build/app/outputs/flutter-apk/app-release.apk
+
+  # --- ЗАДАЧА СОЗДАНИЯ РЕЛИЗА ---
+  create-release:
+    name: Create or Update GitHub Release
+    # Эта задача зависит от успешного выполнения всех задач сборки
+    needs: [build-linux, build-windows, build-android]
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Скачиваем все артефакты (AppImage, zip, apk), собранные в предыдущих задачах
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts # Скачиваем в папку 'artifacts'
+
+      # 2. Создаем или ОБНОВЛЯЕМ релиз на GitHub
+      - name: Create or Update Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          # Используем постоянный тег "latest".
+          # Если релиз с таким тегом существует, он будет обновлен.
+          tag_name: "latest"
+          # Даем релизу понятное имя
+          name: "Latest Build"
+          # Описание релиза. Добавим хеш коммита для информации.
+          body: |
+            Автоматическая сборка из ветки main.
+            Коммит: `${{ github.sha }}`
+          # Файлы, которые нужно прикрепить.
+          files: |
+            ./artifacts/*/*

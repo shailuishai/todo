@@ -1,11 +1,11 @@
 // lib/screens/auth_screen.dart
-import 'package:client/core/constants/app_strings.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+import '../core/constants/app_strings.dart';
 import '../core/utils/responsive_utils.dart';
 import '../widgets/CustomInputField.dart';
 import '../widgets/PrimaryButton.dart';

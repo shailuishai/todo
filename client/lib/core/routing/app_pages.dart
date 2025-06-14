@@ -1,9 +1,9 @@
 // lib/core/routing/app_pages.dart
-import 'package:client/screens/oauth_callback_screen.dart'; // <<< НОВЫЙ ИМПОРТ
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../screens/auth_screen.dart';
 import '../../screens/home_screen.dart';
+import '../../screens/oauth_callback_screen.dart';
 import '../../screens/task_detail_screen.dart';
 import '../../screens/join_team_landing_screen.dart';
 import '../../screens/landing_screen.dart';

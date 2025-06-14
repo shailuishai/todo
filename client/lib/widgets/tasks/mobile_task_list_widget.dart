@@ -1,5 +1,5 @@
 // lib/widgets/tasks/mobile_task_list_widget.dart
-import 'package:client/widgets/tasks/task_edit_dialog.dart'; // << ИМПОРТ ДИАЛОГА
+import '../tasks/task_edit_dialog.dart'; // << ИМПОРТ ДИАЛОГА
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';

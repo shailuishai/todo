@@ -1,9 +1,9 @@
 // lib/widgets/team/team_chat_widget.dart
 import 'dart:async';
-import 'package:client/chat_provider.dart';
-import 'package:client/models/chat_model.dart';
-import 'package:client/models/team_model.dart';
-import 'package:client/widgets/common/user_avatar.dart';
+import '../../chat_provider.dart';
+import '../../models/chat_model.dart';
+import '../../models/team_model.dart';
+import '../common/user_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';

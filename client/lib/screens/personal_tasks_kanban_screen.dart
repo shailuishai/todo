@@ -1,4 +1,3 @@
-// lib/screens/personal_tasks_kanban_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/task_model.dart';
@@ -85,8 +84,11 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
       builder: (BuildContext dialogContext) {
         return TaskEditDialog(
           taskToEdit: task,
-          onTaskSaved: (updatedTask) {
-            debugPrint("PersonalTasksKanbanScreen: TaskEditDialog.onTaskSaved for task ID: ${updatedTask.taskId}");
+          // <<< ИСПРАВЛЕНИЕ: Добавляем проверку на null >>>
+          onTaskSaved: (Task? updatedTask) {
+            if (updatedTask != null) {
+              debugPrint("PersonalTasksKanbanScreen: TaskEditDialog.onTaskSaved for task ID: ${updatedTask.taskId}");
+            }
           },
         );
       },
@@ -172,6 +174,20 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
           onTaskDelete: (task) => _handleTaskDelete(context, task),
           onTaskEdit: (task) => _handleTaskEdit(context, task),
         ),
+      );
+    }
+
+    if (ResponsiveUtil.isMobile(context)) {
+      return Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false, // Убираем автоматическую кнопку назад
+          // Можно добавить кнопку назад, если мы перешли на этот экран с хаба
+          leading: (Provider.of<AppRouterDelegate>(context).canPop())
+              ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
+              : null,
+          title: const Text("Личные задачи"),
+        ),
+        body: content,
       );
     }
 

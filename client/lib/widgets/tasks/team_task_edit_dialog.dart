@@ -1,9 +1,9 @@
 // lib/widgets/tasks/team_task_edit_dialog.dart
-import 'package:client/core/utils/responsive_utils.dart';
-import 'package:client/models/task_model.dart';
-import 'package:client/models/team_model.dart'; // Для UserLite
-import 'package:client/tag_provider.dart';
-import 'package:client/task_provider.dart';
+import '../../core/utils/responsive_utils.dart';
+import '../../models/task_model.dart';
+import '../../models/team_model.dart'; // Для UserLite
+import '../../tag_provider.dart';
+import '../../task_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';

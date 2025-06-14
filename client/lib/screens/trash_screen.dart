@@ -1,7 +1,7 @@
 // lib/screens/trash_screen.dart
-import 'package:client/core/utils/responsive_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/utils/responsive_utils.dart';
 import '../deleted_tasks_provider.dart';
 import '../models/task_model.dart';
 import '../task_provider.dart';

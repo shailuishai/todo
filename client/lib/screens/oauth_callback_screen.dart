@@ -1,10 +1,11 @@
 // lib/screens/oauth_callback_screen.dart
-import 'package:client/core/routing/app_router_delegate.dart';
-import 'package:client/core/routing/app_route_path.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../auth_state.dart';
 import 'package:universal_html/html.dart' as html;
+
+import '../core/routing/app_route_path.dart';
+import '../core/routing/app_router_delegate.dart';
 
 class OAuthCallbackScreen extends StatefulWidget {
   final String provider;

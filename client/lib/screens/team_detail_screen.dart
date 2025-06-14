@@ -1,9 +1,8 @@
-// lib/screens/team_detail_screen.dart
-import 'package:client/core/utils/responsive_utils.dart';
-import 'package:client/models/task_model.dart';
-import 'package:client/task_provider.dart';
-import 'package:client/widgets/kanban_board/kanban_board_widget.dart';
-import 'package:client/widgets/tasks/mobile_task_list_widget.dart';
+import '../core/utils/responsive_utils.dart';
+import '../models/task_model.dart';
+import '../task_provider.dart';
+import '../widgets/kanban_board/kanban_board_widget.dart';
+import '../widgets/tasks/mobile_task_list_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -35,32 +34,127 @@ class TeamDetailScreen extends StatefulWidget {
   State<TeamDetailScreen> createState() => _TeamDetailScreenState();
 }
 
-class _TeamDetailScreenState extends State<TeamDetailScreen> {
+class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final List<Tab> _tabs = [];
+  final List<Widget> _tabViews = [];
+
+  late SidebarStateProvider _sidebarStateProvider;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 0, vsync: this);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        final teamProvider = Provider.of<TeamProvider>(context, listen: false);
-        teamProvider.fetchTeamDetails(widget.teamId, forceRefresh: true);
+        _sidebarStateProvider = Provider.of<SidebarStateProvider>(context, listen: false);
+        _sidebarStateProvider.addListener(_onSidebarSectionChanged);
 
-        final sidebarState = Provider.of<SidebarStateProvider>(context, listen: false);
-        _handleSectionChange(sidebarState.currentTeamDetailSection, isInitialCall: true);
+        final teamProvider = Provider.of<TeamProvider>(context, listen: false);
+        teamProvider.fetchTeamDetails(widget.teamId, forceRefresh: true).then((_) {
+          if (mounted) {
+            setState(() {
+              _setupTabsAndController();
+            });
+          }
+        });
+
+        _handleSectionChange(_sidebarStateProvider.currentTeamDetailSection, isInitialCall: true);
       }
     });
+  }
+
+  void _setupTabsAndController() {
+    final teamProvider = Provider.of<TeamProvider>(context, listen: false);
+    final teamDetail = teamProvider.currentTeamDetail;
+    if (teamDetail == null) return;
+
+    _tabs.clear();
+    _tabViews.clear();
+
+    final userRole = teamDetail.currentUserRole;
+    final canManageTeamTags = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin || userRole == TeamMemberRole.editor;
+
+    _addTab(TeamDetailSection.tasks, "Задачи", Icons.list_alt_rounded);
+    _addTab(TeamDetailSection.chat, "Чат", Icons.chat_bubble_outline_rounded);
+    _addTab(TeamDetailSection.members, "Участники", Icons.group_outlined);
+
+    if (canManageTeamTags) {
+      _addTab(TeamDetailSection.teamTags, "Теги", Icons.label_outline_rounded);
+    }
+    _addTab(TeamDetailSection.management, "Управление", Icons.tune_rounded);
+
+    _tabController.dispose();
+    _tabController = TabController(length: _tabs.length, vsync: this, initialIndex: _tabController.previousIndex);
+    _tabController.addListener(_onTabSelected);
+    // Синхронизируем начальный индекс с состоянием из провайдера
+    final section = _sidebarStateProvider.currentTeamDetailSection;
+    final tabIndex = _tabs.indexWhere((tab) => (tab.key as ValueKey<TeamDetailSection>?)?.value == section);
+    if (tabIndex != -1) {
+      _tabController.index = tabIndex;
+    }
+  }
+
+  void _onTabSelected() {
+    if (!_tabController.indexIsChanging) {
+      if (_tabController.index < _tabs.length) {
+        final tag = _tabs[_tabController.index].key as ValueKey<TeamDetailSection>?;
+        if (tag != null) {
+          _sidebarStateProvider.setCurrentTeamDetailSection(tag.value);
+        }
+      }
+    }
+  }
+
+  void _onSidebarSectionChanged() {
+    if (ResponsiveUtil.isMobile(context) && _tabController.length > 0) {
+      final section = _sidebarStateProvider.currentTeamDetailSection;
+      final tabIndex = _tabs.indexWhere((tab) => (tab.key as ValueKey<TeamDetailSection>?)?.value == section);
+      if (tabIndex != -1 && _tabController.index != tabIndex) {
+        _tabController.animateTo(tabIndex);
+      }
+    }
+  }
+
+
+  void _addTab(TeamDetailSection section, String title, IconData icon) {
+    _tabs.add(Tab(
+      key: ValueKey(section),
+      text: title,
+      icon: Icon(icon),
+    ));
+    _tabViews.add(Builder(builder: (context) {
+      final teamDetail = Provider.of<TeamProvider>(context).currentTeamDetail;
+      if (teamDetail == null) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return _buildSectionContent(context, section, teamDetail);
+    }));
+  }
+
+  @override
+  void dispose() {
+    _sidebarStateProvider.removeListener(_onSidebarSectionChanged);
+    _tabController.removeListener(_onTabSelected);
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final sidebarState = Provider.of<SidebarStateProvider>(context);
-    _handleSectionChange(sidebarState.currentTeamDetailSection);
 
     final teamProvider = Provider.of<TeamProvider>(context, listen: false);
     if (teamProvider.currentTeamDetail?.teamId != widget.teamId && !teamProvider.isLoadingTeamDetail) {
       debugPrint("[TeamDetailScreen] teamId in provider ${teamProvider.currentTeamDetail?.teamId} differs from widget.teamId ${widget.teamId}. Refetching team details.");
-      teamProvider.fetchTeamDetails(widget.teamId, forceRefresh: true);
+      teamProvider.fetchTeamDetails(widget.teamId, forceRefresh: true).then((_){
+        if (mounted) {
+          setState(() {
+            _setupTabsAndController();
+          });
+        }
+      });
     }
   }
 
@@ -83,14 +177,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
   Future<void> _triggerFetchTeamTasksIfNeeded({bool forceCall = false}) async {
     if (!mounted) return;
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-    final teamTasksForView = taskProvider.tasksForTeamView(widget.teamId);
-
-    if (forceCall || (teamTasksForView.isEmpty && !taskProvider.isLoadingList) || (taskProvider.error != null && teamTasksForView.isEmpty) ) {
-      debugPrint("[TeamDetailScreen] Triggering fetch for team tasks (teamId: ${widget.teamId}). Force: $forceCall");
-      await taskProvider.fetchTasks(teamId: widget.teamId, forceBackendCall: forceCall);
-    } else {
-      debugPrint("[TeamDetailScreen] Team tasks for ${widget.teamId} seem to be available or loading. View count: ${teamTasksForView.length}. No fetch needed unless forced.");
-    }
+    await taskProvider.fetchTasks(teamId: widget.teamId, forceBackendCall: forceCall);
   }
 
   void _navigateToTaskDetails(BuildContext context, Task task) {
@@ -153,8 +240,10 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
             teamId: taskToEdit.teamId!,
             members: members,
             taskToEdit: taskToEdit,
-            onTaskSaved: (updatedTask) {
-              debugPrint("TeamDetailScreen: Team task edited via dialog: ${updatedTask.title}");
+            onTaskSaved: (Task? updatedTask) {
+              if(updatedTask != null) {
+                debugPrint("TeamDetailScreen: Team task edited via dialog: ${updatedTask.title}");
+              }
             },
           );
         },
@@ -177,12 +266,14 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
         return TeamTaskEditDialog(
           teamId: teamId,
           members: members,
-          onTaskSaved: (newTask) {
-            debugPrint("TeamDetailScreen (mobile FAB): New team task saved (ID: ${newTask.taskId}), Team ID: ${newTask.teamId}");
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Задача "${newTask.title}" добавлена в команду!')),
-              );
+          onTaskSaved: (Task? newTask) {
+            if (newTask != null) {
+              debugPrint("TeamDetailScreen (mobile FAB): New team task saved (ID: ${newTask.taskId}), Team ID: ${newTask.teamId}");
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Задача "${newTask.title}" добавлена в команду!')),
+                );
+              }
             }
           },
         );
@@ -472,7 +563,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
   }
 
   void _showEditTeamInfoDialog(BuildContext context, TeamDetail team) {
-    // Проверяем, является ли текущий пользователь владельцем команды
     if (team.currentUserRole == TeamMemberRole.owner) {
       showDialog(
         context: context,
@@ -484,22 +574,18 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
         },
       );
     } else {
-      // Если не владелец, показываем сообщение
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Только владелец может редактировать информацию о команде.')),
       );
     }
   }
 
-  // Обновляем switch для _buildSectionContent
-  Widget _buildSectionContent(BuildContext context, TeamDetailSection section, TeamDetail team) { // Убрал лишние параметры
+  Widget _buildSectionContent(BuildContext context, TeamDetailSection section, TeamDetail team) {
     final authState = Provider.of<AuthState>(context, listen: false);
     final userRole = team.currentUserRole;
-    // Определяем права здесь, чтобы передавать их только один раз
     bool canEditTasks = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin || userRole == TeamMemberRole.editor;
     bool canManageMembers = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin;
     bool canManageTeamTags = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin || userRole == TeamMemberRole.editor;
-    // bool canManageTeamOverall = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin; // Используется в RightSidebar
 
     switch (section) {
       case TeamDetailSection.tasks:
@@ -510,91 +596,86 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
         return _buildMembersTab(context, team, canManageMembers, authState.currentUser?.userId ?? 0);
       case TeamDetailSection.teamTags:
         return _buildTeamTagsTab(context, team, canManageTeamTags);
-      case TeamDetailSection.management: // <<< ИЗМЕНЕН ENUM
-      // Для вкладки управления права определяются внутри _buildManagementTab
-        return _buildManagementTab(context, team); // <<< ИЗМЕНЕН МЕТОД
+      case TeamDetailSection.management:
+        return _buildManagementTab(context, team);
     }
+  }
+
+  Widget _buildMobileLayout(TeamDetail team) {
+    final bool canEditTasks = team.currentUserRole == TeamMemberRole.owner ||
+        team.currentUserRole == TeamMemberRole.admin ||
+        team.currentUserRole == TeamMemberRole.editor;
+
+    if (_tabs.isEmpty) {
+      return Scaffold(appBar: AppBar(title: Text(team.name)), body: const Center(child: CircularProgressIndicator()));
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(team.name, overflow: TextOverflow.ellipsis),
+        leading: (Provider.of<AppRouterDelegate>(context, listen: false).canPop())
+            ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
+            : null,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: _tabs,
+          isScrollable: true,
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: _tabViews,
+      ),
+      floatingActionButton: _tabController.index == 0 && canEditTasks
+          ? FloatingActionButton(
+        onPressed: () => _showCreateTeamTaskDialogForMobile(context, team.teamId),
+        tooltip: 'Добавить задачу',
+        child: const Icon(Icons.add_task_outlined),
+      )
+          : null,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isMobile = ResponsiveUtil.isMobile(context);
 
-    final teamProvider = Provider.of<TeamProvider>(context);
-    final sidebarState = Provider.of<SidebarStateProvider>(context);
-    // final authState = Provider.of<AuthState>(context, listen: false); // authState теперь получается внутри _buildSectionContent
+    return Consumer<TeamProvider>(
+      builder: (context, teamProvider, child) {
+        final team = teamProvider.currentTeamDetail;
 
-    final TeamDetail? team = teamProvider.currentTeamDetail;
+        if (teamProvider.isLoadingTeamDetail && team == null) {
+          return isMobile
+              ? Scaffold(appBar: AppBar(title: const Text('Загрузка команды...')), body: const Center(child: CircularProgressIndicator()))
+              : const Center(child: CircularProgressIndicator());
+        }
 
-    if (teamProvider.isLoadingTeamDetail && team == null) {
-      return isMobile
-          ? Scaffold(appBar: AppBar(title: const Text('Загрузка команды...')), body: const Center(child: CircularProgressIndicator()))
-          : const Center(child: CircularProgressIndicator());
-    }
+        if (teamProvider.error != null && team == null) {
+          return isMobile
+              ? Scaffold(appBar: AppBar(title: const Text('Ошибка')), body: Center(child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text("Ошибка загрузки команды: ${teamProvider.error}", textAlign: TextAlign.center),
+          )))
+              : Center(child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text("Ошибка загрузки команды: ${teamProvider.error}", textAlign: TextAlign.center),
+          ));
+        }
 
-    if (teamProvider.error != null && team == null) {
-      return isMobile
-          ? Scaffold(appBar: AppBar(title: const Text('Ошибка')), body: Center(child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Text("Ошибка загрузки команды: ${teamProvider.error}", textAlign: TextAlign.center),
-      )))
-          : Center(child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Text("Ошибка загрузки команды: ${teamProvider.error}", textAlign: TextAlign.center),
-      ));
-    }
+        if (team == null) {
+          return isMobile
+              ? Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()))
+              : const Center(child: CircularProgressIndicator());
+        }
 
-    if (team == null) {
-      if (widget.teamId != teamProvider.currentTeamDetail?.teamId && !teamProvider.isLoadingTeamDetail) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            Provider.of<TeamProvider>(context, listen: false).fetchTeamDetails(widget.teamId, forceRefresh: true);
-          }
-        });
-        return isMobile
-            ? Scaffold(body: const Center(child: CircularProgressIndicator()))
-            : const Center(child: CircularProgressIndicator());
-      }
-      return isMobile
-          ? Scaffold(appBar: AppBar(title: const Text('Команда не найдена')), body: const Center(child: Text('Не удалось загрузить детали команды.')))
-          : const Center(child: Text('Не удалось загрузить детали команды.'));
-    }
+        if (isMobile) {
+          return _buildMobileLayout(team);
+        }
 
-    // bool canManageTeamOverall = team.currentUserRole == TeamMemberRole.owner || team.currentUserRole == TeamMemberRole.admin;
-    // bool canEditTasksOverall = team.currentUserRole == TeamMemberRole.owner || team.currentUserRole == TeamMemberRole.admin || team.currentUserRole == TeamMemberRole.editor;
-
-    Widget sectionDisplayContent = _buildSectionContent(context, sidebarState.currentTeamDetailSection, team); // Передаем меньше параметров
-
-    if (isMobile) {
-      String appBarTitle;
-      switch(sidebarState.currentTeamDetailSection) {
-        case TeamDetailSection.tasks: appBarTitle = "${team.name} - Задачи"; break;
-        case TeamDetailSection.chat: appBarTitle = "${team.name} - Чат"; break;
-        case TeamDetailSection.members: appBarTitle = "${team.name} - Участники"; break;
-        case TeamDetailSection.teamTags: appBarTitle = "${team.name} - Теги"; break;
-        case TeamDetailSection.management: appBarTitle = "${team.name} - Управление"; break; // <<< ИЗМЕНЕНО
-      }
-
-      return Scaffold(
-        appBar: AppBar(
-          title: Text(appBarTitle, overflow: TextOverflow.ellipsis),
-          leading: (Provider.of<AppRouterDelegate>(context, listen: false).canPop())
-              ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
-              : null,
-        ),
-        body: sectionDisplayContent,
-        floatingActionButton: sidebarState.currentTeamDetailSection == TeamDetailSection.tasks &&
-            (team.currentUserRole == TeamMemberRole.owner || team.currentUserRole == TeamMemberRole.admin || team.currentUserRole == TeamMemberRole.editor)
-            ? FloatingActionButton(
-          onPressed: () => _showCreateTeamTaskDialogForMobile(context, team.teamId),
-          tooltip: 'Добавить задачу',
-          child: const Icon(Icons.add_task_outlined),
-        )
-            : null,
-      );
-    }
-
-    return sectionDisplayContent;
+        final sidebarState = Provider.of<SidebarStateProvider>(context);
+        return _buildSectionContent(context, sidebarState.currentTeamDetailSection, team);
+      },
+    );
   }
 
   Widget _buildTasksTab(BuildContext context, String currentUserId, String teamIdForDialog, bool canEditTasksOverall) {
@@ -869,18 +950,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     );
   }
 
-  // Переименовано _buildSettingsTab в _buildManagementTab
   Widget _buildManagementTab(BuildContext context, TeamDetail team) {
     final theme = Theme.of(context);
     final bool isMobile = ResponsiveUtil.isMobile(context);
     final teamProvider = Provider.of<TeamProvider>(context, listen:false);
     final currentUserRole = team.currentUserRole;
 
-    // Определяем права доступа для этой вкладки
-    final bool canEditTeamInfo = currentUserRole == TeamMemberRole.owner; // Только владелец
-    final bool canManageInvites = currentUserRole == TeamMemberRole.owner || currentUserRole == TeamMemberRole.admin; // Владелец и админ
-    final bool canLeaveTeam = currentUserRole != TeamMemberRole.owner; // Все, кроме владельца
-    final bool canDeleteTeam = currentUserRole == TeamMemberRole.owner; // Только владелец
+    final bool canEditTeamInfo = currentUserRole == TeamMemberRole.owner;
+    final bool canManageInvites = currentUserRole == TeamMemberRole.owner || currentUserRole == TeamMemberRole.admin;
+    final bool canLeaveTeam = currentUserRole != TeamMemberRole.owner;
+    final bool canDeleteTeam = currentUserRole == TeamMemberRole.owner;
 
     Widget teamAvatarWidget;
     if (team.imageUrl != null && team.imageUrl!.isNotEmpty) {
@@ -913,7 +992,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Секция с аватаром и названием команды (видна всем)
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -937,7 +1015,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
           ],
           const SizedBox(height: 24),
 
-          // Кнопка редактирования информации (только для владельца)
           if (canEditTeamInfo) ...[
             ElevatedButton.icon(
               icon: const Icon(Icons.edit_outlined),
@@ -951,7 +1028,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
             const Divider(height: 50, thickness: 0.8),
           ],
 
-          // Секция приглашений (для владельца и админа)
           if (canManageInvites) ...[
             Text("Приглашения", style: theme.textTheme.headlineSmall?.copyWith(fontSize: isMobile ? 20 : 22, fontWeight: FontWeight.w600)),
             const SizedBox(height: 16),
@@ -964,11 +1040,9 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
             const Divider(height: 50, thickness: 0.8),
           ],
 
-          // Секция действий с командой
           Text("Действия с командой", style: theme.textTheme.headlineSmall?.copyWith(color: theme.colorScheme.error, fontSize: isMobile ? 20 : 22, fontWeight: FontWeight.w600)),
           const SizedBox(height: 16),
 
-          // Кнопка "Покинуть команду" (для всех, кроме владельца)
           if (canLeaveTeam)
             OutlinedButton.icon(
               icon: const Icon(Icons.exit_to_app_rounded),
@@ -1008,9 +1082,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
               },
             ),
 
-          // Кнопка "Удалить команду" (только для владельца)
           if (canDeleteTeam) ...[
-            if (canLeaveTeam) const SizedBox(height: 12), // Отступ, если обе кнопки видны (хотя это разные условия)
+            if (canLeaveTeam) const SizedBox(height: 12),
             OutlinedButton.icon(
               icon: const Icon(Icons.delete_forever_outlined),
               label: const Text("Удалить команду"),
