@@ -1,11 +1,11 @@
 {
-    "name": "client",
-    "short_name": "client",
+    "name": "ToDo",
+    "short_name": "ToDo",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Cross-platform task tracking app",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
