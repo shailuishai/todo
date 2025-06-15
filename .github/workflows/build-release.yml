@@ -94,26 +94,36 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # 1. Клонируем репозиторий
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Устанавливаем Flutter SDK
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
+      # 3. Включаем поддержку сборки для Windows
       - name: Enable Windows desktop support
         run: flutter config --enable-windows-desktop
 
+      # 4. ОЧИЩАЕМ СТАРЫЕ СБОРКИ (НОВЫЙ ШАГ)
+      - name: Run Flutter Clean
+        run: flutter clean
+        working-directory: ./client
+
+      # 5. Запускаем flutter pub get
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: ./client
 
+      # 6. Собираем .exe файл
       - name: Build Windows executable
         run: flutter build windows --release
         working-directory: ./client
 
-      # !! ИСПРАВЛЕНИЕ: Создаем архив с правильным именем !!
+      # 7. Архивируем результат в ZIP для удобства
       - name: Archive Release folder
         run: Compress-Archive -Path client/build/windows/x64/runner/Release -DestinationPath ToDo_Windows-x86_64.zip
 
