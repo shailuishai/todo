@@ -47,20 +47,24 @@ jobs:
         run: flutter build linux --release
         working-directory: ./client
 
-      # 6. !! НОВЫЙ ШАГ: Готовим файлы для AppImage !!
+      # 6. !! ИСПРАВЛЕНИЕ: Готовим файлы для AppImage (добавляем иконку)
       - name: Prepare files for AppImage
         run: |
           APPDIR=client/build/linux/x64/release/bundle
-
-          cp client/assets/icon.png $APPDIR/icon.png
+          # Предполагаем, что иконка есть в client/assets/icons/logo.png
+          # Если у вас ее нет, создайте или используйте другой путь
+          cp client/assets/icons/logo.svg $APPDIR/ # Копируем SVG
+          # Создаем PNG из SVG для .desktop файла (если imagemagick установлен)
+          # Или просто положите готовый icon.png в assets
+          # sudo apt-get install -y imagemagick
+          # convert -background none $APPDIR/logo.svg $APPDIR/icon.png
 
           echo "[Desktop Entry]
-          Name=ToDo 
+          Name=ToDo
           Exec=client
-          Icon=icon
+          Icon=logo
           Type=Application
           Categories=Utility;" > $APPDIR/client.desktop
-
           chmod +x $APPDIR/client
 
       # 7. Скачиваем утилиту для создания AppImage
@@ -73,11 +77,15 @@ jobs:
       - name: Build AppImage
         run: ./appimagetool-x86_64.AppImage ./client/build/linux/x64/release/bundle/
 
-      # 9. Загружаем собранный файл как артефакт
+      # 9. !! ИСПРАВЛЕНИЕ: Переименовываем результат в ожидаемое имя !!
+      - name: Rename AppImage
+        run: mv ./client-x86_64.AppImage ./ToDo_Linux-x86_64.AppImage
+
+      # 10. Загружаем собранный файл как артефакт
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ToDo_Linux-x86_64
+          name: ToDo_Linux-x86_64.AppImage # Имя артефакта лучше делать как имя файла
           path: ./ToDo_Linux-x86_64.AppImage
 
   # --- ЗАДАЧА СБОРКИ ДЛЯ WINDOWS (.exe) ---
@@ -86,45 +94,34 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # 1. Клонируем репозиторий
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Устанавливаем Flutter SDK
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 3. Включаем поддержку сборки для Windows
       - name: Enable Windows desktop support
         run: flutter config --enable-windows-desktop
 
-      # 4. ОЧИЩАЕМ СТАРЫЕ СБОРКИ (НОВЫЙ ШАГ)
-      - name: Run Flutter Clean
-        run: flutter clean
-        working-directory: ./client
-
-      # 5. Запускаем flutter pub get
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: ./client
 
-      # 6. Собираем .exe файл
       - name: Build Windows executable
         run: flutter build windows --release
         working-directory: ./client
 
-      # 7. Архивируем результат в ZIP для удобства
+      # !! ИСПРАВЛЕНИЕ: Создаем архив с правильным именем !!
       - name: Archive Release folder
-        run: Compress-Archive -Path client/build/windows/x64/runner/Release -DestinationPath client/build/windows/x64/Release.zip
+        run: Compress-Archive -Path client/build/windows/x64/runner/Release -DestinationPath ToDo_Windows-x86_64.zip
 
-      # 8. Загружаем архив как артефакт
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ToDo_Windows-x86_64
-          path: client/build/windows/x64/ToDo_Windows-x86_64.zip
+          name: ToDo_Windows-x86_64.zip # Имя артефакта лучше делать как имя файла
+          path: ToDo_Windows-x86_64.zip
 
   # --- ЗАДАЧА СБОРКИ ДЛЯ ANDROID (.apk) ---
   build-android:
@@ -132,66 +129,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Клонируем репозиторий
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Устанавливаем Java (необходима для сборки под Android)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # 3. Устанавливаем Flutter SDK
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # 4. Запускаем flutter pub get
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: ./client
 
-      # 5. Собираем .apk файл
       - name: Build Android APK
         run: flutter build apk --release
         working-directory: ./client
 
-      # 6. Загружаем .apk как артефакт
+      # !! ИСПРАВЛЕНИЕ: Переименовываем стандартный app-release.apk в ToDo.apk !!
+      - name: Rename APK
+        run: mv client/build/app/outputs/flutter-apk/app-release.apk client/build/app/outputs/flutter-apk/ToDo.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ToDo
+          name: ToDo.apk # Имя артефакта лучше делать как имя файла
           path: client/build/app/outputs/flutter-apk/ToDo.apk
 
   # --- ЗАДАЧА СОЗДАНИЯ РЕЛИЗА ---
   create-release:
     name: Create or Update GitHub Release
-    # Эта задача зависит от успешного выполнения всех задач сборки
     needs: [build-linux, build-windows, build-android]
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Скачиваем все артефакты (AppImage, zip, apk), собранные в предыдущих задачах
+      # 1. Скачиваем все артефакты. Теперь они будут скачаны в текущую директорию.
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ./artifacts # Скачиваем в папку 'artifacts'
+          path: ./artifacts # Скачиваем все в одну папку artifacts
 
       # 2. Создаем или ОБНОВЛЯЕМ релиз на GitHub
       - name: Create or Update Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          # Используем постоянный тег "latest".
-          # Если релиз с таким тегом существует, он будет обновлен.
           tag_name: "latest"
-          # Даем релизу понятное имя
-          name: "Latest Build"
-          # Описание релиза. Добавим хеш коммита для информации.
+          name: "Latest Build (${{ github.sha }})"
           body: |
-            latest
-          # Файлы, которые нужно прикрепить.
-          files: |
-            ./artifacts/*/*
+            Автоматическая сборка из коммита: ${{ github.sha }}
+          # !! ИСПРАВЛЕНИЕ: Упрощенный путь к файлам !!
+          files: ./artifacts/*/* # Теперь этот путь будет работать, т.к. артефакты имеют имена файлов
