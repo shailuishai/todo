@@ -14,7 +14,7 @@ import '../core/routing/app_route_path.dart';
 import '../core/utils/responsive_utils.dart';
 import '../theme_provider.dart';
 import '../auth_state.dart';
-import '../widgets/sidebar/app_logo.dart';
+import '../widgets/sidebar/app_logo.dart'; // <<< ПРОВЕРЯЕМ, ЧТО ЛОГОТИП ИМПОРТИРОВАН
 
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
@@ -68,37 +68,41 @@ class _LandingScreenState extends State<LandingScreen> {
     }
   }
 
+  // <<< ИСПРАВЛЕНИЕ: Метод прокрутки >>>
   void _scrollToDownloadSection() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final context = _downloadSectionKey.currentContext;
-      if (context != null) {
-        Scrollable.ensureVisible(
-          context,
-          duration: const Duration(milliseconds: 600),
-          curve: Curves.easeInOutCubic,
-        );
-      } else {
-        debugPrint("[LandingScreen] Download section context not found. Cannot scroll.");
-      }
-    });
+    // Используем `Scrollable.ensureVisible` для плавной прокрутки к GlobalKey
+    final context = _downloadSectionKey.currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 800), // Чуть медленнее для плавности
+        curve: Curves.easeInOutCubic,
+      );
+    } else {
+      // Если контекст не найден сразу (например, секция еще не отрисована),
+      // можно попробовать прокрутить по пикселям, но `ensureVisible` надежнее.
+      debugPrint("[LandingScreen] Download section context not found. Cannot scroll.");
+    }
   }
 
   Future<void> _launchURL(String urlString) async {
     if (urlString == "#") {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Файл для скачивания еще не готов.')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Файл для скачивания еще не готов.')),
+        );
+      }
       return;
     }
 
     Uri url;
     if (urlString.startsWith('/')) {
-      url = Uri.parse(Uri.base.origin + urlString);
+      url = Uri.parse(html.window.location.origin + urlString);
     } else {
       url = Uri.parse(urlString);
     }
 
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) { // Используем externalApplication для скачивания
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Не удалось открыть ссылку: $url')),
@@ -124,6 +128,9 @@ class _LandingScreenState extends State<LandingScreen> {
     final bool isDark = themeProvider.isEffectivelyDark;
     final bool isMobile = ResponsiveUtil.isMobile(context);
 
+    // <<< ИСПРАВЛЕНИЕ: Создаем виджет логотипа один раз >>>
+    final appLogoWidget = AppLogo(currentSize: isMobile ? 32 : 40, isActuallyCollapsedState: false);
+
     return Scaffold(
       backgroundColor: colorScheme.background,
       appBar: AppBar(
@@ -131,34 +138,28 @@ class _LandingScreenState extends State<LandingScreen> {
         backgroundColor: colorScheme.surface.withOpacity(isMobile ? 0.90 : 0.75),
         elevation: 0,
         scrolledUnderElevation: 2.0,
-        titleSpacing: isMobile ? 0 : NavigationToolbar.kMiddleSpacing,
+        titleSpacing: isMobile ? 16 : NavigationToolbar.kMiddleSpacing,
         flexibleSpace: ClipRect(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
             child: Container(color: Colors.transparent),
           ),
         ),
-        title: Padding(
-          padding: EdgeInsets.only(left: isMobile ? 16.0 : 8.0),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: isMobile ? 64 : 128,
-                height: isMobile ? 64 : 128,
-                child: AppLogo(currentSize: isMobile ? 32 : 64, isActuallyCollapsedState: false),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // <<< ИСПРАВЛЕНИЕ: Используем созданный виджет логотипа >>>
+            appLogoWidget,
+            const SizedBox(width: 12),
+            Text(
+              "ToDo",
+              style: textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: isMobile ? 20 : 22,
+                color: colorScheme.onSurface,
               ),
-              const SizedBox(width: 10),
-              Text(
-                "ToDo",
-                style: textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  fontSize: isMobile ? 18 : 20,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
         actions: [
           if (!isMobile)
@@ -455,7 +456,6 @@ class _LandingScreenState extends State<LandingScreen> {
     String? downloadUrl;
     const String baseUrl = "https://github.com/shailuishai/todo/releases/download/latest/";
 
-    // <<< ИЗМЕНЕНИЕ: Указываем правильные URL >>>
     if (os == "Windows") {
       buttonText = "Скачать для Windows";
       buttonIcon = Icons.desktop_windows_rounded;
@@ -471,9 +471,8 @@ class _LandingScreenState extends State<LandingScreen> {
     } else if (os == "macOS") {
       buttonText = "Скачать для macOS";
       buttonIcon = Icons.laptop_mac_rounded;
-      downloadUrl = "#"; // Заглушка, т.к. сборки нет
+      downloadUrl = "#";
     }
-
 
     if (downloadUrl == null) {
       return const SizedBox.shrink();
@@ -497,13 +496,11 @@ class _LandingScreenState extends State<LandingScreen> {
     final textTheme = currentTheme.textTheme;
     const String baseUrl = "https://github.com/shailuishai/todo/releases/download/latest/";
 
-    DataCell buildCell(String text, {String? url, bool isHeader = false, bool isPlatform = false}) {
+    DataCell buildCell(String text, {String? url, bool isPlatform = false}) {
       Widget content = Text(
         text,
-        style: isHeader
-            ? textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600, color: colorScheme.onSurfaceVariant)
-            : (isPlatform ? textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500) : textTheme.bodyMedium),
-        textAlign: isPlatform ? TextAlign.left : TextAlign.center,
+        style: isPlatform ? textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500) : textTheme.bodyMedium,
+        textAlign: TextAlign.left,
       );
       if (url != null) {
         content = TextButton(
@@ -512,18 +509,22 @@ class _LandingScreenState extends State<LandingScreen> {
               padding: EdgeInsets.zero,
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              foregroundColor: colorScheme.primary
+              foregroundColor: colorScheme.primary,
+              alignment: Alignment.centerLeft
           ),
           child: Text(text, style: TextStyle(decoration: TextDecoration.underline, color: colorScheme.primary)),
         );
       }
-      return DataCell(Container(
-          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-          alignment: isPlatform ? Alignment.centerLeft : Alignment.center,
-          child: content));
+      // <<< ИСПРАВЛЕНИЕ: Выравнивание по левому краю для всех ячеек >>>
+      return DataCell(
+          Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+              child: content
+          )
+      );
     }
 
-    // <<< ИЗМЕНЕНИЕ: Актуализируем таблицу загрузок >>>
     return Theme(
       data: currentTheme.copyWith(
           dividerTheme: DividerThemeData(
@@ -539,8 +540,8 @@ class _LandingScreenState extends State<LandingScreen> {
         dataRowMaxHeight: 60,
         columns: const [
           DataColumn(label: Expanded(child: Text('Платформа', textAlign: TextAlign.left, style: TextStyle(fontWeight: FontWeight.bold)))),
-          DataColumn(label: Expanded(child: Text('Тип файла', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)))),
-          DataColumn(label: Expanded(child: Text('Скачать', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)))),
+          DataColumn(label: Expanded(child: Text('Тип файла', textAlign: TextAlign.left, style: TextStyle(fontWeight: FontWeight.bold)))),
+          DataColumn(label: Expanded(child: Text('Скачать', textAlign: TextAlign.left, style: TextStyle(fontWeight: FontWeight.bold)))),
         ],
         rows: [
           DataRow(cells: [
@@ -595,10 +596,9 @@ class _LandingScreenState extends State<LandingScreen> {
                 spacing: isMobile ? 10 : 20,
                 runSpacing: 8,
                 children: [
-                  TextButton(onPressed: () => _launchURL("mailto:support.todoapp@yandex.by?subject=Вопрос по ToDo App"), child: const Text("Контакты")),
-                  // <<< ИСПРАВЛЕНИЕ: Правильный путь к PDF >>>
+                  TextButton(onPressed: () => _launchURL("mailto:ToDoAppResp@yandex.by?subject=Вопрос по ToDo App"), child: const Text("Контакты")),
                   TextButton(onPressed: () => _launchURL("/assets/assets/documents/privacy_policy.pdf"), child: const Text("Политика (PDF)")),
-                  TextButton(onPressed: () => _launchURL("https://github.com/DIIASA/ToDo"), child: const Text("GitHub")),
+                  TextButton(onPressed: () => _launchURL("https://github.com/shailuishai/todo"), child: const Text("GitHub")),
                 ],
               ),
               const SizedBox(height: 20),
