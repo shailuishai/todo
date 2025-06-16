@@ -68,7 +68,6 @@ class _LandingScreenState extends State<LandingScreen> {
     }
   }
 
-  // <<< ИСПРАВЛЕННЫЙ МЕТОД >>>
   void _scrollToDownloadSection() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = _downloadSectionKey.currentContext;
@@ -85,7 +84,6 @@ class _LandingScreenState extends State<LandingScreen> {
   }
 
   Future<void> _launchURL(String urlString) async {
-    // Обработка заглушек для скачивания
     if (urlString == "#") {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Файл для скачивания еще не готов.')),
@@ -93,7 +91,6 @@ class _LandingScreenState extends State<LandingScreen> {
       return;
     }
 
-    // <<< ИСПРАВЛЕНИЕ: Формируем абсолютный URL для локальных файлов из папки web >>>
     Uri url;
     if (urlString.startsWith('/')) {
       url = Uri.parse(Uri.base.origin + urlString);
@@ -101,7 +98,7 @@ class _LandingScreenState extends State<LandingScreen> {
       url = Uri.parse(urlString);
     }
 
-    if (!await launchUrl(url, mode: LaunchMode.platformDefault)) {
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) { // Используем externalApplication для скачивания
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Не удалось открыть ссылку: $url')),
@@ -456,24 +453,27 @@ class _LandingScreenState extends State<LandingScreen> {
     String buttonText = "Скачать для Desktop";
     IconData buttonIcon = Icons.desktop_windows_rounded;
     String? downloadUrl;
+    const String baseUrl = "https://github.com/shailuishai/todo/releases/download/latest/";
 
+    // <<< ИЗМЕНЕНИЕ: Указываем правильные URL >>>
     if (os == "Windows") {
       buttonText = "Скачать для Windows";
       buttonIcon = Icons.desktop_windows_rounded;
-      downloadUrl = "#";
+      downloadUrl = "${baseUrl}ToDo_Windows-x86_64.zip";
     } else if (os == "Linux") {
       buttonText = "Скачать для Linux";
       buttonIcon = Icons.laptop_chromebook_rounded;
-      downloadUrl = "#";
-    } else if (os == "macOS") {
-      buttonText = "Скачать для macOS";
-      buttonIcon = Icons.laptop_mac_rounded;
-      downloadUrl = "#";
+      downloadUrl = "${baseUrl}ToDo_Linux-x86_64.AppImage";
     } else if (os == "Android") {
       buttonText = "Скачать для Android";
       buttonIcon = Icons.android_rounded;
-      downloadUrl = "#";
+      downloadUrl = "${baseUrl}ToDo.apk";
+    } else if (os == "macOS") {
+      buttonText = "Скачать для macOS";
+      buttonIcon = Icons.laptop_mac_rounded;
+      downloadUrl = "#"; // Заглушка, т.к. сборки нет
     }
+
 
     if (downloadUrl == null) {
       return const SizedBox.shrink();
@@ -495,6 +495,8 @@ class _LandingScreenState extends State<LandingScreen> {
 
   Widget _buildDownloadTable(BuildContext context, ThemeData currentTheme, ColorScheme colorScheme, bool isMobile) {
     final textTheme = currentTheme.textTheme;
+    const String baseUrl = "https://github.com/shailuishai/todo/releases/download/latest/";
+
     DataCell buildCell(String text, {String? url, bool isHeader = false, bool isPlatform = false}) {
       Widget content = Text(
         text,
@@ -521,6 +523,7 @@ class _LandingScreenState extends State<LandingScreen> {
           child: content));
     }
 
+    // <<< ИЗМЕНЕНИЕ: Актуализируем таблицу загрузок >>>
     return Theme(
       data: currentTheme.copyWith(
           dividerTheme: DividerThemeData(
@@ -536,39 +539,24 @@ class _LandingScreenState extends State<LandingScreen> {
         dataRowMaxHeight: 60,
         columns: const [
           DataColumn(label: Expanded(child: Text('Платформа', textAlign: TextAlign.left, style: TextStyle(fontWeight: FontWeight.bold)))),
-          DataColumn(label: Expanded(child: Text('Версия / Архитектура', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)))),
-          DataColumn(label: Expanded(child: Text('Файл', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)))),
+          DataColumn(label: Expanded(child: Text('Тип файла', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)))),
+          DataColumn(label: Expanded(child: Text('Скачать', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold)))),
         ],
         rows: [
           DataRow(cells: [
-            buildCell('Windows', isPlatform: true),
-            buildCell('Windows 10+ (x64)'),
-            buildCell('ToDo_win_x64.exe', url: '#'),
+            buildCell('Windows (x64)', isPlatform: true),
+            buildCell('ZIP Archive'),
+            buildCell('ToDo_Windows-x86_64.zip', url: '${baseUrl}ToDo_Windows-x86_64.zip'),
           ]),
           DataRow(cells: [
-            DataCell.empty,
-            buildCell('Windows 10+ (ARM64)'),
-            buildCell('ToDo_win_arm64.exe', url: '#'),
-          ]),
-          DataRow(cells: [
-            buildCell('Linux', isPlatform: true),
-            buildCell('DEB (x64)'),
-            buildCell('ToDo_linux_amd64.deb', url: '#'),
-          ]),
-          DataRow(cells: [
-            DataCell.empty,
-            buildCell('AppImage (x64)'),
-            buildCell('ToDo_linux_x64.AppImage', url: '#'),
-          ]),
-          DataRow(cells: [
-            DataCell.empty,
-            buildCell('Generic (ARM64)'),
-            buildCell('ToDo_linux_arm64.tar.gz', url: '#'),
+            buildCell('Linux (x64)', isPlatform: true),
+            buildCell('AppImage'),
+            buildCell('ToDo_Linux-x86_64.AppImage', url: '${baseUrl}ToDo_Linux-x86_64.AppImage'),
           ]),
           DataRow(cells: [
             buildCell('Android', isPlatform: true),
-            buildCell('Android 6.0+ (Universal)'),
-            buildCell('ToDo.apk', url: '#'),
+            buildCell('APK (Universal)'),
+            buildCell('ToDo.apk', url: '${baseUrl}ToDo.apk'),
           ]),
         ],
       ),
@@ -607,9 +595,9 @@ class _LandingScreenState extends State<LandingScreen> {
                 spacing: isMobile ? 10 : 20,
                 runSpacing: 8,
                 children: [
-                  // <<< ИСПРАВЛЕНИЕ КНОПОК >>>
                   TextButton(onPressed: () => _launchURL("mailto:support.todoapp@yandex.by?subject=Вопрос по ToDo App"), child: const Text("Контакты")),
-                  TextButton(onPressed: () => _launchURL("/documents/privacy_policy.pdf"), child: const Text("Политика (PDF)")),
+                  // <<< ИСПРАВЛЕНИЕ: Правильный путь к PDF >>>
+                  TextButton(onPressed: () => _launchURL("/assets/assets/documents/privacy_policy.pdf"), child: const Text("Политика (PDF)")),
                   TextButton(onPressed: () => _launchURL("https://github.com/DIIASA/ToDo"), child: const Text("GitHub")),
                 ],
               ),
