@@ -13,26 +13,23 @@ import (
 )
 
 // --- Заглушка для TeamService ---
-// В будущем это будет реальный сервис/usecase из модуля team
 type TeamService interface {
 	IsUserMember(userID, teamID uint) (bool, error)
 	CanUserCreateTeamTask(userID, teamID uint) (bool, error)
 	CanUserEditTeamTaskDetails(userID, teamID uint) (bool, error)
-	CanUserChangeTeamTaskStatus(userID, teamID uint, taskAssignedToUserID *uint) (bool, error) // Обычно все участники могут менять статус
+	CanUserChangeTeamTaskStatus(userID, teamID uint, taskAssignedToUserID *uint) (bool, error)
 	CanUserDeleteTeamTask(userID, teamID uint, taskCreatorID uint) (bool, error)
-	IsUserTeamMemberWithUserID(teamID uint, targetUserID uint) (bool, error) // Проверяет, является ли targetUserID участником teamID
+	IsUserTeamMemberWithUserID(teamID uint, targetUserID uint) (bool, error)
 }
-
-// --- Конец заглушки для TeamService ---
 
 // TaskUseCase реализует интерфейс task.UseCase
 type TaskUseCase struct {
-	repo        task.Repo // Интерфейс репозитория (который включает TaskDb и TaskCache)
+	repo        task.Repo
 	tagUC       tag.UseCase
 	tagRepo     tag.Repo
 	log         *slog.Logger
-	teamService TeamService   // Зависимость от сервиса команд (пока заглушка)
-	cacheTTL    time.Duration // TTL для кэша списков задач
+	teamService TeamService
+	cacheTTL    time.Duration
 }
 
 // NewTaskUseCase создает новый экземпляр TaskUseCase.
@@ -45,7 +42,7 @@ func NewTaskUseCase(
 	cacheTTL time.Duration,
 ) task.UseCase {
 	if cacheTTL == 0 {
-		cacheTTL = 5 * time.Minute // TTL по умолчанию для списков
+		cacheTTL = 5 * time.Minute
 	}
 	return &TaskUseCase{
 		repo:        repo,
@@ -57,7 +54,6 @@ func NewTaskUseCase(
 	}
 }
 
-// generateTasksCacheKey создает ключ для кэширования списка задач
 func (uc *TaskUseCase) generateTasksCacheKey(userID uint, reqParams task.GetTasksRequest) string {
 	var keyParts []string
 	keyParts = append(keyParts, "tasks", "user", strconv.FormatUint(uint64(userID), 10))
@@ -69,13 +65,12 @@ func (uc *TaskUseCase) generateTasksCacheKey(userID uint, reqParams task.GetTask
 	}
 
 	if reqParams.IsDeleted != nil && *reqParams.IsDeleted {
-		keyParts = append(keyParts, "deleted") // <<< ВАЖНО для корзины
+		keyParts = append(keyParts, "deleted")
 	}
 
 	if reqParams.Status != nil {
 		keyParts = append(keyParts, "status", *reqParams.Status)
 	}
-	// ... остальная часть функции без изменений
 	if reqParams.Priority != nil {
 		keyParts = append(keyParts, "priority", strconv.Itoa(*reqParams.Priority))
 	}
@@ -110,38 +105,36 @@ func (uc *TaskUseCase) updateTaskTags(taskID uint, userID uint, teamID *uint, us
 
 	if err := uc.tagRepo.ClearTaskTags(taskID); err != nil {
 		log.Error("failed to clear existing task tags", "error", err)
-		return task.ErrTaskInternal // Используем ошибку из task модуля
+		return task.ErrTaskInternal
 	}
 
-	// Обработка пользовательских тегов
 	if len(userTagIDs) > 0 {
-		if teamID != nil { // Командным задачам не должны присваиваться пользовательские теги (согласно нашему решению)
+		if teamID != nil {
 			log.Warn("attempted to assign user tags to a team task", "userTagIDs", userTagIDs)
-			return task.ErrTaskInvalidInput // Или более специфичная ошибка
+			return task.ErrTaskInvalidInput
 		}
 		validUserTags, err := uc.tagUC.ValidateAndGetUserTags(userID, userTagIDs)
 		if err != nil {
 			log.Error("user tags validation failed", "error", err, "userTagIDs", userTagIDs)
-			return err // Ошибку вернет TagUseCase (ErrTagNotFound или ErrTagInternal)
+			return err
 		}
 		for _, t := range validUserTags {
 			if err := uc.tagRepo.AddTaskUserTag(taskID, t.UserTagID); err != nil {
 				log.Error("failed to add user tag to task", "error", err, "userTagID", t.UserTagID)
-				return task.ErrTaskInternal // Ошибка привязки
+				return task.ErrTaskInternal
 			}
 		}
 	}
 
-	// Обработка командных тегов
 	if len(teamTagIDs) > 0 {
-		if teamID == nil { // Личным задачам не должны присваиваться командные теги
+		if teamID == nil {
 			log.Warn("attempted to assign team tags to a personal task", "teamTagIDs", teamTagIDs)
 			return task.ErrTaskInvalidInput
 		}
-		validTeamTags, err := uc.tagUC.ValidateAndGetTeamTags(*teamID, userID, teamTagIDs) // userID для проверки прав на команду
+		validTeamTags, err := uc.tagUC.ValidateAndGetTeamTags(*teamID, userID, teamTagIDs)
 		if err != nil {
 			log.Error("team tags validation failed", "error", err, "teamTagIDs", teamTagIDs)
-			return err // Ошибку вернет TagUseCase (ErrTagNotFound, ErrTeamAccessDenied или ErrTagInternal)
+			return err
 		}
 		for _, t := range validTeamTags {
 			if err := uc.tagRepo.AddTaskTeamTag(taskID, t.TeamTagID); err != nil {
@@ -153,7 +146,6 @@ func (uc *TaskUseCase) updateTaskTags(taskID uint, userID uint, teamID *uint, us
 	return nil
 }
 
-// --- Приватный метод для получения тегов задачи ---
 func (uc *TaskUseCase) getTaskTags(taskID uint, ownerOrTeamUserID uint, teamID *uint) ([]*tag.TagResponse, error) {
 	op := "TaskUseCase.getTaskTags"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)))
@@ -166,7 +158,7 @@ func (uc *TaskUseCase) getTaskTags(taskID uint, ownerOrTeamUserID uint, teamID *
 
 	var tagResponses []*tag.TagResponse
 	if len(taskTagLinks) == 0 {
-		return tagResponses, nil // Пустой срез, если нет тегов
+		return tagResponses, nil
 	}
 
 	var userTagIDs []uint
@@ -180,13 +172,9 @@ func (uc *TaskUseCase) getTaskTags(taskID uint, ownerOrTeamUserID uint, teamID *
 	}
 
 	if len(userTagIDs) > 0 {
-		// ownerOrTeamUserID здесь - это userID владельца задачи (для личных задач)
-		userTags, err := uc.tagUC.ValidateAndGetUserTags(ownerOrTeamUserID, userTagIDs) // Валидация не нужна, если мы просто читаем
-		// Лучше использовать прямой вызов репо, если GetUserTags в TagUseCase делает доп. проверки, не нужные здесь
-		// userTags, err := uc.tagRepo.FindUserTagsByIDs(ownerOrTeamUserID, userTagIDs)
+		userTags, err := uc.tagUC.ValidateAndGetUserTags(ownerOrTeamUserID, userTagIDs)
 		if err != nil {
 			log.Error("failed to get user tag details for task", "error", err)
-			// Продолжаем, чтобы не терять командные теги, но логируем
 		} else {
 			for _, ut := range userTags {
 				tagResponses = append(tagResponses, &tag.TagResponse{
@@ -198,9 +186,7 @@ func (uc *TaskUseCase) getTaskTags(taskID uint, ownerOrTeamUserID uint, teamID *
 	}
 
 	if len(teamTagIDs) > 0 && teamID != nil {
-		// ownerOrTeamUserID здесь - это userID текущего пользователя, для проверки доступа к командным тегам
 		teamTags, err := uc.tagUC.ValidateAndGetTeamTags(*teamID, ownerOrTeamUserID, teamTagIDs)
-		// teamTags, err := uc.tagRepo.FindTeamTagsByIDs(*teamID, teamTagIDs)
 		if err != nil {
 			log.Error("failed to get team tag details for task", "error", err)
 		} else {
@@ -235,7 +221,7 @@ func (uc *TaskUseCase) CreateTask(userID uint, req task.CreateTaskRequest) (*tas
 	if req.Priority != nil {
 		taskModel.Priority = *req.Priority
 	} else {
-		taskModel.Priority = 1 // Default priority
+		taskModel.Priority = 1
 	}
 
 	if req.TeamID != nil {
@@ -278,7 +264,6 @@ func (uc *TaskUseCase) CreateTask(userID uint, req task.CreateTaskRequest) (*tas
 		return nil, err
 	}
 
-	// Инвалидация кэша списков задач
 	uc.invalidateTaskListsCache(userID, createdTask.TeamID)
 	log.Info("task lists cache invalidated", slog.Uint64("userID", uint64(userID)), slog.Any("teamID", createdTask.TeamID))
 
@@ -292,15 +277,12 @@ func (uc *TaskUseCase) CreateTask(userID uint, req task.CreateTaskRequest) (*tas
 	return taskResp, nil
 }
 
-// buildTaskResponse - вспомогательная функция для сборки TaskResponse с тегами
 func (uc *TaskUseCase) buildTaskResponse(taskModel *task.Task, currentUserID uint) (*task.TaskResponse, error) {
 	if taskModel == nil {
 		return nil, nil
 	}
 	resp := task.ToTaskResponse(taskModel)
 
-	// Для личных задач ownerOrTeamUserID = taskModel.CreatedByUserID
-	// Для командных задач ownerOrTeamUserID = currentUserID (для проверки доступа к командным тегам)
 	var ownerOrTeamUserIDForTags uint
 	if taskModel.TeamID != nil {
 		ownerOrTeamUserIDForTags = currentUserID
@@ -310,7 +292,6 @@ func (uc *TaskUseCase) buildTaskResponse(taskModel *task.Task, currentUserID uin
 
 	tags, err := uc.getTaskTags(taskModel.TaskID, ownerOrTeamUserIDForTags, taskModel.TeamID)
 	if err != nil {
-		// Не фатальная ошибка, если теги не удалось загрузить, но логируем
 		uc.log.Warn("failed to get tags for task response", "taskID", taskModel.TaskID, "error", err)
 	}
 	resp.Tags = tags
@@ -327,7 +308,7 @@ func (uc *TaskUseCase) GetTask(taskID uint, userID uint) (*task.TaskResponse, er
 			return nil, errAccess
 		}
 		if cachedTaskModel.IsDeleted {
-			_ = uc.repo.DeleteTaskCache(taskID) // Удаляем из кэша, если помечен как удаленный
+			_ = uc.repo.DeleteTaskCache(taskID)
 			log.Warn("task found in cache but is deleted", "taskID", taskID)
 			return nil, task.ErrTaskNotFound
 		}
@@ -335,7 +316,7 @@ func (uc *TaskUseCase) GetTask(taskID uint, userID uint) (*task.TaskResponse, er
 		log.Info("task model retrieved from cache, building full response")
 		return uc.buildTaskResponse(cachedTaskModel, userID)
 	}
-	if err != nil && !errors.Is(err, task.ErrTaskNotFound) { // Log only if not "not found"
+	if err != nil && !errors.Is(err, task.ErrTaskNotFound) {
 		log.Error("error getting task from cache", "error", err)
 	}
 
@@ -353,7 +334,6 @@ func (uc *TaskUseCase) GetTask(taskID uint, userID uint) (*task.TaskResponse, er
 		return nil, errAccess
 	}
 
-	// Кэшируем только если не удалена (GetTaskByID уже должен это проверять, но для надежности)
 	if !dbTaskModel.IsDeleted {
 		if errSave := uc.repo.SaveTask(dbTaskModel); errSave != nil {
 			log.Warn("failed to save task model to cache", "error", errSave)
@@ -363,14 +343,13 @@ func (uc *TaskUseCase) GetTask(taskID uint, userID uint) (*task.TaskResponse, er
 	return uc.buildTaskResponse(dbTaskModel, userID)
 }
 
-// checkTaskAccess - приватный метод для проверки прав доступа к задаче
 func (uc *TaskUseCase) checkTaskAccess(taskModel *task.Task, userID uint) error {
-	if taskModel.TeamID == nil { // Личная задача
+	if taskModel.TeamID == nil {
 		if taskModel.CreatedByUserID != userID {
 			uc.log.Warn("access denied to personal task", "ownerID", taskModel.CreatedByUserID, "accessorID", userID)
 			return task.ErrTaskAccessDenied
 		}
-	} else { // Командная задача
+	} else {
 		isMember, teamErr := uc.teamService.IsUserMember(userID, *taskModel.TeamID)
 		if teamErr != nil {
 			uc.log.Error("failed to check team membership for task access", "error", teamErr)
@@ -385,7 +364,6 @@ func (uc *TaskUseCase) checkTaskAccess(taskModel *task.Task, userID uint) error 
 }
 
 func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]*task.TaskResponse, error) {
-	// ... (в основном без изменений, кроме передачи IsDeleted) ...
 	op := "TaskUseCase.GetTasks"
 	viewTypeToUse := task.ViewTypeDefault
 	if reqParams.ViewType != nil {
@@ -414,17 +392,17 @@ func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]
 		DeadlineFrom:     reqParams.DeadlineFrom,
 		DeadlineTo:       reqParams.DeadlineTo,
 		SearchQuery:      reqParams.Search,
-		IsDeleted:        reqParams.IsDeleted, // <<< ПЕРЕДАЕМ IsDeleted
+		IsDeleted:        reqParams.IsDeleted,
 	}
 	if reqParams.SortBy != nil {
 		paramsForRepo.SortBy = *reqParams.SortBy
 		if reqParams.SortOrder != nil {
 			paramsForRepo.SortOrder = *reqParams.SortOrder
 		} else {
-			paramsForRepo.SortOrder = task.SortDirectionAsc // По умолчанию ASC, если поле сортировки указано
+			paramsForRepo.SortOrder = task.SortDirectionAsc
 		}
 	} else {
-		paramsForRepo.SortBy = task.FieldUpdatedAt // Сортировка по умолчанию
+		paramsForRepo.SortBy = task.FieldUpdatedAt
 		paramsForRepo.SortOrder = task.SortDirectionDesc
 	}
 
@@ -437,7 +415,6 @@ func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]
 
 		var accessibleCachedTasks []*task.Task
 		for _, tm := range cachedTaskModels {
-			// Проверяем, не удалена ли задача в кеше, если мы ищем не удаленные
 			if reqParams.IsDeleted == nil || !*reqParams.IsDeleted {
 				if tm.IsDeleted {
 					continue
@@ -451,7 +428,7 @@ func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]
 			}
 			accessibleCachedTasks = append(accessibleCachedTasks, tm)
 		}
-		// ... остальная часть кеш-логики ...
+
 		responses := make([]*task.TaskResponse, 0, len(accessibleCachedTasks))
 		for _, tm := range accessibleCachedTasks {
 			resp, buildErr := uc.buildTaskResponse(tm, userID)
@@ -586,7 +563,6 @@ func (uc *TaskUseCase) PatchTask(taskID uint, userID uint, req task.PatchTaskReq
 	op := "TaskUseCase.PatchTask (PATCH)"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)), slog.Uint64("userID", uint64(userID)))
 
-	// Ищем задачу, включая удаленные, так как мы можем восстанавливать
 	existingTask, err := uc.repo.GetTaskByIDIncludingDeleted(taskID)
 	if err != nil {
 		if errors.Is(err, task.ErrTaskNotFound) {
@@ -595,7 +571,6 @@ func (uc *TaskUseCase) PatchTask(taskID uint, userID uint, req task.PatchTaskReq
 		return nil, task.ErrTaskInternal
 	}
 
-	// Если задача удалена, и запрос не на восстановление, запрещаем
 	if existingTask.IsDeleted && (req.IsDeleted == nil || *req.IsDeleted) {
 		return nil, task.ErrTaskAlreadyDeleted
 	}
@@ -630,22 +605,30 @@ func (uc *TaskUseCase) PatchTask(taskID uint, userID uint, req task.PatchTaskReq
 		madeChangesToDetails = true
 	}
 
-	// <<< НОВАЯ ЛОГИКА для is_deleted >>>
+	// <<< ИСПРАВЛЕНИЕ: Добавлена обработка статуса >>>
+	if req.Status != nil && *req.Status != existingTask.Status {
+		// Проверяем права на изменение ТОЛЬКО статуса
+		if errAccess := uc.checkTaskEditAccess(existingTask, userID, true); errAccess != nil {
+			return nil, errAccess
+		}
+		existingTask.Status = *req.Status
+		statusChanged = true
+	}
+
 	if req.IsDeleted != nil {
-		if !*req.IsDeleted { // Это запрос на ВОССТАНОВЛЕНИЕ
-			// Права на восстановление = права на редактирование
+		if !*req.IsDeleted {
 			if errAccess := uc.checkTaskEditAccess(existingTask, userID, false); errAccess != nil {
 				return nil, errAccess
 			}
 			existingTask.IsDeleted = false
 			existingTask.DeletedAt = nil
 			existingTask.DeletedByUserID = nil
-		} else if !existingTask.IsDeleted { // Это запрос на УДАЛЕНИЕ через PATCH
-			// Используем существующую логику DeleteTask для проверки прав
-			return nil, uc.DeleteTask(taskID, userID) // Делегируем удаление
+		} else if !existingTask.IsDeleted {
+			return nil, uc.DeleteTask(taskID, userID)
 		}
 	}
 
+	// Обновляем `CompletedAt` на основе (возможно нового) статуса
 	if existingTask.Status == "done" && existingTask.CompletedAt == nil {
 		now := time.Now()
 		existingTask.CompletedAt = &now
@@ -653,6 +636,7 @@ func (uc *TaskUseCase) PatchTask(taskID uint, userID uint, req task.PatchTaskReq
 	if existingTask.Status != "done" && existingTask.CompletedAt != nil {
 		existingTask.CompletedAt = nil
 	}
+	// <<< КОНЕЦ ИСПРАВЛЕНИЯ >>>
 
 	updatedTaskModel, err := uc.repo.UpdateTask(existingTask)
 	if err != nil {
@@ -689,14 +673,13 @@ func (uc *TaskUseCase) PatchTask(taskID uint, userID uint, req task.PatchTaskReq
 	return uc.buildTaskResponse(updatedTaskModel, userID)
 }
 
-// checkTaskEditAccess - приватный метод для проверки прав на редактирование/изменение статуса
 func (uc *TaskUseCase) checkTaskEditAccess(taskToEdit *task.Task, userID uint, statusOnly bool) error {
-	if taskToEdit.TeamID == nil { // Личная задача
+	if taskToEdit.TeamID == nil {
 		if taskToEdit.CreatedByUserID != userID {
 			uc.log.Warn("user is not owner of personal task for edit/patch")
 			return task.ErrTaskAccessDenied
 		}
-	} else { // Командная задача
+	} else {
 		teamID := *taskToEdit.TeamID
 		if statusOnly {
 			canChangeStatus, teamErr := uc.teamService.CanUserChangeTeamTaskStatus(userID, teamID, taskToEdit.AssignedToUserID)
@@ -723,7 +706,6 @@ func (uc *TaskUseCase) checkTaskEditAccess(taskToEdit *task.Task, userID uint, s
 	return nil
 }
 
-// invalidateTaskListsCache - приватный метод для инвалидации кэшей списков задач
 func (uc *TaskUseCase) invalidateTaskListsCache(userID uint, teamID *uint) {
 	keysToInvalidate := []string{
 		uc.generateTasksCacheKey(userID, task.GetTasksRequest{TeamID: nil}),
@@ -731,17 +713,6 @@ func (uc *TaskUseCase) invalidateTaskListsCache(userID uint, teamID *uint) {
 	if teamID != nil {
 		keysToInvalidate = append(keysToInvalidate, uc.generateTasksCacheKey(userID, task.GetTasksRequest{TeamID: teamID}))
 	}
-
-	// Дополнительно инвалидируем ключи без фильтров, но с разными сортировками, если они часто используются
-	// Это упрощенный вариант, можно сделать более умную инвалидацию по паттерну, если Redis поддерживает
-	// Пример:
-	// commonSorts := []task.TaskSortableField{task.FieldCreatedAt, task.FieldPriority, task.FieldDeadline}
-	// for _, sortBy := range commonSorts {
-	// 	keysToInvalidate = append(keysToInvalidate, uc.generateTasksCacheKey(userID, task.GetTasksRequest{TeamID: nil, SortBy: &sortBy, SortOrder: task.SortDirectionDesc}))
-	// 	if teamID != nil {
-	// 		keysToInvalidate = append(keysToInvalidate, uc.generateTasksCacheKey(userID, task.GetTasksRequest{TeamID: teamID, SortBy: &sortBy, SortOrder: task.SortDirectionDesc}))
-	// 	}
-	// }
 
 	if err := uc.repo.InvalidateTasks(keysToInvalidate...); err != nil {
 		uc.log.Warn("failed to invalidate tasks list cache", "error", err, "keys", keysToInvalidate)
@@ -754,7 +725,6 @@ func (uc *TaskUseCase) DeleteTask(taskID uint, userID uint) error {
 	op := "TaskUseCase.DeleteTask"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)), slog.Uint64("userID", uint64(userID)))
 
-	// Используем GetTaskByID, т.к. удалять можно только активные задачи
 	taskToDelete, err := uc.repo.GetTaskByID(taskID, userID)
 	if err != nil {
 		if errors.Is(err, task.ErrTaskNotFound) {
@@ -787,7 +757,7 @@ func (uc *TaskUseCase) DeleteTask(taskID uint, userID uint) error {
 		return err
 	}
 	_ = uc.repo.DeleteTaskCache(taskID)
-	// Инвалидируем кэш для активных и удаленных задач
+
 	uc.invalidateTaskListsCache(userID, taskToDelete.TeamID)
 	uc.invalidateDeletedTasksCache(userID, taskToDelete.TeamID)
 
@@ -795,14 +765,13 @@ func (uc *TaskUseCase) DeleteTask(taskID uint, userID uint) error {
 	return nil
 }
 
-// <<< НОВАЯ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ >>>
 func (uc *TaskUseCase) checkTaskDeleteAccess(taskToDelete *task.Task, userID uint) error {
-	if taskToDelete.TeamID == nil { // Личная задача
+	if taskToDelete.TeamID == nil {
 		if taskToDelete.CreatedByUserID != userID {
 			uc.log.Warn("user is not owner of personal task for delete")
 			return task.ErrTaskAccessDenied
 		}
-	} else { // Командная задача
+	} else {
 		canDelete, teamErr := uc.teamService.CanUserDeleteTeamTask(userID, *taskToDelete.TeamID, taskToDelete.CreatedByUserID)
 		if teamErr != nil {
 			uc.log.Error("failed to check team delete permission", "error", teamErr)
@@ -816,7 +785,6 @@ func (uc *TaskUseCase) checkTaskDeleteAccess(taskToDelete *task.Task, userID uin
 	return nil
 }
 
-// <<< НОВАЯ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ >>>
 func (uc *TaskUseCase) invalidateDeletedTasksCache(userID uint, teamID *uint) {
 	isDeleted := true
 	keysToInvalidate := []string{
@@ -833,7 +801,6 @@ func (uc *TaskUseCase) invalidateDeletedTasksCache(userID uint, teamID *uint) {
 	}
 }
 
-// <<< НОВЫЙ МЕТОД >>>
 func (uc *TaskUseCase) RestoreTask(taskID uint, userID uint) (*task.TaskResponse, error) {
 	op := "TaskUseCase.RestoreTask"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)), slog.Uint64("userID", uint64(userID)))
@@ -848,10 +815,9 @@ func (uc *TaskUseCase) RestoreTask(taskID uint, userID uint) (*task.TaskResponse
 
 	if !existingTask.IsDeleted {
 		log.Warn("attempted to restore an already active task")
-		return nil, task.ErrTaskInvalidInput // Задача не удалена
+		return nil, task.ErrTaskInvalidInput
 	}
 
-	// Права на восстановление = права на редактирование
 	if errAccess := uc.checkTaskEditAccess(existingTask, userID, false); errAccess != nil {
 		return nil, errAccess
 	}
@@ -865,7 +831,7 @@ func (uc *TaskUseCase) RestoreTask(taskID uint, userID uint) (*task.TaskResponse
 		return nil, err
 	}
 
-	_ = uc.repo.DeleteTaskCache(taskID) // Удаляем из кэша, если он там был с флагом is_deleted=true
+	_ = uc.repo.DeleteTaskCache(taskID)
 	uc.invalidateTaskListsCache(userID, restoredTask.TeamID)
 	uc.invalidateDeletedTasksCache(userID, restoredTask.TeamID)
 
@@ -873,7 +839,6 @@ func (uc *TaskUseCase) RestoreTask(taskID uint, userID uint) (*task.TaskResponse
 	return uc.buildTaskResponse(restoredTask, userID)
 }
 
-// <<< НОВЫЙ МЕТОД >>>
 func (uc *TaskUseCase) DeleteTaskPermanently(taskID uint, userID uint) error {
 	op := "TaskUseCase.DeleteTaskPermanently"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)), slog.Uint64("userID", uint64(userID)))
@@ -883,7 +848,6 @@ func (uc *TaskUseCase) DeleteTaskPermanently(taskID uint, userID uint) error {
 		return err
 	}
 
-	// Права на перманентное удаление = права на обычное удаление
 	if errAccess := uc.checkTaskDeleteAccess(taskToDelete, userID); errAccess != nil {
 		return errAccess
 	}
@@ -892,9 +856,8 @@ func (uc *TaskUseCase) DeleteTaskPermanently(taskID uint, userID uint) error {
 		return err
 	}
 
-	// Инвалидация кэшей
 	_ = uc.repo.DeleteTaskCache(taskID)
-	uc.invalidateDeletedTasksCache(userID, taskToDelete.TeamID) // Инвалидируем кэш корзины
+	uc.invalidateDeletedTasksCache(userID, taskToDelete.TeamID)
 
 	log.Info("task permanently deleted successfully")
 	return nil
