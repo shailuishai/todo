@@ -77,7 +77,15 @@ class _LandingScreenState extends State<LandingScreen> {
         curve: Curves.easeInOutCubic,
       );
     } else {
-      debugPrint("[LandingScreen] Download section context not found. Cannot scroll.");
+      // <<< ИСПРАВЛЕНИЕ: Альтернативный метод, если контекст не найден >>>
+      // Прокручиваем на примерную высоту двух секций.
+      // Это не идеально, но сработает в большинстве случаев.
+      _scrollController.animateTo(
+        1400, // Примерное значение, можно подобрать точнее
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeInOutCubic,
+      );
+      debugPrint("[LandingScreen] Download section context not found. Scrolling by offset.");
     }
   }
 
@@ -93,7 +101,6 @@ class _LandingScreenState extends State<LandingScreen> {
 
     Uri url;
     if (urlString.startsWith('/')) {
-      // <<< ИСПРАВЛЕНИЕ: Проверяем origin на null >>>
       final origin = html.window.location.origin;
       if (origin == null) {
         debugPrint("Could not determine window.location.origin. Cannot launch URL.");
@@ -501,6 +508,7 @@ class _LandingScreenState extends State<LandingScreen> {
     final textTheme = currentTheme.textTheme;
     const String baseUrl = "https://github.com/shailuishai/todo/releases/download/latest/";
 
+    // <<< ИСПРАВЛЕНИЕ: Функция для создания ячейки с выравниванием по левому краю >>>
     DataCell buildCell(String text, {String? url, bool isPlatform = false}) {
       Widget content = Text(
         text,
@@ -514,16 +522,16 @@ class _LandingScreenState extends State<LandingScreen> {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               foregroundColor: colorScheme.primary,
+              // Выравнивание текста внутри кнопки
               alignment: Alignment.centerLeft
           ),
           child: Text(text, style: TextStyle(decoration: TextDecoration.underline, color: colorScheme.primary)),
         );
       }
       return DataCell(
-          Container(
-              alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-              child: content
+          SizedBox( // Оборачиваем в SizedBox, чтобы занять всю ширину ячейки
+            width: double.infinity,
+            child: content,
           )
       );
     }
@@ -541,6 +549,7 @@ class _LandingScreenState extends State<LandingScreen> {
         headingRowHeight: 40,
         dataRowMinHeight: 48,
         dataRowMaxHeight: 60,
+        // <<< ИСПРАВЛЕНИЕ: Выравниваем заголовки по левому краю >>>
         columns: const [
           DataColumn(label: Expanded(child: Text('Платформа', textAlign: TextAlign.left, style: TextStyle(fontWeight: FontWeight.bold)))),
           DataColumn(label: Expanded(child: Text('Тип файла', textAlign: TextAlign.left, style: TextStyle(fontWeight: FontWeight.bold)))),
@@ -600,7 +609,7 @@ class _LandingScreenState extends State<LandingScreen> {
                 runSpacing: 8,
                 children: [
                   TextButton(onPressed: () => _launchURL("mailto:ToDoAppResp@yandex.by?subject=Вопрос по ToDo App"), child: const Text("Контакты")),
-                  TextButton(onPressed: () => _launchURL("/assets/assets/documents/privacy_policy.pdf"), child: const Text("Политика (PDF)")),
+                  TextButton(onPressed: () => _launchURL("/assets/assets/documents/privacy_policy.pdf"), child: const Text("Политика конфиденциальности")),
                   TextButton(onPressed: () => _launchURL("https://github.com/shailuishai/todo"), child: const Text("GitHub")),
                 ],
               ),
