@@ -14,7 +14,7 @@ import '../core/routing/app_route_path.dart';
 import '../core/utils/responsive_utils.dart';
 import '../theme_provider.dart';
 import '../auth_state.dart';
-import '../widgets/sidebar/app_logo.dart'; // <<< ПРОВЕРЯЕМ, ЧТО ЛОГОТИП ИМПОРТИРОВАН
+import '../widgets/sidebar/app_logo.dart';
 
 class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
@@ -68,19 +68,15 @@ class _LandingScreenState extends State<LandingScreen> {
     }
   }
 
-  // <<< ИСПРАВЛЕНИЕ: Метод прокрутки >>>
   void _scrollToDownloadSection() {
-    // Используем `Scrollable.ensureVisible` для плавной прокрутки к GlobalKey
     final context = _downloadSectionKey.currentContext;
     if (context != null) {
       Scrollable.ensureVisible(
         context,
-        duration: const Duration(milliseconds: 800), // Чуть медленнее для плавности
+        duration: const Duration(milliseconds: 600),
         curve: Curves.easeInOutCubic,
       );
     } else {
-      // Если контекст не найден сразу (например, секция еще не отрисована),
-      // можно попробовать прокрутить по пикселям, но `ensureVisible` надежнее.
       debugPrint("[LandingScreen] Download section context not found. Cannot scroll.");
     }
   }
@@ -97,7 +93,18 @@ class _LandingScreenState extends State<LandingScreen> {
 
     Uri url;
     if (urlString.startsWith('/')) {
-      url = Uri.parse(html.window.location.origin + urlString);
+      // <<< ИСПРАВЛЕНИЕ: Проверяем origin на null >>>
+      final origin = html.window.location.origin;
+      if (origin == null) {
+        debugPrint("Could not determine window.location.origin. Cannot launch URL.");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Не удалось определить адрес сайта.')),
+          );
+        }
+        return;
+      }
+      url = Uri.parse(origin + urlString);
     } else {
       url = Uri.parse(urlString);
     }
@@ -128,7 +135,6 @@ class _LandingScreenState extends State<LandingScreen> {
     final bool isDark = themeProvider.isEffectivelyDark;
     final bool isMobile = ResponsiveUtil.isMobile(context);
 
-    // <<< ИСПРАВЛЕНИЕ: Создаем виджет логотипа один раз >>>
     final appLogoWidget = AppLogo(currentSize: isMobile ? 32 : 40, isActuallyCollapsedState: false);
 
     return Scaffold(
@@ -148,7 +154,6 @@ class _LandingScreenState extends State<LandingScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // <<< ИСПРАВЛЕНИЕ: Используем созданный виджет логотипа >>>
             appLogoWidget,
             const SizedBox(width: 12),
             Text(
@@ -500,7 +505,6 @@ class _LandingScreenState extends State<LandingScreen> {
       Widget content = Text(
         text,
         style: isPlatform ? textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500) : textTheme.bodyMedium,
-        textAlign: TextAlign.left,
       );
       if (url != null) {
         content = TextButton(
@@ -515,7 +519,6 @@ class _LandingScreenState extends State<LandingScreen> {
           child: Text(text, style: TextStyle(decoration: TextDecoration.underline, color: colorScheme.primary)),
         );
       }
-      // <<< ИСПРАВЛЕНИЕ: Выравнивание по левому краю для всех ячеек >>>
       return DataCell(
           Container(
               alignment: Alignment.centerLeft,
