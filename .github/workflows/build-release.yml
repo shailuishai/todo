@@ -79,7 +79,9 @@ jobs:
 
       # 9. !! ИСПРАВЛЕНИЕ: Переименовываем результат в ожидаемое имя !!
       - name: Rename AppImage
-        run: mv ./client-x86_64.AppImage ./ToDo_Linux-x86_64.AppImage
+        run: |
+          ls
+          mv ./ToDo-x86_64.AppImage ./ToDo_Linux-x86_64.AppImage
 
       # 10. Загружаем собранный файл как артефакт
       - name: Upload AppImage artifact
