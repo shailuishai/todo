@@ -585,7 +585,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         // <<< ИСПРАВЛЕНИЕ: primary: true, чтобы AppBar сам управлял отступом под статус-бар >>>
         primary: true,
         title: null,
-        backgroundColor: Theme.of(context).colorScheme.surface,
+        backgroundColor: Theme.of(context).colorScheme.background,
         elevation: 1,
         leading: (Provider.of<AppRouterDelegate>(context, listen: false).canPop())
             ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
