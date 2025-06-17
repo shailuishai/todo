@@ -6,7 +6,6 @@ import 'dart:collection';
 import 'models/team_model.dart';
 import 'services/api_service.dart';
 import 'auth_state.dart';
-// Импортируем новые виджеты диалогов
 import '../widgets/team/create_team_dialog_widget.dart';
 import '../widgets/team/join_team_dialog_widget.dart';
 
@@ -136,7 +135,6 @@ class TeamProvider with ChangeNotifier {
     if (team == null) return;
     final index = _myTeams.indexWhere((t) => t.teamId == team.teamId);
     if (index != -1) {
-      // Создаем новый экземпляр Team на основе TeamDetail, если нужно
       _myTeams[index] = team is TeamDetail
           ? Team(
           teamId: team.teamId, name: team.name, description: team.description,
@@ -148,7 +146,6 @@ class TeamProvider with ChangeNotifier {
     }
   }
 
-
   Future<Team?> updateTeam(String teamId, UpdateTeamDetailsRequest details, {Map<String, dynamic>? imageFile}) async {
     if (!_authState.isLoggedIn) return _handleAuthErrorAndReturnNull();
     _isProcessingTeamAction = true;
@@ -157,7 +154,8 @@ class TeamProvider with ChangeNotifier {
     Team? updatedTeam;
     try {
       updatedTeam = await _apiService.updateTeam(teamId, details, imageFile: imageFile);
-      _updateTeamInList(updatedTeam);
+      // <<< ИСПРАВЛЕНИЕ: принудительно обновляем и детали, и список >>>
+      await fetchMyTeams(); // Обновляем общий список
       if (_currentTeamDetail?.teamId == teamId) {
         await fetchTeamDetails(teamId, forceRefresh: true);
       }
@@ -175,9 +173,9 @@ class TeamProvider with ChangeNotifier {
     bool success = false;
     try {
       await _apiService.deleteTeam(teamId);
-      _myTeams.removeWhere((t) => t.teamId == teamId);
+      // <<< ИСПРАВЛЕНИЕ: Полная перезагрузка списка команд >>>
+      await fetchMyTeams();
       if (_currentTeamDetail?.teamId == teamId) _currentTeamDetail = null;
-      if (_myTeams.isEmpty && _currentSearchQuery != null) _currentSearchQuery = null;
       success = true;
     } catch (e) { _handleGenericError(e, "удаления команды"); }
     _isProcessingTeamAction = false;
@@ -209,9 +207,9 @@ class TeamProvider with ChangeNotifier {
     bool success = false;
     try {
       await _apiService.leaveTeam(teamId);
-      _myTeams.removeWhere((t) => t.teamId == teamId);
+      // <<< ИСПРАВЛЕНИЕ: Полная перезагрузка списка команд >>>
+      await fetchMyTeams();
       if (_currentTeamDetail?.teamId == teamId) _currentTeamDetail = null;
-      if (_myTeams.isEmpty && _currentSearchQuery != null) _currentSearchQuery = null;
       success = true;
     } catch (e) { _handleGenericError(e, "выхода из команды"); }
     _isProcessingTeamAction = false;
@@ -233,7 +231,6 @@ class TeamProvider with ChangeNotifier {
     return inviteResponse;
   }
 
-  // <<< МЕТОД ДЛЯ ОБНОВЛЕНИЯ РОЛИ УЧАСТНИКА >>>
   Future<bool> updateTeamMemberRole(String teamId, int targetUserId, TeamMemberRole newRole) async {
     if (!_authState.isLoggedIn) { _handleAuthError(); return false; }
     if (_currentTeamDetail == null || _currentTeamDetail!.teamId != teamId) {
@@ -247,9 +244,9 @@ class TeamProvider with ChangeNotifier {
     bool success = false;
     try {
       await _apiService.updateTeamMemberRole(teamId, targetUserId, newRole.toJson());
-      // После успешного обновления перезагружаем детали команды, чтобы обновить список участников
+      // <<< ИСПРАВЛЕНИЕ: Принудительное обновление деталей >>>
       await fetchTeamDetails(teamId, forceRefresh: true);
-      success = _error == null; // Если fetchTeamDetails не установил ошибку
+      success = _error == null;
     } catch (e) {
       _handleGenericError(e, "обновления роли участника");
     }
@@ -258,7 +255,6 @@ class TeamProvider with ChangeNotifier {
     return success;
   }
 
-  // <<< МЕТОД ДЛЯ УДАЛЕНИЯ УЧАСТНИКА ИЗ КОМАНДЫ >>>
   Future<bool> removeTeamMember(String teamId, int targetUserId) async {
     if (!_authState.isLoggedIn) { _handleAuthError(); return false; }
     if (_currentTeamDetail == null || _currentTeamDetail!.teamId != teamId) {
@@ -272,7 +268,7 @@ class TeamProvider with ChangeNotifier {
     bool success = false;
     try {
       await _apiService.removeTeamMember(teamId, targetUserId);
-      // После успешного удаления перезагружаем детали команды
+      // <<< ИСПРАВЛЕНИЕ: Принудительное обновление деталей >>>
       await fetchTeamDetails(teamId, forceRefresh: true);
       success = _error == null;
     } catch (e) {
@@ -282,7 +278,6 @@ class TeamProvider with ChangeNotifier {
     notifyListeners();
     return success;
   }
-
 
   Future<void> displayCreateTeamDialog(BuildContext context) async {
     if (!_authState.isLoggedIn) {
