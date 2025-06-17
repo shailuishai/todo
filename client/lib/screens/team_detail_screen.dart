@@ -1,8 +1,10 @@
-import '../core/utils/responsive_utils.dart';
-import '../models/task_model.dart';
-import '../task_provider.dart';
-import '../widgets/kanban_board/kanban_board_widget.dart';
-import '../widgets/tasks/mobile_task_list_widget.dart';
+import 'package:ToDo/core/utils/responsive_utils.dart';
+import 'package:ToDo/models/task_model.dart';
+import 'package:ToDo/task_provider.dart';
+import 'package:ToDo/widgets/kanban_board/kanban_board_widget.dart';
+import 'package:ToDo/widgets/tasks/TaskFilterDialog.dart';
+import 'package:ToDo/widgets/tasks/TaskSortDialog.dart';
+import 'package:ToDo/widgets/tasks/mobile_task_list_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -23,7 +25,6 @@ import '../widgets/common/user_avatar.dart';
 import '../widgets/team/change_member_role_dialog.dart';
 import '../widgets/team/edit_team_info_dialog.dart';
 import '../widgets/team/team_chat_widget.dart';
-
 
 class TeamDetailScreen extends StatefulWidget {
   final String teamId;
@@ -70,6 +71,9 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     final teamDetail = teamProvider.currentTeamDetail;
     if (teamDetail == null) return;
 
+    final oldIndex = _tabController.index;
+    _tabController.dispose();
+
     _tabs.clear();
     _tabViews.clear();
 
@@ -85,25 +89,25 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     }
     _addTab(TeamDetailSection.management, "Управление", Icons.tune_rounded);
 
-    _tabController.dispose();
-    _tabController = TabController(length: _tabs.length, vsync: this, initialIndex: _tabController.previousIndex);
+    _tabController = TabController(
+      length: _tabs.length,
+      vsync: this,
+      initialIndex: (oldIndex >= 0 && oldIndex < _tabs.length) ? oldIndex : 0,
+    );
     _tabController.addListener(_onTabSelected);
-    // Синхронизируем начальный индекс с состоянием из провайдера
-    final section = _sidebarStateProvider.currentTeamDetailSection;
-    final tabIndex = _tabs.indexWhere((tab) => (tab.key as ValueKey<TeamDetailSection>?)?.value == section);
-    if (tabIndex != -1) {
-      _tabController.index = tabIndex;
-    }
+
+    _onSidebarSectionChanged();
   }
 
   void _onTabSelected() {
-    if (!_tabController.indexIsChanging) {
+    if (!_tabController.indexIsChanging && mounted) {
       if (_tabController.index < _tabs.length) {
         final tag = _tabs[_tabController.index].key as ValueKey<TeamDetailSection>?;
         if (tag != null) {
           _sidebarStateProvider.setCurrentTeamDetailSection(tag.value);
         }
       }
+      setState(() {}); // Перерисовываем для обновления FAB
     }
   }
 
@@ -121,8 +125,15 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   void _addTab(TeamDetailSection section, String title, IconData icon) {
     _tabs.add(Tab(
       key: ValueKey(section),
-      text: title,
-      icon: Icon(icon),
+      height: 60, // Увеличиваем высоту для иконки и текста
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon),
+          const SizedBox(height: 4),
+          Text(title, style: const TextStyle(fontSize: 11)),
+        ],
+      ),
     ));
     _tabViews.add(Builder(builder: (context) {
       final teamDetail = Provider.of<TeamProvider>(context).currentTeamDetail;
@@ -144,7 +155,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
     final teamProvider = Provider.of<TeamProvider>(context, listen: false);
     if (teamProvider.currentTeamDetail?.teamId != widget.teamId && !teamProvider.isLoadingTeamDetail) {
       debugPrint("[TeamDetailScreen] teamId in provider ${teamProvider.currentTeamDetail?.teamId} differs from widget.teamId ${widget.teamId}. Refetching team details.");
@@ -198,15 +208,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
             title: const Text('Удалить задачу?'),
             content: Text('Вы уверены, что хотите переместить задачу "${taskToDelete.title}" в корзину?'),
             actions: <Widget>[
-              TextButton(
-                child: const Text('Отмена'),
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-              ),
-              TextButton(
-                style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
-                child: const Text('Удалить'),
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-              ),
+              TextButton(child: const Text('Отмена'),onPressed: () => Navigator.of(dialogContext).pop(false)),
+              TextButton(style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error), child: const Text('Удалить'), onPressed: () => Navigator.of(dialogContext).pop(true)),
             ],
           );
         },
@@ -216,15 +219,13 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
             if (success && mounted) {
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Задача '${taskToDelete.title}' удалена.")));
             } else if (mounted && Provider.of<TaskProvider>(context, listen: false).error != null) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Ошибка удаления задачи: ${Provider.of<TaskProvider>(context, listen: false).error}"), backgroundColor: Colors.red,));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Ошибка удаления задачи: ${Provider.of<TaskProvider>(context, listen: false).error}"), backgroundColor: Colors.red));
             }
           });
         }
       });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("У вас нет прав для удаления этой задачи.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("У вас нет прав для удаления этой задачи.")));
     }
   }
 
@@ -233,25 +234,20 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       final teamProvider = Provider.of<TeamProvider>(context, listen: false);
       final members = teamProvider.currentTeamDetail?.members.map((m) => m.user).toList() ?? [];
 
-      showDialog<Task?>(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return TeamTaskEditDialog(
-            teamId: taskToEdit.teamId!,
-            members: members,
-            taskToEdit: taskToEdit,
-            onTaskSaved: (Task? updatedTask) {
-              if(updatedTask != null) {
-                debugPrint("TeamDetailScreen: Team task edited via dialog: ${updatedTask.title}");
-              }
-            },
-          );
-        },
-      );
+      showDialog<Task?>(context: context, builder: (BuildContext dialogContext) {
+        return TeamTaskEditDialog(
+          teamId: taskToEdit.teamId!,
+          members: members,
+          taskToEdit: taskToEdit,
+          onTaskSaved: (Task? updatedTask) {
+            if(updatedTask != null) {
+              debugPrint("TeamDetailScreen: Team task edited via dialog: ${updatedTask.title}");
+            }
+          },
+        );
+      });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("У вас нет прав для редактирования этой задачи.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("У вас нет прав для редактирования этой задачи.")));
     }
   }
 
@@ -260,149 +256,173 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     final members = teamProvider.currentTeamDetail?.members.map((m) => m.user).toList() ?? [];
 
     debugPrint("[TeamDetailScreen] Showing create team task dialog (for mobile) for team ID: $teamId");
-    showDialog<Task?>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return TeamTaskEditDialog(
-          teamId: teamId,
-          members: members,
-          onTaskSaved: (Task? newTask) {
-            if (newTask != null) {
-              debugPrint("TeamDetailScreen (mobile FAB): New team task saved (ID: ${newTask.taskId}), Team ID: ${newTask.teamId}");
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Задача "${newTask.title}" добавлена в команду!')),
-                );
-              }
-            }
-          },
-        );
-      },
-    );
-  }
-
-  void _displayTeamTagEditDialog(BuildContext context, TeamDetail team, {ApiTag? tagToEdit}) {
-    final tagProvider = Provider.of<TagProvider>(context, listen: false);
-    final teamIdInt = int.tryParse(team.teamId);
-    if (teamIdInt == null) return;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return TagEditDialog(
-          isTeamTag: true,
-          teamId: team.teamId,
-          tagToEdit: tagToEdit,
-          onSave: (String name, String colorHex, {int? tagId}) async {
-            bool success;
-            String actionMessage;
-            if (tagToEdit == null) {
-              actionMessage = "Тег '$name' создан для команды";
-              success = await tagProvider.createTeamTag(teamIdInt, name: name, colorHex: colorHex);
-            } else {
-              actionMessage = "Тег '${tagToEdit.name}' обновлен";
-              success = await tagProvider.updateTeamTag(tagId ?? tagToEdit.id, teamIdInt, name: name, colorHex: colorHex);
-            }
-
+    showDialog<Task?>(context: context, builder: (BuildContext dialogContext) {
+      return TeamTaskEditDialog(
+        teamId: teamId,
+        members: members,
+        onTaskSaved: (Task? newTask) {
+          if (newTask != null) {
+            debugPrint("TeamDetailScreen (mobile FAB): New team task saved (ID: ${newTask.taskId}), Team ID: ${newTask.teamId}");
             if (mounted) {
-              final scaffoldContext = dialogContext.mounted ? dialogContext : context;
-              if (success) {
-                ScaffoldMessenger.of(scaffoldContext).showSnackBar(SnackBar(content: Text(actionMessage)));
-                tagProvider.fetchTeamTags(teamIdInt, forceRefresh: true);
-              } else {
-                ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                  SnackBar(content: Text(tagProvider.error ?? 'Не удалось сохранить тег команды'), backgroundColor: Colors.red),
-                );
-                if(tagProvider.error != null) tagProvider.clearError();
-              }
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Задача "${newTask.title}" добавлена в команду!')));
             }
-          },
-        );
-      },
-    );
-  }
-
-  void _confirmDeleteTeamTag(BuildContext context, TeamDetail team, ApiTag tag) {
-    final tagProvider = Provider.of<TagProvider>(context, listen: false);
-    final teamIdInt = int.tryParse(team.teamId);
-    if (teamIdInt == null) return;
-
-    showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Удалить тег команды?'),
-          content: Text('Вы уверены, что хотите удалить тег "${tag.name}" из команды "${team.name}"? Это действие нельзя будет отменить.'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Отмена'),
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-            ),
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
-              child: const Text('Удалить'),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-            ),
-          ],
-        );
-      },
-    ).then((confirmed) async {
-      if (confirmed == true && mounted) {
-        bool success = await tagProvider.deleteTeamTag(tag.id, teamIdInt);
-        if (mounted) {
-          if (success) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Тег "${tag.name}" удален из команды.')),
-            );
-            tagProvider.fetchTeamTags(teamIdInt, forceRefresh: true);
-          } else if (tagProvider.error != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(tagProvider.error ?? "Не удалось удалить тег"), backgroundColor: Colors.red),
-            );
-            tagProvider.clearError();
           }
-        }
-      }
+        },
+      );
     });
   }
 
-  void _showGenerateInviteDialog(BuildContext contextFromButton, TeamDetail team) {
-    debugPrint("[TeamDetailScreen._showGenerateInviteDialog] Showing GenerateInviteLinkDialog. Context from button: $contextFromButton, Mounted: $mounted");
-    showDialog(
-      context: contextFromButton,
-      builder: (BuildContext dialogBuildContextForGenerate) {
-        debugPrint("[TeamDetailScreen._showGenerateInviteDialog builder] GenerateInviteLinkDialog context: $dialogBuildContextForGenerate, Mounted: ${dialogBuildContextForGenerate.mounted}");
-        return ChangeNotifierProvider.value(
-          value: Provider.of<TeamProvider>(contextFromButton, listen: false),
-          child: GenerateInviteLinkDialog(
-            teamId: team.teamId,
-            onInviteGenerated: (TeamInviteTokenResponse inviteResponse) {
-              debugPrint("[TeamDetailScreen onInviteGenerated callback] Received inviteResponse: ${inviteResponse.inviteToken}. TeamDetailScreen mounted: $mounted. Context from button ($contextFromButton) is active: ${contextFromButton.findRenderObject()?.attached ?? false}");
+  void _showTaskManagementBottomSheet(BuildContext context, TeamDetail team) {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final bool canEditTasks = team.currentUserRole == TeamMemberRole.owner ||
+        team.currentUserRole == TeamMemberRole.admin ||
+        team.currentUserRole == TeamMemberRole.editor;
 
-              Future.delayed(Duration.zero, () {
-                if (mounted && (contextFromButton.findRenderObject()?.attached ?? false)) {
-                  _showInviteTokenInfoDialog(contextFromButton, inviteResponse);
-                } else {
-                  debugPrint("[TeamDetailScreen onInviteGenerated callback with delay] TeamDetailScreen is NOT mounted OR original context is not active. Cannot show info dialog.");
-                }
-              });
-            },
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, // Позволяет занимать больше половины экрана
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (builderContext) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(builderContext).viewInsets.bottom),
+          child: Wrap(
+            children: <Widget>[
+              if (canEditTasks)
+                ListTile(
+                  leading: const Icon(Icons.add_task_outlined),
+                  title: const Text('Добавить задачу'),
+                  onTap: () {
+                    Navigator.of(builderContext).pop();
+                    _showCreateTeamTaskDialogForMobile(context, team.teamId);
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.filter_list_rounded),
+                title: const Text('Фильтры'),
+                onTap: () {
+                  Navigator.of(builderContext).pop();
+                  showDialog(
+                    context: context,
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: taskProvider,
+                      child: TaskFilterDialog(viewType: TaskListViewType.teamSpecific, teamIdForContext: team.teamId),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.swap_vert_rounded),
+                title: const Text('Сортировка'),
+                onTap: () {
+                  Navigator.of(builderContext).pop();
+                  showDialog(
+                    context: context,
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: taskProvider,
+                      child: const TaskSortDialog(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         );
       },
     );
   }
 
+  // ... (остальные методы без изменений) ...
+  void _displayTeamTagEditDialog(BuildContext context, TeamDetail team, {ApiTag? tagToEdit}) {
+    final tagProvider = Provider.of<TagProvider>(context, listen: false);
+    final teamIdInt = int.tryParse(team.teamId);
+    if (teamIdInt == null) return;
+    showDialog(context: context, builder: (BuildContext dialogContext) {
+      return TagEditDialog(
+        isTeamTag: true, teamId: team.teamId, tagToEdit: tagToEdit,
+        onSave: (String name, String colorHex, {int? tagId}) async {
+          bool success;
+          String actionMessage;
+          if (tagToEdit == null) {
+            actionMessage = "Тег '$name' создан для команды";
+            success = await tagProvider.createTeamTag(teamIdInt, name: name, colorHex: colorHex);
+          } else {
+            actionMessage = "Тег '${tagToEdit.name}' обновлен";
+            success = await tagProvider.updateTeamTag(tagId ?? tagToEdit.id, teamIdInt, name: name, colorHex: colorHex);
+          }
+          if (mounted) {
+            final scaffoldContext = dialogContext.mounted ? dialogContext : context;
+            if (success) {
+              ScaffoldMessenger.of(scaffoldContext).showSnackBar(SnackBar(content: Text(actionMessage)));
+              tagProvider.fetchTeamTags(teamIdInt, forceRefresh: true);
+            } else {
+              ScaffoldMessenger.of(scaffoldContext).showSnackBar(SnackBar(content: Text(tagProvider.error ?? 'Не удалось сохранить тег команды'), backgroundColor: Colors.red));
+              if(tagProvider.error != null) tagProvider.clearError();
+            }
+          }
+        },
+      );
+    });
+  }
+  void _confirmDeleteTeamTag(BuildContext context, TeamDetail team, ApiTag tag) {
+    final tagProvider = Provider.of<TagProvider>(context, listen: false);
+    final teamIdInt = int.tryParse(team.teamId);
+    if (teamIdInt == null) return;
+    showDialog<bool>(context: context, builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: const Text('Удалить тег команды?'),
+        content: Text('Вы уверены, что хотите удалить тег "${tag.name}" из команды "${team.name}"? Это действие нельзя будет отменить.'),
+        actions: <Widget>[
+          TextButton(child: const Text('Отмена'), onPressed: () => Navigator.of(dialogContext).pop(false)),
+          TextButton(style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error), child: const Text('Удалить'), onPressed: () => Navigator.of(dialogContext).pop(true)),
+        ],
+      );
+    },
+    ).then((confirmed) async {
+      if (confirmed == true && mounted) {
+        bool success = await tagProvider.deleteTeamTag(tag.id, teamIdInt);
+        if (mounted) {
+          if (success) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Тег "${tag.name}" удален из команды.')));
+            tagProvider.fetchTeamTags(teamIdInt, forceRefresh: true);
+          } else if (tagProvider.error != null) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tagProvider.error ?? "Не удалось удалить тег"), backgroundColor: Colors.red));
+            tagProvider.clearError();
+          }
+        }
+      }
+    });
+  }
+  void _showGenerateInviteDialog(BuildContext contextFromButton, TeamDetail team) {
+    debugPrint("[TeamDetailScreen._showGenerateInviteDialog] Showing GenerateInviteLinkDialog. Context from button: $contextFromButton, Mounted: $mounted");
+    showDialog(context: contextFromButton, builder: (BuildContext dialogBuildContextForGenerate) {
+      debugPrint("[TeamDetailScreen._showGenerateInviteDialog builder] GenerateInviteLinkDialog context: $dialogBuildContextForGenerate, Mounted: ${dialogBuildContextForGenerate.mounted}");
+      return ChangeNotifierProvider.value(
+        value: Provider.of<TeamProvider>(contextFromButton, listen: false),
+        child: GenerateInviteLinkDialog(
+          teamId: team.teamId,
+          onInviteGenerated: (TeamInviteTokenResponse inviteResponse) {
+            debugPrint("[TeamDetailScreen onInviteGenerated callback] Received inviteResponse: ${inviteResponse.inviteToken}. TeamDetailScreen mounted: $mounted. Context from button ($contextFromButton) is active: ${contextFromButton.findRenderObject()?.attached ?? false}");
+            Future.delayed(Duration.zero, () {
+              if (mounted && (contextFromButton.findRenderObject()?.attached ?? false)) {
+                _showInviteTokenInfoDialog(contextFromButton, inviteResponse);
+              } else {
+                debugPrint("[TeamDetailScreen onInviteGenerated callback with delay] TeamDetailScreen is NOT mounted OR original context is not active. Cannot show info dialog.");
+              }
+            });
+          },
+        ),
+      );
+    });
+  }
   void _showInviteTokenInfoDialog(BuildContext contextForInfoDialog, TeamInviteTokenResponse inviteResponse) {
     final theme = Theme.of(contextForInfoDialog);
     debugPrint("[TeamDetailScreen._showInviteTokenInfoDialog] Preparing to show info dialog. Context: $contextForInfoDialog (Mounted: ${contextForInfoDialog.findRenderObject()?.attached ?? false}), Token: ${inviteResponse.inviteToken}, Link from backend: ${inviteResponse.inviteLink}");
-
     String? displayInviteLink = inviteResponse.inviteLink;
     if (displayInviteLink != null && displayInviteLink.isEmpty) {
       displayInviteLink = null;
     }
     debugPrint("[TeamDetailScreen._showInviteTokenInfoDialog] Using invite_link from backend (if available): $displayInviteLink");
-
     String expiresAtFormatted = "Не указан";
     if (inviteResponse.expiresAt != null) {
       try {
@@ -413,170 +433,122 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       }
     }
     String roleFormatted = inviteResponse.roleOnJoin?.localizedName ?? "Участник";
-
     debugPrint("[TeamDetailScreen._showInviteTokenInfoDialog] Displaying info dialog. Token: ${inviteResponse.inviteToken}, Effective Link: $displayInviteLink. Context: $contextForInfoDialog, Mounted: ${contextForInfoDialog.findRenderObject()?.attached ?? false}");
-    showDialog(
-      context: contextForInfoDialog,
-      builder: (BuildContext dialogBuildContextForInfo) {
-        debugPrint("[TeamDetailScreen._showInviteTokenInfoDialog builder] AlertDialog context: $dialogBuildContextForInfo, Mounted: ${dialogBuildContextForInfo.findRenderObject()?.attached ?? false}");
-        return AlertDialog(
-          title: const Text('Ссылка-приглашение создана'),
-          content: SingleChildScrollView(
-            child: ListBody(
-              children: <Widget>[
-                Text('Код-приглашение:', style: theme.textTheme.titleSmall),
-                SelectableText(inviteResponse.inviteToken, style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+    showDialog(context: contextForInfoDialog, builder: (BuildContext dialogBuildContextForInfo) {
+      debugPrint("[TeamDetailScreen._showInviteTokenInfoDialog builder] AlertDialog context: $dialogBuildContextForInfo, Mounted: ${dialogBuildContextForInfo.findRenderObject()?.attached ?? false}");
+      return AlertDialog(
+        title: const Text('Ссылка-приглашение создана'),
+        content: SingleChildScrollView(
+          child: ListBody(
+            children: <Widget>[
+              Text('Код-приглашение:', style: theme.textTheme.titleSmall),
+              SelectableText(inviteResponse.inviteToken, style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              if (displayInviteLink != null) ...[
+                Text('Ссылка для вступления:', style: theme.textTheme.titleSmall),
+                SelectableText(displayInviteLink, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary)),
                 const SizedBox(height: 12),
-                if (displayInviteLink != null) ...[
-                  Text('Ссылка для вступления:', style: theme.textTheme.titleSmall),
-                  SelectableText(displayInviteLink, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.primary)),
-                  const SizedBox(height: 12),
-                ] else ...[
-                  Text('Ссылка для вступления:', style: theme.textTheme.titleSmall),
-                  Text('Не предоставлена сервером.', style: theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
-                  const SizedBox(height: 12),
-                ],
-                Text('Роль при вступлении:', style: theme.textTheme.titleSmall),
-                Text(roleFormatted, style: theme.textTheme.bodyMedium),
-                const SizedBox(height: 8),
-                Text('Действителен до:', style: theme.textTheme.titleSmall),
-                Text(expiresAtFormatted, style: theme.textTheme.bodyMedium),
+              ] else ...[
+                Text('Ссылка для вступления:', style: theme.textTheme.titleSmall),
+                Text('Не предоставлена сервером.', style: theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
+                const SizedBox(height: 12),
               ],
-            ),
+              Text('Роль при вступлении:', style: theme.textTheme.titleSmall),
+              Text(roleFormatted, style: theme.textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              Text('Действителен до:', style: theme.textTheme.titleSmall),
+              Text(expiresAtFormatted, style: theme.textTheme.bodyMedium),
+            ],
           ),
-          actions: <Widget>[
-            TextButton.icon(
-              icon: const Icon(Icons.copy_all_rounded),
-              label: const Text('Копировать код'),
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: inviteResponse.inviteToken));
-                if (dialogBuildContextForInfo.mounted) {
-                  ScaffoldMessenger.of(dialogBuildContextForInfo).showSnackBar(
-                    const SnackBar(content: Text('Код приглашения скопирован!')),
-                  );
-                }
-              },
-            ),
-            if (displayInviteLink != null)
-              TextButton.icon(
-                icon: const Icon(Icons.link_rounded),
-                label: const Text('Копировать ссылку'),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: displayInviteLink!));
-                  if (dialogBuildContextForInfo.mounted) {
-                    ScaffoldMessenger.of(dialogBuildContextForInfo).showSnackBar(
-                      const SnackBar(content: Text('Ссылка приглашения скопирована!')),
-                    );
-                  }
-                },
-              ),
-            ElevatedButton(
-              child: const Text('OK'),
-              onPressed: () {
-                Navigator.of(dialogBuildContextForInfo).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
-    debugPrint("[TeamDetailScreen._showInviteTokenInfoDialog] After showDialog call for info dialog.");
-  }
-
-  void _showChangeMemberRoleDialog(BuildContext parentContext, TeamDetail team, TeamMember memberToUpdate) {
-    final teamProvider = Provider.of<TeamProvider>(parentContext, listen: false);
-    showDialog(
-      context: parentContext,
-      builder: (BuildContext dialogContext) {
-        return ChangeNotifierProvider.value(
-          value: teamProvider,
-          child: ChangeMemberRoleDialog(
-            teamId: team.teamId,
-            memberToUpdate: memberToUpdate,
-            onRoleChanged: (TeamMemberRole newRole) async {
-              debugPrint("[TeamDetailScreen] Changing role for ${memberToUpdate.user.login} (ID: ${memberToUpdate.user.userId}) to ${newRole.name}");
-              bool success = await teamProvider.updateTeamMemberRole(team.teamId, memberToUpdate.user.userId, newRole);
-              if (parentContext.mounted) {
-                if (success) {
-                  ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(content: Text('Роль для ${memberToUpdate.user.login} обновлена на ${newRole.localizedName}.')),
-                  );
-                } else {
-                  ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(
-                      content: Text(teamProvider.error ?? 'Не удалось обновить роль.'),
-                      backgroundColor: Theme.of(parentContext).colorScheme.error,
-                    ),
-                  );
-                  teamProvider.clearError();
-                }
+        ),
+        actions: <Widget>[
+          TextButton.icon(
+            icon: const Icon(Icons.copy_all_rounded),
+            label: const Text('Копировать код'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: inviteResponse.inviteToken));
+              if (dialogBuildContextForInfo.mounted) {
+                ScaffoldMessenger.of(dialogBuildContextForInfo).showSnackBar(const SnackBar(content: Text('Код приглашения скопирован!')));
               }
             },
           ),
-        );
-      },
-    );
+          if (displayInviteLink != null)
+            TextButton.icon(
+              icon: const Icon(Icons.link_rounded),
+              label: const Text('Копировать ссылку'),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: displayInviteLink!));
+                if (dialogBuildContextForInfo.mounted) {
+                  ScaffoldMessenger.of(dialogBuildContextForInfo).showSnackBar(const SnackBar(content: Text('Ссылка приглашения скопирована!')));
+                }
+              },
+            ),
+          ElevatedButton(child: const Text('OK'), onPressed: () => Navigator.of(dialogBuildContextForInfo).pop()),
+        ],
+      );
+    });
+    debugPrint("[TeamDetailScreen._showInviteTokenInfoDialog] After showDialog call for info dialog.");
   }
-
+  void _showChangeMemberRoleDialog(BuildContext parentContext, TeamDetail team, TeamMember memberToUpdate) {
+    final teamProvider = Provider.of<TeamProvider>(parentContext, listen: false);
+    showDialog(context: parentContext, builder: (BuildContext dialogContext) {
+      return ChangeNotifierProvider.value(
+        value: teamProvider,
+        child: ChangeMemberRoleDialog(
+          teamId: team.teamId,
+          memberToUpdate: memberToUpdate,
+          onRoleChanged: (TeamMemberRole newRole) async {
+            debugPrint("[TeamDetailScreen] Changing role for ${memberToUpdate.user.login} (ID: ${memberToUpdate.user.userId}) to ${newRole.name}");
+            bool success = await teamProvider.updateTeamMemberRole(team.teamId, memberToUpdate.user.userId, newRole);
+            if (parentContext.mounted) {
+              if (success) {
+                ScaffoldMessenger.of(parentContext).showSnackBar(SnackBar(content: Text('Роль для ${memberToUpdate.user.login} обновлена на ${newRole.localizedName}.')));
+              } else {
+                ScaffoldMessenger.of(parentContext).showSnackBar(SnackBar(content: Text(teamProvider.error ?? 'Не удалось обновить роль.'), backgroundColor: Theme.of(parentContext).colorScheme.error));
+                teamProvider.clearError();
+              }
+            }
+          },
+        ),
+      );
+    });
+  }
   void _confirmRemoveMember(BuildContext parentContext, TeamDetail team, TeamMember memberToRemove) {
     final teamProvider = Provider.of<TeamProvider>(parentContext, listen: false);
-    showDialog<bool>(
-      context: parentContext,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text('Удалить ${memberToRemove.user.login}?'),
-          content: Text('Вы уверены, что хотите удалить участника ${memberToRemove.user.login} из команды "${team.name}"?'),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Отмена'),
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-            ),
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Theme.of(parentContext).colorScheme.error),
-              child: const Text('Удалить'),
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-            ),
-          ],
-        );
-      },
-    ).then((confirmed) async {
+    showDialog<bool>(context: parentContext, builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: Text('Удалить ${memberToRemove.user.login}?'),
+        content: Text('Вы уверены, что хотите удалить участника ${memberToRemove.user.login} из команды "${team.name}"?'),
+        actions: <Widget>[
+          TextButton(child: const Text('Отмена'), onPressed: () => Navigator.of(dialogContext).pop(false)),
+          TextButton(style: TextButton.styleFrom(foregroundColor: Theme.of(parentContext).colorScheme.error), child: const Text('Удалить'), onPressed: () => Navigator.of(dialogContext).pop(true)),
+        ],
+      );
+    }).then((confirmed) async {
       if (confirmed == true) {
         debugPrint("[TeamDetailScreen] Removing member ${memberToRemove.user.login} (ID: ${memberToRemove.user.userId}) from team ${team.teamId}");
         bool success = await teamProvider.removeTeamMember(team.teamId, memberToRemove.user.userId);
         if (parentContext.mounted) {
           if (success) {
-            ScaffoldMessenger.of(parentContext).showSnackBar(
-              SnackBar(content: Text('Участник ${memberToRemove.user.login} удален из команды.')),
-            );
+            ScaffoldMessenger.of(parentContext).showSnackBar(SnackBar(content: Text('Участник ${memberToRemove.user.login} удален из команды.')));
           } else {
-            ScaffoldMessenger.of(parentContext).showSnackBar(
-              SnackBar(
-                content: Text(teamProvider.error ?? 'Не удалось удалить участника.'),
-                backgroundColor: Theme.of(parentContext).colorScheme.error,
-              ),
-            );
+            ScaffoldMessenger.of(parentContext).showSnackBar(SnackBar(content: Text(teamProvider.error ?? 'Не удалось удалить участника.'), backgroundColor: Theme.of(parentContext).colorScheme.error));
             teamProvider.clearError();
           }
         }
       }
     });
   }
-
   void _showEditTeamInfoDialog(BuildContext context, TeamDetail team) {
     if (team.currentUserRole == TeamMemberRole.owner) {
-      showDialog(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return ChangeNotifierProvider.value(
-            value: Provider.of<TeamProvider>(context, listen: false),
-            child: EditTeamInfoDialog(teamToEdit: team),
-          );
-        },
-      );
+      showDialog(context: context, builder: (BuildContext dialogContext) {
+        return ChangeNotifierProvider.value(
+          value: Provider.of<TeamProvider>(context, listen: false),
+          child: EditTeamInfoDialog(teamToEdit: team),
+        );
+      });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Только владелец может редактировать информацию о команде.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Только владелец может редактировать информацию о команде.')));
     }
   }
 
@@ -607,30 +579,39 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         team.currentUserRole == TeamMemberRole.editor;
 
     if (_tabs.isEmpty) {
-      return Scaffold(appBar: AppBar(title: Text(team.name)), body: const Center(child: CircularProgressIndicator()));
+      return Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(team.name, overflow: TextOverflow.ellipsis),
+        // <<< ИСПРАВЛЕНИЕ: Заголовок убран >>>
+        title: null,
+        // <<< ИСПРАВЛЕНИЕ: AppBar больше не прозрачный, имеет свой цвет >>>
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 1,
         leading: (Provider.of<AppRouterDelegate>(context, listen: false).canPop())
             ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
             : null,
         bottom: TabBar(
           controller: _tabController,
           tabs: _tabs,
-          isScrollable: true,
+          // <<< ИСПРАВЛЕНИЕ: Делаем TabBar неподвижным и центрированным >>>
+          isScrollable: false,
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicatorWeight: 2.5,
+          labelPadding: EdgeInsets.zero, // Убираем внутренние отступы, чтобы вкладки равномерно распределились
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: _tabViews,
       ),
-      floatingActionButton: _tabController.index == 0 && canEditTasks
+      // <<< ИСПРАВЛЕНИЕ: Кнопка действий для вкладки "Задачи" >>>
+      floatingActionButton: _tabController.index == 0
           ? FloatingActionButton(
-        onPressed: () => _showCreateTeamTaskDialogForMobile(context, team.teamId),
-        tooltip: 'Добавить задачу',
-        child: const Icon(Icons.add_task_outlined),
+        onPressed: () => _showTaskManagementBottomSheet(context, team),
+        tooltip: 'Действия с задачами',
+        child: const Icon(Icons.more_horiz_rounded),
       )
           : null,
     );
@@ -640,32 +621,22 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   Widget build(BuildContext context) {
     final isMobile = ResponsiveUtil.isMobile(context);
 
-    return Consumer<TeamProvider>(
+    // <<< ИСПРАВЛЕНИЕ: Оборачиваем в SafeArea для мобильных >>>
+    Widget screenContent = Consumer<TeamProvider>(
       builder: (context, teamProvider, child) {
         final team = teamProvider.currentTeamDetail;
 
         if (teamProvider.isLoadingTeamDetail && team == null) {
-          return isMobile
-              ? Scaffold(appBar: AppBar(title: const Text('Загрузка команды...')), body: const Center(child: CircularProgressIndicator()))
-              : const Center(child: CircularProgressIndicator());
+          return Scaffold(appBar: AppBar(title: const Text('Загрузка команды...')), body: const Center(child: CircularProgressIndicator()));
         }
-
         if (teamProvider.error != null && team == null) {
-          return isMobile
-              ? Scaffold(appBar: AppBar(title: const Text('Ошибка')), body: Center(child: Padding(
+          return Scaffold(appBar: AppBar(title: const Text('Ошибка')), body: Center(child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Text("Ошибка загрузки команды: ${teamProvider.error}", textAlign: TextAlign.center),
-          )))
-              : Center(child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text("Ошибка загрузки команды: ${teamProvider.error}", textAlign: TextAlign.center),
-          ));
+          )));
         }
-
         if (team == null) {
-          return isMobile
-              ? Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()))
-              : const Center(child: CircularProgressIndicator());
+          return Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()));
         }
 
         if (isMobile) {
@@ -676,6 +647,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         return _buildSectionContent(context, sidebarState.currentTeamDetailSection, team);
       },
     );
+
+    return isMobile ? SafeArea(child: screenContent) : screenContent;
   }
 
   Widget _buildTasksTab(BuildContext context, String currentUserId, String teamIdForDialog, bool canEditTasksOverall) {
