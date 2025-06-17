@@ -33,68 +33,50 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
     }
   }
 
-  // <<< ПОЛНОСТЬЮ ПЕРЕПИСАННЫЙ МЕТОД >>>
   AppRoutePath _getAppropriatePathForCurrentState(AppRoutePath? intendedPath) {
     debugPrint("[RouterDelegate] _getAppropriatePathForCurrentState: Intended: ${intendedPath?.runtimeType}, Current: ${_currentPathConfig.runtimeType}, isLoggedIn: ${authState.isLoggedIn}");
 
-    // Если authState еще не завершил проверку, всегда показываем загрузку.
     if (!authState.initialAuthCheckCompleted) {
       return const LoadingPath();
     }
 
-    // Правило 1: Лендинг (/welcome) всегда доступен и не редиректит.
     if (intendedPath is LandingPath) {
       return const LandingPath();
     }
 
-    // Правило 2: Коллбэк OAuth всегда должен обрабатываться.
     if (intendedPath is OAuthCallbackPath) {
       return intendedPath;
     }
 
-    // --- Логика для ЗАЛОГИНЕННОГО пользователя ---
     if (authState.isLoggedIn) {
-      // Приоритет: обработка токена приглашения.
       if (authState.pendingInviteToken != null) {
         return JoinTeamByTokenPath(authState.pendingInviteToken!);
       }
 
-      // Если залогиненный пользователь пытается попасть на страницу логина/лендинга,
-      // перенаправляем его на домашнюю страницу.
       if (intendedPath is AuthPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
 
-      // Если есть валидный intendedPath, используем его.
       if (intendedPath != null) {
-        // Проверяем, что это не путь для незалогиненных (LandingPath уже обработан)
         if (intendedPath is! AuthPath) {
           return intendedPath;
         }
       }
 
-      // Если мы только что залогинились (предыдущий путь был Auth или Loading),
-      // или нет intendedPath, то по умолчанию идем на домашнюю страницу.
       if (_currentPathConfig is AuthPath || _currentPathConfig is LoadingPath || _currentPathConfig is OAuthCallbackPath) {
         return const HomeSubPath(AppRouteSegments.allTasks);
       }
 
-      // В остальных случаях остаемся на текущем пути.
       return _currentPathConfig;
     }
-    // --- Логика для НЕЗАЛОГИНЕННОГО пользователя ---
     else {
-      // Разрешаем обработку коллбэка OAuth
       if (intendedPath is OAuthCallbackPath) {
         return intendedPath;
       }
-      // Разрешаем обработку токена приглашения (он приведет на страницу логина)
       if (intendedPath is JoinTeamByTokenPath) {
         authState.setPendingInviteToken(intendedPath.token);
         return const AuthPath();
       }
-      // Все остальные пути для незалогиненного ведут на страницу аутентификации.
-      // LandingPath был обработан в самом начале.
       return const AuthPath();
     }
   }
@@ -143,6 +125,7 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
           } else if (_currentPathConfig is TeamDetailPath) {
             _currentPathConfig = const HomeSubPath(AppRouteSegments.teams);
           } else {
+            // Возвращаемся на главную страницу по умолчанию
             _currentPathConfig = const HomeSubPath(AppRouteSegments.allTasks);
           }
           notifyListeners();
@@ -177,7 +160,7 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   }
 
   void navigateTo(AppRoutePath path) {
-    if (path is TaskDetailPath) {
+    if (path is TaskDetailPath || path is TeamDetailPath || (path is HomeSubPath && path.subRoute != AppRouteSegments.teams && path.subRoute != AppRouteSegments.allTasks && path.subRoute != AppRouteSegments.settings)) {
       _previousPathBeforeTaskDetail = _currentPathConfig;
     }
     setNewRoutePath(path);
@@ -225,14 +208,24 @@ class AppRouterDelegate extends RouterDelegate<AppRoutePath>
   @override
   Future<bool> popRoute() {
     final NavigatorState? navigator = navigatorKey.currentState;
-    if (navigator == null) {
-      return SynchronousFuture(false);
+    if (navigator != null && navigator.canPop()) {
+      navigator.pop();
+      return SynchronousFuture(true);
     }
-    return navigator.maybePop();
+
+    // Если навигатор не может сделать pop, проверяем, можем ли мы вернуться на предыдущий "главный" экран
+    if (_previousPathBeforeTaskDetail != null) {
+      _currentPathConfig = _previousPathBeforeTaskDetail!;
+      _previousPathBeforeTaskDetail = null;
+      notifyListeners();
+      return SynchronousFuture(true);
+    }
+
+    return SynchronousFuture(false);
   }
 
   bool canPop() {
-    return navigatorKey.currentState?.canPop() ?? false;
+    return (navigatorKey.currentState?.canPop() ?? false) || _previousPathBeforeTaskDetail != null;
   }
 
   @override

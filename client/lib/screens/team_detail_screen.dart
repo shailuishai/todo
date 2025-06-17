@@ -1,3 +1,4 @@
+// lib/screens/team_detail_screen.dart
 import 'package:ToDo/core/utils/responsive_utils.dart';
 import 'package:ToDo/models/task_model.dart';
 import 'package:ToDo/task_provider.dart';
@@ -272,6 +273,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     });
   }
 
+  // <<< НОВЫЙ МЕТОД: вызов нижнего меню >>>
   void _showTaskManagementBottomSheet(BuildContext context, TeamDetail team) {
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
     final bool canEditTasks = team.currentUserRole == TeamMemberRole.owner ||
@@ -579,13 +581,12 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     }
 
     return Scaffold(
-      // <<< ИСПРАВЛЕНИЕ: primary: false, чтобы Scaffold не добавлял свой отступ для SafeArea >>>
       primary: false,
       appBar: AppBar(
-        // <<< ИСПРАВЛЕНИЕ: primary: true, чтобы AppBar сам управлял отступом под статус-бар >>>
         primary: true,
         title: null,
-        backgroundColor: Theme.of(context).colorScheme.background,
+        // <<< ИСПРАВЛЕНИЕ: Используем surface, а не background >>>
+        backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 1,
         leading: (Provider.of<AppRouterDelegate>(context, listen: false).canPop())
             ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
@@ -643,9 +644,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       },
     );
 
-    // <<< ИСПРАВЛЕНИЕ: SafeArea применяется только для мобильных устройств >>>
-    // `top: false` предотвращает двойной отступ, т.к. AppBar уже его делает.
-    return isMobile ? SafeArea(top: false, child: screenContent) : screenContent;
+    return isMobile ? SafeArea(top: false, bottom: false, child: screenContent) : screenContent;
   }
 
   Widget _buildTasksTab(BuildContext context, String currentUserId, String teamIdForDialog, bool canEditTasksOverall) {

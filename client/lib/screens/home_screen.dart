@@ -161,12 +161,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return 0;
   }
 
-  // <<< ИЗМЕНЕНИЕ: Метод больше не нужен, т.к. AppBar на мобильных не имеет заголовка >>>
-  // String _getPageTitleForAppBar() { ... }
-
-  // <<< ИЗМЕНЕНИЕ: Этот метод больше не нужен, логика перенесена в initState и didUpdateWidget >>>
-  // int _getActiveBottomNavIndex() { ... }
-
   List<BottomNavigationBarItem> _buildBottomNavigationBarItems(BuildContext context) {
     return const [
       BottomNavigationBarItem(icon: Icon(Icons.task_alt_rounded), label: "Задачи"),
@@ -178,15 +172,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void _onBottomNavItemTapped(int index, AppRouterDelegate routerDelegate) {
     if (_mobilePageIndex == index) return;
 
-    // <<< ИЗМЕНЕНИЕ: Навигация теперь ведёт на главные экраны-хабы, а не на под-страницы >>>
     setState(() {
       _mobilePageIndex = index;
     });
 
-    // Навигацию через роутер можно оставить для синхронизации URL, если это нужно
     String targetRouteSegment;
     switch (index) {
-      case 0: targetRouteSegment = AppRouteSegments.allTasks; break; // По умолчанию для "Задач"
+      case 0: targetRouteSegment = AppRouteSegments.allTasks; break;
       case 1: targetRouteSegment = AppRouteSegments.teams; break;
       case 2: targetRouteSegment = AppRouteSegments.settings; break;
       default: targetRouteSegment = AppRouteSegments.allTasks;
@@ -201,29 +193,45 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
     final bool isMobile = ResponsiveUtil.isMobile(context);
 
-    // <<< ИЗМЕНЕНИЕ: Основная логика билда теперь разделена на mobile и desktop >>>
-
     if (isMobile) {
-      // Если на мобильном открыта детальная страница (команды или задачи),
-      // она сама строит свой Scaffold с кнопкой "назад" и не нуждается в BottomNavigationBar.
       if (widget.teamIdToShow != null || widget.taskIdToShow != null) {
         return _getCurrentPageContent(context);
       }
 
       return Scaffold(
-        appBar: AppBar(
-          title: null, // Убираем заголовок
-          automaticallyImplyLeading: false, // Убираем кнопку "назад" по умолчанию
-          elevation: 1,
-        ),
-        body: IndexedStack(
-          index: _mobilePageIndex,
-          children: _mobilePages,
-        ),
-        bottomNavigationBar: BottomNavigationBar(
-          items: _buildBottomNavigationBarItems(context),
-          currentIndex: _mobilePageIndex,
-          onTap: (index) => _onBottomNavItemTapped(index, routerDelegate),
+        body: SafeArea(
+          top: false,
+          bottom: false,
+          child: PopScope(
+            canPop: false, // Мы сами будем управлять навигацией
+            onPopInvoked: (bool didPop) {
+              if (didPop) return;
+              // Если можем вернуться назад в навигаторе, делаем это
+              if (routerDelegate.canPop()) {
+                routerDelegate.popRoute();
+              } else {
+                // Если мы на главной (индекс 0), и некуда возвращаться,
+                // то можно, например, ничего не делать или показать диалог выхода.
+                // Пока оставим без действия.
+              }
+            },
+            child: Scaffold(
+              appBar: AppBar(
+                title: null,
+                automaticallyImplyLeading: false,
+                elevation: 1,
+              ),
+              body: IndexedStack(
+                index: _mobilePageIndex,
+                children: _mobilePages,
+              ),
+              bottomNavigationBar: BottomNavigationBar(
+                items: _buildBottomNavigationBarItems(context),
+                currentIndex: _mobilePageIndex,
+                onTap: (index) => _onBottomNavItemTapped(index, routerDelegate),
+              ),
+            ),
+          ),
         ),
       );
 
@@ -231,11 +239,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       final Widget currentPageContent = _getCurrentPageContent(context);
       final int activeSidebarMenuIndex = _getActiveMenuIndex();
 
-      bool shouldShowRightSidebar = false; // По умолчанию скрываем
-      if (widget.teamIdToShow != null) { // Если открыты детали команды, правый сайдбар показывается (это будет контекстный)
+      bool shouldShowRightSidebar = false;
+      if (widget.teamIdToShow != null) {
         shouldShowRightSidebar = true;
       } else {
-        // Для обычных под-экранов HomePage, используем значение из AppRouterDelegate
         final currentActualPath = routerDelegate.currentConfiguration;
         if (currentActualPath is HomeSubPath) {
           shouldShowRightSidebar = currentActualPath.showRightSidebar;
