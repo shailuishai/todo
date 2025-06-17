@@ -1,6 +1,7 @@
+// lib/screens/teams_screen.dart
+import 'package:ToDo/core/utils/responsive_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../core/utils/responsive_utils.dart';
 import '../models/team_model.dart';
 import '../team_provider.dart';
 import '../widgets/team/team_card_widget.dart';
@@ -31,6 +32,44 @@ class _TeamsScreenState extends State<TeamsScreen> {
     Provider.of<AppRouterDelegate>(context, listen: false)
         .navigateTo(TeamDetailPath(teamId));
   }
+
+  // <<< НОВЫЙ МЕТОД: вызов нижнего меню >>>
+  void _showTeamActionsBottomSheet(BuildContext context) {
+    final teamProvider = Provider.of<TeamProvider>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (builderContext) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(builderContext).viewInsets.bottom),
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.group_add_outlined),
+                title: const Text('Создать команду'),
+                onTap: () {
+                  Navigator.of(builderContext).pop();
+                  teamProvider.displayCreateTeamDialog(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.sensor_door_outlined),
+                title: const Text('Присоединиться по коду'),
+                onTap: () {
+                  Navigator.of(builderContext).pop();
+                  teamProvider.displayJoinTeamDialog(context);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -67,16 +106,33 @@ class _TeamsScreenState extends State<TeamsScreen> {
           return _buildEmptyState(context, colorScheme, theme, isMobile);
         }
 
-        Widget gridContent = LayoutBuilder(
-            builder: (context, constraints) {
-              int crossAxisCount;
-              double childAspectRatio;
+        Widget content;
 
-              // <<< ИЗМЕНЕНИЕ: Адаптивная сетка >>>
-              if (isMobile) {
-                crossAxisCount = 2; // Всегда 2 колонки на мобильных
-                childAspectRatio = 0.9; // Сделаем карточки чуть более вытянутыми
-              } else {
+        if (isMobile) {
+          // <<< ИЗМЕНЕНИЕ: Используем ListView для мобильных >>>
+          content = RefreshIndicator(
+            onRefresh: () => teamProvider.fetchMyTeams(),
+            child: ListView.builder(
+              padding: const EdgeInsets.all(12.0),
+              itemCount: teamProvider.myTeams.length,
+              itemBuilder: (context, index) {
+                final team = teamProvider.myTeams[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10.0),
+                  child: TeamCardWidget(
+                    team: team,
+                    onTap: () => _navigateToTeamDetail(context, team.teamId),
+                  ),
+                );
+              },
+            ),
+          );
+        } else {
+          // Десктопная версия с GridView
+          content = LayoutBuilder(
+              builder: (context, constraints) {
+                int crossAxisCount;
+                double childAspectRatio;
                 if (constraints.maxWidth > 1200) {
                   crossAxisCount = 5;
                   childAspectRatio = 0.9;
@@ -87,61 +143,41 @@ class _TeamsScreenState extends State<TeamsScreen> {
                   crossAxisCount = 3;
                   childAspectRatio = 0.9;
                 }
-              }
 
-              final double mainAxisSpacing = isMobile ? 12 : 16;
-              final double crossAxisSpacing = isMobile ? 12 : 16;
-              final EdgeInsets padding = isMobile
-                  ? const EdgeInsets.all(12.0)
-                  : const EdgeInsets.all(16.0);
-
-              return RefreshIndicator(
-                onRefresh: () => teamProvider.fetchMyTeams(),
-                child: GridView.builder(
-                  padding: padding,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: crossAxisSpacing,
-                    mainAxisSpacing: mainAxisSpacing,
-                    childAspectRatio: childAspectRatio,
+                return RefreshIndicator(
+                  onRefresh: () => teamProvider.fetchMyTeams(),
+                  child: GridView.builder(
+                    padding: const EdgeInsets.all(16.0),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: childAspectRatio,
+                    ),
+                    itemCount: teamProvider.myTeams.length,
+                    itemBuilder: (context, index) {
+                      final team = teamProvider.myTeams[index];
+                      return TeamCardWidget(
+                        team: team,
+                        onTap: () => _navigateToTeamDetail(context, team.teamId),
+                      );
+                    },
                   ),
-                  itemCount: teamProvider.myTeams.length,
-                  itemBuilder: (context, index) {
-                    final team = teamProvider.myTeams[index];
-                    return TeamCardWidget(
-                      team: team,
-                      onTap: () => _navigateToTeamDetail(context, team.teamId),
-                    );
-                  },
-                ),
-              );
-            }
-        );
+                );
+              }
+          );
+        }
 
-        // Для мобильных не нужна обертка с тенью, так как фон будет из Scaffold
+
+        // <<< ИЗМЕНЕНИЕ: Основная структура виджета >>>
         if(isMobile) {
           return Scaffold(
-              backgroundColor: theme.scaffoldBackgroundColor, // Фон из общей темы
-              body: gridContent,
-              floatingActionButton: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FloatingActionButton.small(
-                    heroTag: 'joinTeamFab',
-                    onPressed: () => teamProvider.displayJoinTeamDialog(context),
-                    tooltip: 'Войти по коду',
-                    child: const Icon(Icons.sensor_door_outlined),
-                    backgroundColor: colorScheme.secondaryContainer,
-                    foregroundColor: colorScheme.onSecondaryContainer,
-                  ),
-                  const SizedBox(height: 12),
-                  FloatingActionButton(
-                    heroTag: 'createTeamFab',
-                    onPressed: () => teamProvider.displayCreateTeamDialog(context),
-                    tooltip: 'Создать команду',
-                    child: const Icon(Icons.group_add_outlined),
-                  ),
-                ],
+              backgroundColor: theme.scaffoldBackgroundColor,
+              body: content,
+              floatingActionButton: FloatingActionButton(
+                onPressed: () => _showTeamActionsBottomSheet(context),
+                tooltip: 'Действия с командами',
+                child: const Icon(Icons.add_rounded),
               )
           );
         }
@@ -161,18 +197,37 @@ class _TeamsScreenState extends State<TeamsScreen> {
             ],
           ),
           clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: gridContent),
-            ],
-          ),
+          child: content, // Используем уже созданный gridContent
         );
       },
     );
   }
 
   Widget _buildEmptyState(BuildContext context, ColorScheme colorScheme, ThemeData theme, bool isMobile) {
+    // <<< ИЗМЕНЕНИЕ: Кнопки теперь в _showTeamActionsBottomSheet, здесь только информация >>>
+    Widget actions = isMobile
+        ? FloatingActionButton.extended(
+      onPressed: () => _showTeamActionsBottomSheet(context),
+      label: const Text("Начать"),
+      icon: const Icon(Icons.add_rounded),
+    )
+        : Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        ElevatedButton.icon(
+          icon: const Icon(Icons.group_add_outlined),
+          label: const Text("Создать команду"),
+          onPressed: () => Provider.of<TeamProvider>(context, listen: false).displayCreateTeamDialog(context),
+        ),
+        const SizedBox(width: 16),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.sensor_door_outlined),
+          label: const Text("Войти по коду"),
+          onPressed: () => Provider.of<TeamProvider>(context, listen: false).displayJoinTeamDialog(context),
+        ),
+      ],
+    );
+
     return Center(
       child: Opacity(
         opacity: 0.7,
@@ -193,22 +248,7 @@ class _TeamsScreenState extends State<TeamsScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.group_add_outlined),
-                  label: const Text("Создать команду"),
-                  onPressed: () => Provider.of<TeamProvider>(context, listen: false).displayCreateTeamDialog(context),
-                ),
-                const SizedBox(width: 16),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.sensor_door_outlined),
-                  label: const Text("Войти по коду"),
-                  onPressed: () => Provider.of<TeamProvider>(context, listen: false).displayJoinTeamDialog(context),
-                ),
-              ],
-            )
+            actions,
           ],
         ),
       ),
