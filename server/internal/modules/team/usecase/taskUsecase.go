@@ -1,4 +1,3 @@
-// file: internal/modules/team/usecase/team_usecase.go
 package usecase
 
 import (
@@ -45,7 +44,6 @@ func NewTeamUseCase(
 	}
 }
 
-// toTeamResponse Helper для конвертации модели команды в DTO ответа
 func (uc *TeamUseCase) toTeamResponse(t *team.Team, role *team.TeamMemberRole, memberCount int) *team.TeamResponse {
 	if t == nil {
 		return nil
@@ -450,14 +448,11 @@ func (uc *TeamUseCase) DeleteTeam(teamID uint, userID uint) error {
 	return nil
 }
 
-// ... (Остальные методы AddTeamMember, UpdateTeamMemberRole, RemoveTeamMember, LeaveTeam, GenerateInviteToken, JoinTeamByToken, TeamService методы остаются с предыдущими исправлениями)
-// Важно убедиться, что они вызывают uc.toTeamResponse с актуальным memberCount после модификаций.
 func (uc *TeamUseCase) GetTeamMembers(teamID uint, userID uint) ([]*team.TeamMemberResponse, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-// Пример для AddTeamMember (нужно добавить получение memberCount)
 func (uc *TeamUseCase) AddTeamMember(teamID uint, currentUserID uint, req team.AddTeamMemberRequest) (*team.TeamMemberResponse, error) {
 	// ... (существующая логика до return) ...
 	// Перед return:
@@ -483,7 +478,6 @@ func (uc *TeamUseCase) AddTeamMember(teamID uint, currentUserID uint, req team.A
 	}, nil
 }
 
-// Пример для UpdateTeamMemberRole (нужно добавить получение memberCount, если toTeamResponse его требует, но здесь возвращается TeamMemberResponse)
 func (uc *TeamUseCase) UpdateTeamMemberRole(teamID, currentUserID, targetUserID uint, req team.UpdateTeamMemberRoleRequest) (*team.TeamMemberResponse, error) {
 	op := "TeamUseCase.UpdateTeamMemberRole"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("teamID", uint64(teamID)), slog.Uint64("currentUserID", uint64(currentUserID)), slog.Uint64("targetUserID", uint64(targetUserID)))
@@ -548,26 +542,109 @@ func (uc *TeamUseCase) UpdateTeamMemberRole(teamID, currentUserID, targetUserID 
 	}, nil
 }
 
-// Пример для RemoveTeamMember (нужно инвалидировать кэш команды для memberCount)
 func (uc *TeamUseCase) RemoveTeamMember(teamID uint, currentUserID uint, targetUserID uint) error {
-	// ... (существующая логика до return nil) ...
-	// После успешного uc.repo.RemoveTeamMember и других инвалидаций:
-	_ = uc.repo.DeleteTeam(teamID) // Инвалидация кэша команды для обновления MemberCount
+	op := "TeamUseCase.RemoveTeamMember"
+	log := uc.log.With(slog.String("op", op), slog.Uint64("teamID", uint64(teamID)), slog.Uint64("currentUserID", uint64(currentUserID)), slog.Uint64("targetUserID", uint64(targetUserID)))
+
+	if currentUserID == targetUserID {
+		return team.ErrCannotPerformActionOnSelf
+	}
+
+	teamModel, err := uc.repo.GetTeamByID(teamID)
+	if err != nil {
+		return err
+	}
+	if teamModel.IsDeleted {
+		return team.ErrTeamIsDeleted
+	}
+
+	currentUserMembership, err := uc.repo.GetMembership(currentUserID, teamID)
+	if err != nil {
+		return team.ErrTeamAccessDenied
+	}
+	if currentUserMembership.Role != team.RoleOwner && currentUserMembership.Role != team.RoleAdmin {
+		log.Warn("user lacks permission", "role", currentUserMembership.Role)
+		return team.ErrTeamAccessDenied
+	}
+
+	targetMembership, err := uc.repo.GetMembership(targetUserID, teamID)
+	if err != nil {
+		if errors.Is(err, team.ErrUserNotMember) {
+			return team.ErrUserNotMember
+		}
+		log.Error("failed to get target membership", "error", err)
+		return team.ErrTeamInternal
+	}
+
+	if targetMembership.Role == team.RoleOwner {
+		return team.ErrCannotRemoveLastOwner
+	}
+
+	// <<< ИСПРАВЛЕНА ЛОГИКА: Проверяем, что текущий пользователь - Owner
+	if currentUserMembership.Role == team.RoleAdmin && targetMembership.Role == team.RoleAdmin {
+		log.Warn("admin cannot remove another admin")
+		return team.ErrTeamAccessDenied
+	}
+
+	if err := uc.repo.RemoveTeamMember(targetUserID, teamID); err != nil {
+		log.Error("failed to remove member in repo", "error", err)
+		return err
+	}
+
+	_ = uc.repo.DeleteTeamMembers(teamID)
+	_ = uc.repo.DeleteUserTeams(targetUserID)
+
+	log.Info("team member removed successfully")
 	return nil
 }
 
-// Пример для LeaveTeam (нужно инвалидировать кэш команды для memberCount)
 func (uc *TeamUseCase) LeaveTeam(teamID uint, userID uint) error {
-	// ... (существующая логика до return nil) ...
-	// После успешного uc.repo.RemoveTeamMember и других инвалидаций:
-	_ = uc.repo.DeleteTeam(teamID) // Инвалидация кэша команды для обновления MemberCount
+	op := "TeamUseCase.LeaveTeam"
+	log := uc.log.With(slog.String("op", op), slog.Uint64("teamID", uint64(teamID)), slog.Uint64("userID", uint64(userID)))
+
+	teamModel, err := uc.repo.GetTeamByID(teamID)
+	if err != nil {
+		return err
+	}
+	if teamModel.IsDeleted {
+		return team.ErrTeamIsDeleted
+	}
+
+	membership, err := uc.repo.GetMembership(userID, teamID)
+	if err != nil {
+		if errors.Is(err, team.ErrUserNotMember) {
+			return team.ErrUserNotMember
+		}
+		log.Error("failed to get membership", "error", err)
+		return team.ErrTeamInternal
+	}
+
+	if membership.Role == team.RoleOwner {
+		members, _ := uc.repo.GetTeamMemberships(teamID)
+		if len(members) == 1 {
+			log.Warn("owner cannot leave as the only member")
+			return team.ErrCannotRemoveLastOwner
+		}
+		log.Warn("owner cannot leave team")
+		return team.ErrTeamAccessDenied
+	}
+
+	if err := uc.repo.RemoveTeamMember(userID, teamID); err != nil {
+		log.Error("failed to leave team", "error", err)
+		return err
+	}
+
+	_ = uc.repo.DeleteTeamMembers(teamID)
+	_ = uc.repo.DeleteUserTeams(userID)
+
+	log.Info("user successfully left team")
 	return nil
 }
 
-// TeamService методы
 func (uc *TeamUseCase) IsUserMember(userID, teamID uint) (bool, error) {
 	return uc.repo.IsTeamMember(userID, teamID)
 }
+
 func (uc *TeamUseCase) GetUserRoleInTeam(userID, teamID uint) (*team.TeamMemberRole, error) {
 	m, err := uc.repo.GetMembership(userID, teamID)
 	if err != nil {
@@ -578,9 +655,11 @@ func (uc *TeamUseCase) GetUserRoleInTeam(userID, teamID uint) (*team.TeamMemberR
 	}
 	return &m.Role, nil
 }
+
 func (uc *TeamUseCase) CanUserCreateTeamTask(userID, teamID uint) (bool, error) {
 	return uc.IsUserMember(userID, teamID)
 }
+
 func (uc *TeamUseCase) CanUserEditTeamTaskDetails(userID, teamID uint) (bool, error) {
 	role, err := uc.GetUserRoleInTeam(userID, teamID)
 	if err != nil || role == nil {
@@ -588,6 +667,7 @@ func (uc *TeamUseCase) CanUserEditTeamTaskDetails(userID, teamID uint) (bool, er
 	}
 	return *role == team.RoleOwner || *role == team.RoleAdmin || *role == team.RoleEditor, nil
 }
+
 func (uc *TeamUseCase) CanUserChangeTeamTaskStatus(userID, teamID uint, taskAssignedToUserID *uint) (bool, error) {
 	role, err := uc.GetUserRoleInTeam(userID, teamID)
 	if err != nil || role == nil {
@@ -598,19 +678,13 @@ func (uc *TeamUseCase) CanUserChangeTeamTaskStatus(userID, teamID uint, taskAssi
 	}
 	return *role == team.RoleMember && taskAssignedToUserID != nil && *taskAssignedToUserID == userID, nil
 }
+
 func (uc *TeamUseCase) CanUserDeleteTeamTask(userID, teamID uint, taskCreatorID uint) (bool, error) {
 	return uc.CanUserEditTeamTaskDetails(userID, teamID)
 }
+
 func (uc *TeamUseCase) IsUserTeamMemberWithUserID(teamID uint, targetUserID uint) (bool, error) {
 	return uc.IsUserMember(targetUserID, teamID)
-}
-
-func generateSecureRandomToken(length int) (string, error) {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
 }
 
 func (uc *TeamUseCase) GenerateInviteToken(teamID uint, userID uint, req team.GenerateInviteTokenRequest) (*team.TeamInviteTokenResponse, error) {
@@ -717,7 +791,14 @@ func (uc *TeamUseCase) JoinTeamByToken(tokenValue string, userID uint) (*team.Te
 	return uc.toTeamResponse(teamModel, &roleToAssign, memberCountAfterJoin), nil
 }
 
-// hashTokenForLog - вспомогательная функция для логирования части хеша токена
+func generateSecureRandomToken(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
 func hashTokenForLog(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:8]) // Логируем только первые 8 байт хеша (16 символов)
