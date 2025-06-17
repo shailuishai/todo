@@ -250,7 +250,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       }
 
       return Scaffold(
-        backgroundColor: theme.colorScheme.surfaceContainerLowest,
+        backgroundColor: theme.colorScheme.surface,
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
