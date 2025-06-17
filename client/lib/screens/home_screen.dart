@@ -1,8 +1,8 @@
+// lib/screens/home_screen.dart
+import 'package:ToDo/core/utils/responsive_utils.dart';
 import 'package:ToDo/screens/tasks_hub_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../core/utils/responsive_utils.dart';
-import '../models/task_model.dart';
 import '../team_provider.dart';
 import '../widgets/sidebar/sidebar.dart';
 import '../widgets/sidebar/right_sidebar.dart';
@@ -16,7 +16,6 @@ import 'team_detail_screen.dart';
 import '../core/routing/app_pages.dart';
 import '../core/routing/app_router_delegate.dart';
 import '../core/routing/app_route_path.dart';
-// import '../sidebar_state_provider.dart'; // Не нужен здесь напрямую
 
 class HomePage extends StatefulWidget {
   final String initialSubRoute;
@@ -36,9 +35,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-// <<< ИЗМЕНЕНИЕ: Добавлен `with SingleTickerProviderStateMixin` для TabController >>>
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
-  // <<< НОВЫЙ КОД ДЛЯ МОБИЛЬНОЙ НАВИГАЦИИ >>>
   late int _mobilePageIndex;
   late final List<Widget> _mobilePages;
 
@@ -46,7 +43,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
     _mobilePageIndex = _getInitialMobilePageIndex();
-    // Определяем список страниц, которые будут в мобильной навигации
     _mobilePages = [
       const TasksHubScreen(),
       const TeamsScreen(),
@@ -54,7 +50,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     ];
   }
 
-  // Определяем начальный индекс для BottomNavigationBar на основе роута
   int _getInitialMobilePageIndex() {
     final subRoute = widget.initialSubRoute;
     if (subRoute == AppRouteSegments.teams || widget.teamIdToShow != null) {
@@ -63,11 +58,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (subRoute == AppRouteSegments.settings) {
       return 2;
     }
-    // Все остальные связанные с задачами роуты ведут на хаб задач
     return 0;
   }
 
-  // Обновляем индекс при изменении виджета (например, при навигации через URL)
   @override
   void didUpdateWidget(covariant HomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -78,26 +71,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       });
     }
   }
-  // <<< КОНЕЦ НОВОГО КОДА >>>
 
 
   Widget _getCurrentPageContent(BuildContext context) {
-    final theme = Theme.of(context); // Получаем тему для стилизации
+    // ... (Этот метод без изменений) ...
+    final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
     if (widget.teamIdToShow != null) {
-      // Оборачиваем TeamDetailScreen в стилизованный контейнер для десктопа
       Widget teamDetailContent = TeamDetailScreen(teamId: widget.teamIdToShow!);
-      if (!ResponsiveUtil.isMobile(context)) { // Только для десктопа/планшета
+      if (!ResponsiveUtil.isMobile(context)) {
         return Container(
-          margin: const EdgeInsets.only(top: 16.0, right: 0, bottom: 16.0, left: 16.0), // Отступ слева, т.к. правый сайдбар будет справа
+          margin: const EdgeInsets.only(top: 16.0, right: 0, bottom: 16.0, left: 16.0),
           decoration: BoxDecoration(
-            color: colorScheme.surface, // Как в CalendarScreen, или surfaceContainer
+            color: colorScheme.surface,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5), width: 1.0),
             boxShadow: [
               BoxShadow(
-                color: theme.shadowColor.withOpacity(0.07), // Немного другая тень
+                color: theme.shadowColor.withOpacity(0.07),
                 blurRadius: 8.0,
                 offset: const Offset(0, 2),
               ),
@@ -107,14 +98,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           child: teamDetailContent,
         );
       }
-      return teamDetailContent; // Для мобильных возвращаем "чистый" экран
+      return teamDetailContent;
     }
-
-    // if (widget.taskIdToShow != null) {
-    //   return TaskDetailScreen(taskId: widget.taskIdToShow!); // TaskDetailScreen сам управляет своим Scaffold
-    // }
-
-    // Стандартные экраны
     Widget pageContent;
     switch (widget.initialSubRoute) {
       case AppRouteSegments.settings:
@@ -138,13 +123,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       default:
         pageContent = const AllTasksKanbanScreen();
     }
-    // Для стандартных экранов, которые уже имеют свой Container с margin,
-    // дополнительная обертка не нужна здесь (они сами себя стилизуют).
     return pageContent;
   }
 
-  // ... (остальные методы _getActiveMenuIndex, _getPageTitleForAppBar, etc. без изменений)
   int _getActiveMenuIndex() {
+    // ... (Этот метод без изменений) ...
     if (widget.teamIdToShow != null) {
       return 3;
     }
@@ -198,39 +181,32 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         return _getCurrentPageContent(context);
       }
 
-      return Scaffold(
-        body: SafeArea(
-          top: false,
-          bottom: false,
-          child: PopScope(
-            canPop: false, // Мы сами будем управлять навигацией
-            onPopInvoked: (bool didPop) {
-              if (didPop) return;
-              // Если можем вернуться назад в навигаторе, делаем это
-              if (routerDelegate.canPop()) {
-                routerDelegate.popRoute();
-              } else {
-                // Если мы на главной (индекс 0), и некуда возвращаться,
-                // то можно, например, ничего не делать или показать диалог выхода.
-                // Пока оставим без действия.
-              }
-            },
-            child: Scaffold(
-              appBar: AppBar(
-                title: null,
-                automaticallyImplyLeading: false,
-                elevation: 1,
-              ),
-              body: IndexedStack(
-                index: _mobilePageIndex,
-                children: _mobilePages,
-              ),
-              bottomNavigationBar: BottomNavigationBar(
-                items: _buildBottomNavigationBarItems(context),
-                currentIndex: _mobilePageIndex,
-                onTap: (index) => _onBottomNavItemTapped(index, routerDelegate),
-              ),
-            ),
+      // <<< ИСПРАВЛЕНИЕ: Убираем SafeArea, меняем PopScope, устанавливаем фон AppBar >>>
+      return PopScope(
+        canPop: false,
+        onPopInvoked: (bool didPop) {
+          if (didPop) return;
+          if (routerDelegate.canPop()) {
+            routerDelegate.popRoute();
+          }
+        },
+        child: Scaffold(
+          // primary: false, // Не нужно
+          appBar: AppBar(
+            title: null,
+            backgroundColor: theme.colorScheme.surface, // Явно задаем цвет
+            automaticallyImplyLeading: false,
+            elevation: 1,
+            toolbarHeight: 0, // Убираем высоту, чтобы он был только для цвета системной панели
+          ),
+          body: IndexedStack(
+            index: _mobilePageIndex,
+            children: _mobilePages,
+          ),
+          bottomNavigationBar: BottomNavigationBar(
+            items: _buildBottomNavigationBarItems(context),
+            currentIndex: _mobilePageIndex,
+            onTap: (index) => _onBottomNavItemTapped(index, routerDelegate),
           ),
         ),
       );
@@ -250,7 +226,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       }
 
       return Scaffold(
-        backgroundColor: theme.colorScheme.surface,
+        backgroundColor: theme.colorScheme.surfaceContainerLowest,
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

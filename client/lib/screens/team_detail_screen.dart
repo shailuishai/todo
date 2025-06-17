@@ -97,7 +97,13 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     );
     _tabController.addListener(_onTabSelected);
 
-    _onSidebarSectionChanged();
+    // Сразу после создания контроллера обновляем его состояние, если нужно
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if(mounted) {
+        _onSidebarSectionChanged();
+        setState(() {}); // Перерисовываем, чтобы FAB обновился
+      }
+    });
   }
 
   void _onTabSelected() {
@@ -108,7 +114,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
           _sidebarStateProvider.setCurrentTeamDetailSection(tag.value);
         }
       }
-      setState(() {});
+      setState(() {}); // Перерисовываем для обновления FAB
     }
   }
 
@@ -152,6 +158,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     _tabController.dispose();
     super.dispose();
   }
+
+  // ... (остальные методы без изменений) ...
 
   @override
   void didChangeDependencies() {
@@ -273,7 +281,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     });
   }
 
-  // <<< НОВЫЙ МЕТОД: вызов нижнего меню >>>
   void _showTaskManagementBottomSheet(BuildContext context, TeamDetail team) {
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
     final bool canEditTasks = team.currentUserRole == TeamMemberRole.owner ||
@@ -334,7 +341,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     );
   }
 
-  // ... (остальные методы без изменений) ...
   void _displayTeamTagEditDialog(BuildContext context, TeamDetail team, {ApiTag? tagToEdit}) {
     final tagProvider = Provider.of<TagProvider>(context, listen: false);
     final teamIdInt = int.tryParse(team.teamId);
@@ -579,38 +585,80 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     if (_tabs.isEmpty) {
       return Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()));
     }
+    final theme = Theme.of(context);
+    final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
 
-    return Scaffold(
-      primary: false,
-      appBar: AppBar(
-        primary: true,
-        title: null,
-        // <<< ИСПРАВЛЕНИЕ: Используем surface, а не background >>>
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        elevation: 1,
-        leading: (Provider.of<AppRouterDelegate>(context, listen: false).canPop())
-            ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
-            : null,
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: _tabs,
-          isScrollable: false,
-          indicatorSize: TabBarIndicatorSize.tab,
-          indicatorWeight: 2.5,
-          labelPadding: EdgeInsets.zero,
-        ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: theme.colorScheme.surface,
+        statusBarIconBrightness: theme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: theme.brightness,
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: _tabViews,
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor: theme.colorScheme.background,
+            appBar: PreferredSize(
+              preferredSize: const Size.fromHeight(kToolbarHeight + kTextTabBarHeight),
+              child: Container(
+                color: theme.colorScheme.surface,
+                child: SafeArea(
+                  top: true,
+                  bottom: false,
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 56.0), // Отступ для кнопки назад
+                        child: AppBar(
+                          toolbarHeight: kToolbarHeight,
+                          elevation: 0,
+                          backgroundColor: Colors.transparent,
+                          centerTitle: true,
+                          title: Text(team.name, overflow: TextOverflow.ellipsis),
+                        ),
+                      ),
+                      TabBar(
+                        controller: _tabController,
+                        tabs: _tabs,
+                        isScrollable: true,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicatorWeight: 2.5,
+                        labelPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            body: TabBarView(
+              controller: _tabController,
+              children: _tabViews,
+            ),
+            floatingActionButton: _tabController.index == 0
+                ? FloatingActionButton(
+              onPressed: () => _showTaskManagementBottomSheet(context, team),
+              tooltip: 'Действия с задачами',
+              child: const Icon(Icons.more_horiz_rounded),
+            )
+                : null,
+          ),
+          // <<< ИСПРАВЛЕНИЕ: Кнопка "Назад" поверх всего >>>
+          if (routerDelegate.canPop())
+            Positioned(
+              top: 0,
+              left: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4.0, top: 4.0),
+                  child: BackButton(
+                    onPressed: () => routerDelegate.popRoute(),
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
-      floatingActionButton: _tabController.index == 0
-          ? FloatingActionButton(
-        onPressed: () => _showTaskManagementBottomSheet(context, team),
-        tooltip: 'Действия с задачами',
-        child: const Icon(Icons.more_horiz_rounded),
-      )
-          : null,
     );
   }
 
@@ -623,16 +671,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         final team = teamProvider.currentTeamDetail;
 
         if (teamProvider.isLoadingTeamDetail && team == null) {
-          return Scaffold(appBar: AppBar(title: const Text('Загрузка команды...')), body: const Center(child: CircularProgressIndicator()));
+          return const Center(child: CircularProgressIndicator());
         }
         if (teamProvider.error != null && team == null) {
-          return Scaffold(appBar: AppBar(title: const Text('Ошибка')), body: Center(child: Padding(
+          return Center(child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Text("Ошибка загрузки команды: ${teamProvider.error}", textAlign: TextAlign.center),
-          )));
+          ));
         }
         if (team == null) {
-          return Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()));
+          return const Center(child: CircularProgressIndicator());
         }
 
         if (isMobile) {
@@ -644,7 +692,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       },
     );
 
-    return isMobile ? SafeArea(top: false, bottom: false, child: screenContent) : screenContent;
+    // Убираем SafeArea отсюда, так как она теперь управляется внутри _buildMobileLayout
+    return screenContent;
   }
 
   Widget _buildTasksTab(BuildContext context, String currentUserId, String teamIdForDialog, bool canEditTasksOverall) {
