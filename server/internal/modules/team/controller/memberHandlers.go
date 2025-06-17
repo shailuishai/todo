@@ -1,3 +1,4 @@
+// internal/modules/team/controller/memberHandlers.go
 package controller
 
 import (
@@ -9,10 +10,12 @@ import (
 	"github.com/go-chi/render"
 	"log/slog"
 
-	"server/internal/modules/team"            // Для ошибок и DTO ответов
-	usermodels "server/internal/modules/user" // Для общих ошибок (например, UserNotFound при добавлении)
+	"server/internal/modules/team"
+	usermodels "server/internal/modules/user"
 	resp "server/pkg/lib/response"
 )
+
+// ... (GetTeamMembers и AddTeamMember остаются без изменений) ...
 
 func (c *TeamController) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
 	op := "TeamController.GetTeamMembers"
@@ -147,6 +150,7 @@ func (c *TeamController) UpdateTeamMemberRole(w http.ResponseWriter, r *http.Req
 	}
 	log = log.With("newRole", string(req.Role))
 
+	// <<< ИСПРАВЛЕНИЕ: Передаем правильные ID (currentUserID и targetUserID) >>>
 	memberResponse, err := c.useCase.UpdateTeamMemberRole(uint(teamID), currentUserID, uint(targetUserID), req)
 	if err != nil {
 		log.Error("usecase UpdateTeamMemberRole failed", "error", err)

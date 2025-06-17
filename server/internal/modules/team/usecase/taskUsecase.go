@@ -484,21 +484,60 @@ func (uc *TeamUseCase) AddTeamMember(teamID uint, currentUserID uint, req team.A
 }
 
 // Пример для UpdateTeamMemberRole (нужно добавить получение memberCount, если toTeamResponse его требует, но здесь возвращается TeamMemberResponse)
-func (uc *TeamUseCase) UpdateTeamMemberRole(teamID uint, currentUserID uint, targetUserID uint, req team.UpdateTeamMemberRoleRequest) (*team.TeamMemberResponse, error) {
-	// ... (существующая логика до return) ...
-	// После uc.repo.UpdateTeamMemberRole и uc.repo.DeleteTeamMembers(teamID):
-	_ = uc.repo.DeleteTeam(teamID) // Инвалидация кэша команды для обновления MemberCount при следующем GetTeamByID
+func (uc *TeamUseCase) UpdateTeamMemberRole(teamID, currentUserID, targetUserID uint, req team.UpdateTeamMemberRoleRequest) (*team.TeamMemberResponse, error) {
+	op := "TeamUseCase.UpdateTeamMemberRole"
+	log := uc.log.With(slog.String("op", op), slog.Uint64("teamID", uint64(teamID)), slog.Uint64("currentUserID", uint64(currentUserID)), slog.Uint64("targetUserID", uint64(targetUserID)))
 
-	updatedMembership, err := uc.repo.GetMembership(targetUserID, teamID) // Получаем обновленное
+	// Проверяем, что пользователь не пытается изменить свою собственную роль
+	if currentUserID == targetUserID {
+		return nil, team.ErrCannotPerformActionOnSelf
+	}
+
+	// 1. Проверяем права текущего пользователя (currentUserID)
+	currentUserMembership, err := uc.repo.GetMembership(currentUserID, teamID)
 	if err != nil {
-		uc.log.Error("failed to retrieve updated membership for response", "error", err, "targetUserID", targetUserID, "teamID", teamID)
+		log.Error("failed to get current user membership", "error", err)
+		return nil, team.ErrTeamAccessDenied
+	}
+
+	if currentUserMembership.Role != team.RoleOwner && currentUserMembership.Role != team.RoleAdmin {
+		log.Warn("user lacks permission to change roles", "currentUserRole", currentUserMembership.Role)
+		return nil, team.ErrTeamAccessDenied
+	}
+
+	// 2. Получаем текущую запись участника, которого хотим изменить
+	memberToUpdate, err := uc.repo.GetMembership(targetUserID, teamID)
+	if err != nil {
+		log.Error("failed to get target user membership", "error", err)
+		return nil, team.ErrUserNotMember // Используем более конкретную ошибку
+	}
+
+	// 3. Проверяем логику (админ не может менять роль другого админа или владельца)
+	if currentUserMembership.Role == team.RoleAdmin && (memberToUpdate.Role == team.RoleAdmin || memberToUpdate.Role == team.RoleOwner) {
+		log.Warn("admin attempted to change role of another admin or owner")
+		return nil, team.ErrTeamAccessDenied
+	}
+	if memberToUpdate.Role == team.RoleOwner {
+		log.Warn("attempted to change owner's role")
+		return nil, team.ErrCannotChangeOwnerRole
+	}
+
+	// 4. Обновляем роль в базе данных
+	updatedMembership, err := uc.repo.UpdateTeamMemberRole(targetUserID, teamID, req.Role)
+	if err != nil {
+		log.Error("failed to update team member role in repo", "error", err)
 		return nil, team.ErrTeamInternal
 	}
 
+	// <<< КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Инвалидация кэша участников >>>
+	_ = uc.repo.DeleteTeamMembers(teamID)
+	_ = uc.repo.DeleteTeam(teamID) // Также инвалидируем кэш команды (на случай если MemberCount кэшируется)
+	log.Info("team members and team cache invalidated", slog.Uint64("teamID", uint64(teamID)))
+
+	// 6. Формируем ответ на основе актуальных данных
 	targetUserLite, errUser := uc.repo.GetUserLiteByID(targetUserID)
 	if errUser != nil {
-		uc.log.Error("failed to get target user lite for response after role update", "error", errUser, "targetUserID", targetUserID)
-		// Можно вернуть ошибку или UserLite с дефолтными значениями
+		log.Error("failed to get target user lite for response after role update", "error", errUser, "targetUserID", targetUserID)
 		targetUserLite = &team.UserLiteResponse{UserID: targetUserID, Login: "Unknown"}
 	}
 
