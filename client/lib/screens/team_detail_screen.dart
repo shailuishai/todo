@@ -107,7 +107,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
           _sidebarStateProvider.setCurrentTeamDetailSection(tag.value);
         }
       }
-      setState(() {}); // Перерисовываем для обновления FAB
+      setState(() {});
     }
   }
 
@@ -125,7 +125,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   void _addTab(TeamDetailSection section, String title, IconData icon) {
     _tabs.add(Tab(
       key: ValueKey(section),
-      height: 60, // Увеличиваем высоту для иконки и текста
+      height: 60,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -280,7 +280,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Позволяет занимать больше половины экрана
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (builderContext) {
         return Padding(
@@ -574,19 +574,17 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   }
 
   Widget _buildMobileLayout(TeamDetail team) {
-    final bool canEditTasks = team.currentUserRole == TeamMemberRole.owner ||
-        team.currentUserRole == TeamMemberRole.admin ||
-        team.currentUserRole == TeamMemberRole.editor;
-
     if (_tabs.isEmpty) {
       return Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
+      // <<< ИСПРАВЛЕНИЕ: primary: false, чтобы Scaffold не добавлял свой отступ для SafeArea >>>
+      primary: false,
       appBar: AppBar(
-        // <<< ИСПРАВЛЕНИЕ: Заголовок убран >>>
+        // <<< ИСПРАВЛЕНИЕ: primary: true, чтобы AppBar сам управлял отступом под статус-бар >>>
+        primary: true,
         title: null,
-        // <<< ИСПРАВЛЕНИЕ: AppBar больше не прозрачный, имеет свой цвет >>>
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 1,
         leading: (Provider.of<AppRouterDelegate>(context, listen: false).canPop())
@@ -595,18 +593,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         bottom: TabBar(
           controller: _tabController,
           tabs: _tabs,
-          // <<< ИСПРАВЛЕНИЕ: Делаем TabBar неподвижным и центрированным >>>
           isScrollable: false,
           indicatorSize: TabBarIndicatorSize.tab,
           indicatorWeight: 2.5,
-          labelPadding: EdgeInsets.zero, // Убираем внутренние отступы, чтобы вкладки равномерно распределились
+          labelPadding: EdgeInsets.zero,
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: _tabViews,
       ),
-      // <<< ИСПРАВЛЕНИЕ: Кнопка действий для вкладки "Задачи" >>>
       floatingActionButton: _tabController.index == 0
           ? FloatingActionButton(
         onPressed: () => _showTaskManagementBottomSheet(context, team),
@@ -621,7 +617,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   Widget build(BuildContext context) {
     final isMobile = ResponsiveUtil.isMobile(context);
 
-    // <<< ИСПРАВЛЕНИЕ: Оборачиваем в SafeArea для мобильных >>>
     Widget screenContent = Consumer<TeamProvider>(
       builder: (context, teamProvider, child) {
         final team = teamProvider.currentTeamDetail;
@@ -648,7 +643,9 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       },
     );
 
-    return isMobile ? SafeArea(child: screenContent) : screenContent;
+    // <<< ИСПРАВЛЕНИЕ: SafeArea применяется только для мобильных устройств >>>
+    // `top: false` предотвращает двойной отступ, т.к. AppBar уже его делает.
+    return isMobile ? SafeArea(top: false, child: screenContent) : screenContent;
   }
 
   Widget _buildTasksTab(BuildContext context, String currentUserId, String teamIdForDialog, bool canEditTasksOverall) {
