@@ -97,11 +97,10 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     );
     _tabController.addListener(_onTabSelected);
 
-    // Сразу после создания контроллера обновляем его состояние, если нужно
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if(mounted) {
         _onSidebarSectionChanged();
-        setState(() {}); // Перерисовываем, чтобы FAB обновился
+        setState(() {});
       }
     });
   }
@@ -114,7 +113,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
           _sidebarStateProvider.setCurrentTeamDetailSection(tag.value);
         }
       }
-      setState(() {}); // Перерисовываем для обновления FAB
+      setState(() {});
     }
   }
 
@@ -159,7 +158,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     super.dispose();
   }
 
-  // ... (остальные методы без изменений) ...
+  // ... (остальные методы остаются без изменений)
+  // ... (didChangeDependencies, _handleSectionChange, _triggerFetchTeamTasksIfNeeded, etc.)
 
   @override
   void didChangeDependencies() {
@@ -588,77 +588,75 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     final theme = Theme.of(context);
     final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarColor: theme.colorScheme.surface,
-        statusBarIconBrightness: theme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
-        statusBarBrightness: theme.brightness,
-      ),
-      child: Stack(
-        children: [
-          Scaffold(
-            backgroundColor: theme.colorScheme.background,
-            appBar: PreferredSize(
-              preferredSize: const Size.fromHeight(kToolbarHeight + kTextTabBarHeight),
-              child: Container(
-                color: theme.colorScheme.surface,
-                child: SafeArea(
-                  top: true,
-                  bottom: false,
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 56.0), // Отступ для кнопки назад
-                        child: AppBar(
-                          toolbarHeight: kToolbarHeight,
-                          elevation: 0,
-                          backgroundColor: Colors.transparent,
-                          centerTitle: true,
-                          title: Text(team.name, overflow: TextOverflow.ellipsis),
-                        ),
-                      ),
-                      TabBar(
-                        controller: _tabController,
-                        tabs: _tabs,
-                        isScrollable: true,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        indicatorWeight: 2.5,
-                        labelPadding: const EdgeInsets.symmetric(horizontal: 16),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            body: TabBarView(
-              controller: _tabController,
-              children: _tabViews,
-            ),
-            floatingActionButton: _tabController.index == 0
-                ? FloatingActionButton(
-              onPressed: () => _showTaskManagementBottomSheet(context, team),
-              tooltip: 'Действия с задачами',
-              child: const Icon(Icons.more_horiz_rounded),
-            )
-                : null,
-          ),
-          // <<< ИСПРАВЛЕНИЕ: Кнопка "Назад" поверх всего >>>
-          if (routerDelegate.canPop())
-            Positioned(
-              top: 0,
-              left: 0,
+    // <<< ИСПРАВЛЕНИЕ: Используем Stack для наложения кнопки "Назад" >>>
+    return Stack(
+      children: [
+        // Основной Scaffold с AppBar и телом
+        Scaffold(
+          appBar: PreferredSize(
+            preferredSize: const Size.fromHeight(kToolbarHeight + kTextTabBarHeight - 8), // Уменьшаем высоту AppBar
+            child: Container(
+              // <<< ИСПРАВЛЕНИЕ: Общий фон для AppBar и TabBar >>>
+              color: theme.colorScheme.surface,
               child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 4.0, top: 4.0),
-                  child: BackButton(
-                    onPressed: () => routerDelegate.popRoute(),
-                    color: theme.colorScheme.onSurface,
-                  ),
+                top: true,
+                bottom: false,
+                child: Column(
+                  children: [
+                    // AppBar с заголовком
+                    AppBar(
+                      toolbarHeight: kToolbarHeight,
+                      elevation: 0,
+                      backgroundColor: Colors.transparent, // Фон уже задан контейнером
+                      centerTitle: true,
+                      title: Text(team.name, overflow: TextOverflow.ellipsis),
+                      // Убираем автоматическую кнопку "назад" отсюда
+                      automaticallyImplyLeading: false,
+                    ),
+                    // TabBar
+                    TabBar(
+                      controller: _tabController,
+                      tabs: _tabs,
+                      // <<< ИСПРАВЛЕНИЕ: Заполняем доступную ширину >>>
+                      isScrollable: false,
+                      tabAlignment: TabAlignment.fill,
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      indicatorWeight: 2.5,
+                      labelPadding: EdgeInsets.zero,
+                    ),
+                  ],
                 ),
               ),
             ),
-        ],
-      ),
+          ),
+          body: TabBarView(
+            controller: _tabController,
+            children: _tabViews,
+          ),
+          floatingActionButton: _tabController.index == 0
+              ? FloatingActionButton(
+            onPressed: () => _showTaskManagementBottomSheet(context, team),
+            tooltip: 'Действия с задачами',
+            child: const Icon(Icons.more_horiz_rounded),
+          )
+              : null,
+        ),
+        // <<< ИСПРАВЛЕНИЕ: Кнопка "Назад" поверх всего >>>
+        if (routerDelegate.canPop())
+          Positioned(
+            top: 0,
+            left: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4.0),
+                child: BackButton(
+                  onPressed: () => routerDelegate.popRoute(),
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -666,21 +664,22 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   Widget build(BuildContext context) {
     final isMobile = ResponsiveUtil.isMobile(context);
 
-    Widget screenContent = Consumer<TeamProvider>(
+    // <<< ИСПРАВЛЕНИЕ: Убираем лишний SafeArea >>>
+    return Consumer<TeamProvider>(
       builder: (context, teamProvider, child) {
         final team = teamProvider.currentTeamDetail;
 
         if (teamProvider.isLoadingTeamDetail && team == null) {
-          return const Center(child: CircularProgressIndicator());
+          return Scaffold(body: const Center(child: CircularProgressIndicator()));
         }
         if (teamProvider.error != null && team == null) {
-          return Center(child: Padding(
+          return Scaffold(body: Center(child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Text("Ошибка загрузки команды: ${teamProvider.error}", textAlign: TextAlign.center),
-          ));
+          )));
         }
         if (team == null) {
-          return const Center(child: CircularProgressIndicator());
+          return Scaffold(body: const Center(child: CircularProgressIndicator()));
         }
 
         if (isMobile) {
@@ -691,9 +690,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         return _buildSectionContent(context, sidebarState.currentTeamDetailSection, team);
       },
     );
-
-    // Убираем SafeArea отсюда, так как она теперь управляется внутри _buildMobileLayout
-    return screenContent;
   }
 
   Widget _buildTasksTab(BuildContext context, String currentUserId, String teamIdForDialog, bool canEditTasksOverall) {

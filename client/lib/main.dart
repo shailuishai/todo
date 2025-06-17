@@ -144,7 +144,7 @@ class _MyAppState extends State<MyApp> {
         final ColorScheme colorScheme = currentTheme.colorScheme;
 
         SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-          statusBarColor: currentTheme.appBarTheme.backgroundColor ?? colorScheme.surface,
+          statusBarColor: colorScheme.surface,
           statusBarIconBrightness: colorScheme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
           statusBarBrightness: colorScheme.brightness,
           systemNavigationBarColor: currentTheme.bottomNavigationBarTheme.backgroundColor ?? colorScheme.surface,
