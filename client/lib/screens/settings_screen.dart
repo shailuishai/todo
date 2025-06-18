@@ -145,11 +145,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
           if (isMobile) {
             return Scaffold(
-              appBar: AppBar(
-                // <<< ИЗМЕНЕНИЕ: Убран title, добавлен явный цвет для консистентности >>>
-                backgroundColor: theme.appBarTheme.backgroundColor,
-                elevation: 1,
-              ),
               body: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

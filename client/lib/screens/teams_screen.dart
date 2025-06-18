@@ -160,17 +160,6 @@ class _TeamsScreenState extends State<TeamsScreen> {
 
         if (isMobile) {
           return Scaffold(
-            appBar: AppBar(
-              backgroundColor: theme.appBarTheme.backgroundColor,
-              centerTitle: false,
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  tooltip: "Поиск команд",
-                  onPressed: () => _showTeamSearchDialog(context),
-                )
-              ],
-            ),
             body: SafeArea(child: bodyContent),
             floatingActionButton: showFab ? FloatingActionButton(
               onPressed: () => _showTeamActionsBottomSheet(context),
@@ -220,6 +209,11 @@ class _TeamsScreenState extends State<TeamsScreen> {
       actions = Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          ElevatedButton.icon(
+            icon: const Icon(Icons.search),
+            label: const Text("Найти команду по названию"),
+            onPressed: () => _showTeamSearchDialog(context),
+          ),
           ElevatedButton.icon(
             icon: const Icon(Icons.group_add_outlined),
             label: const Text("Создать команду"),
