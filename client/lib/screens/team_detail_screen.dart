@@ -1,4 +1,3 @@
-// lib/screens/team_detail_screen.dart
 import 'package:ToDo/core/utils/responsive_utils.dart';
 import 'package:ToDo/models/task_model.dart';
 import 'package:ToDo/task_provider.dart';
@@ -207,6 +206,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     Provider.of<TaskProvider>(context, listen: false).locallyUpdateTaskStatus(task.taskId, newStatus);
   }
 
+  // ... (Остальные методы-обработчики действий остаются без изменений)
   void _checkedHandleTaskDelete(Task taskToDelete, bool canGenericEdit, String currentUserId) {
     if (canGenericEdit || taskToDelete.createdByUserId == currentUserId) {
       showDialog<bool>(
@@ -587,17 +587,14 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     final theme = Theme.of(context);
     final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
 
-    // <<< ИСПРАВЛЕНИЕ: Переработан AppBar >>>
+    // <<< ИСПРАВЛЕНИЕ: AppBar теперь контролирует фон и кнопку "назад" >>>
     return Scaffold(
       appBar: AppBar(
-        // Используем цвет surface, который должен быть #161616 в темной теме
         backgroundColor: theme.colorScheme.surface,
         elevation: 1,
-        // Кнопку "назад" делаем стандартной для AppBar
         leading: routerDelegate.canPop() ? BackButton(color: theme.colorScheme.onSurface) : null,
         title: Text(team.name, overflow: TextOverflow.ellipsis),
         centerTitle: true,
-        // `bottom` теперь отрисовывается в рамках AppBar, решая проблему с фоном
         bottom: TabBar(
           controller: _tabController,
           tabs: _tabs,
@@ -666,17 +663,17 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                 builder: (context) {
                   final List<Task> teamTasks = taskProvider.tasksForTeamView(widget.teamId);
 
-                  if (taskProvider.isLoadingList && teamTasks.isEmpty && taskProvider.error == null) {
+                  if (taskProvider.isLoadingList && teamTasks.isEmpty) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  if (taskProvider.error != null && teamTasks.isEmpty && !taskProvider.isLoadingList) {
+                  if (taskProvider.error != null && teamTasks.isEmpty) {
                     return ListView(children: [Center(child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text("Ошибка загрузки задач: ${taskProvider.error}", textAlign: TextAlign.center),
                     ))]);
                   }
                   if (teamTasks.isEmpty && !taskProvider.isLoadingList) {
-                    return const Center(child: Text("В этой команде пока нет задач."));
+                    return ListView(children: const [Center(child: Padding(padding: EdgeInsets.all(24.0), child: Text("В этой команде пока нет задач.")))]);
                   }
 
                   if (isMobile) {

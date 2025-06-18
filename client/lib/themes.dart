@@ -110,7 +110,7 @@ ThemeData _buildThemeData(ColorScheme colorScheme, Brightness brightness, Color 
     inputDecorationTheme: _buildInputDecorationTheme(colorScheme),
     brightness: brightness,
     appBarTheme: AppBarTheme(
-      backgroundColor: colorScheme.surface, // Или surfaceContainer для другого эффекта
+      backgroundColor: colorScheme.surface,
       foregroundColor: colorScheme.onSurface,
       elevation: 0,
       surfaceTintColor: colorScheme.surfaceTint, // Для M3 эффекта при прокрутке
