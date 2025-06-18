@@ -73,7 +73,10 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     if (teamDetail == null) return;
 
     final oldIndex = _tabController.index;
-    _tabController.dispose();
+    if(mounted) {
+      _tabController.removeListener(_onTabSelected);
+      _tabController.dispose();
+    }
 
     _tabs.clear();
     _tabViews.clear();
@@ -127,7 +130,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     }
   }
 
-
   void _addTab(TeamDetailSection section, String title, IconData icon) {
     _tabs.add(Tab(
       key: ValueKey(section),
@@ -157,9 +159,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     _tabController.dispose();
     super.dispose();
   }
-
-  // ... (остальные методы остаются без изменений)
-  // ... (didChangeDependencies, _handleSectionChange, _triggerFetchTeamTasksIfNeeded, etc.)
 
   @override
   void didChangeDependencies() {
@@ -581,6 +580,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     }
   }
 
+  // <<< ИСПРАВЛЕНИЕ: Переработанный мобильный layout >>>
   Widget _buildMobileLayout(TeamDetail team) {
     if (_tabs.isEmpty) {
       return Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()));
@@ -588,36 +588,30 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     final theme = Theme.of(context);
     final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
 
-    // <<< ИСПРАВЛЕНИЕ: Используем Stack для наложения кнопки "Назад" >>>
     return Stack(
       children: [
-        // Основной Scaffold с AppBar и телом
         Scaffold(
           appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(kToolbarHeight + kTextTabBarHeight - 8), // Уменьшаем высоту AppBar
-            child: Container(
-              // <<< ИСПРАВЛЕНИЕ: Общий фон для AppBar и TabBar >>>
+            preferredSize: const Size.fromHeight(kToolbarHeight + kTextTabBarHeight),
+            child: Material(
               color: theme.colorScheme.surface,
+              elevation: 1,
               child: SafeArea(
                 top: true,
                 bottom: false,
                 child: Column(
                   children: [
-                    // AppBar с заголовком
                     AppBar(
                       toolbarHeight: kToolbarHeight,
                       elevation: 0,
-                      backgroundColor: Colors.transparent, // Фон уже задан контейнером
+                      backgroundColor: Colors.transparent,
                       centerTitle: true,
                       title: Text(team.name, overflow: TextOverflow.ellipsis),
-                      // Убираем автоматическую кнопку "назад" отсюда
                       automaticallyImplyLeading: false,
                     ),
-                    // TabBar
                     TabBar(
                       controller: _tabController,
                       tabs: _tabs,
-                      // <<< ИСПРАВЛЕНИЕ: Заполняем доступную ширину >>>
                       isScrollable: false,
                       tabAlignment: TabAlignment.fill,
                       indicatorSize: TabBarIndicatorSize.tab,
@@ -641,18 +635,14 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
           )
               : null,
         ),
-        // <<< ИСПРАВЛЕНИЕ: Кнопка "Назад" поверх всего >>>
         if (routerDelegate.canPop())
           Positioned(
             top: 0,
             left: 0,
             child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 4.0),
-                child: BackButton(
-                  onPressed: () => routerDelegate.popRoute(),
-                  color: theme.colorScheme.onSurface,
-                ),
+              child: BackButton(
+                onPressed: () => routerDelegate.popRoute(),
+                color: theme.colorScheme.onSurface,
               ),
             ),
           ),
@@ -664,13 +654,12 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   Widget build(BuildContext context) {
     final isMobile = ResponsiveUtil.isMobile(context);
 
-    // <<< ИСПРАВЛЕНИЕ: Убираем лишний SafeArea >>>
     return Consumer<TeamProvider>(
       builder: (context, teamProvider, child) {
         final team = teamProvider.currentTeamDetail;
 
         if (teamProvider.isLoadingTeamDetail && team == null) {
-          return Scaffold(body: const Center(child: CircularProgressIndicator()));
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
         if (teamProvider.error != null && team == null) {
           return Scaffold(body: Center(child: Padding(
@@ -679,7 +668,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
           )));
         }
         if (team == null) {
-          return Scaffold(body: const Center(child: CircularProgressIndicator()));
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
         if (isMobile) {
@@ -692,63 +681,58 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     );
   }
 
+  // <<< ИСПРАВЛЕНИЕ: Добавлен RefreshIndicator >>>
   Widget _buildTasksTab(BuildContext context, String currentUserId, String teamIdForDialog, bool canEditTasksOverall) {
     final isMobile = ResponsiveUtil.isMobile(context);
-    return Column(
-      children: [
-        Expanded(
-          child: Consumer<TaskProvider>(
-              builder: (context, taskProvider, _) {
-                final List<Task> teamTasks = taskProvider.tasksForTeamView(widget.teamId);
+    final taskProvider = Provider.of<TaskProvider>(context);
 
-                if (taskProvider.isLoadingList && teamTasks.isEmpty && taskProvider.error == null) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (taskProvider.error != null && teamTasks.isEmpty && !taskProvider.isLoadingList) {
-                  return Center(child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text("Ошибка загрузки задач: ${taskProvider.error}", textAlign: TextAlign.center),
-                  ));
-                }
-                if (teamTasks.isEmpty && !taskProvider.isLoadingList) {
-                  return Center(child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.task_alt_outlined, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5)),
-                        const SizedBox(height: 24),
-                        Text("В этой команде пока нет задач.", textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                        const SizedBox(height: 20),
-                      ],
+    return RefreshIndicator(
+      onRefresh: () => taskProvider.fetchTasks(teamId: widget.teamId, forceBackendCall: true),
+      child: Column(
+        children: [
+          Expanded(
+            child: Builder(
+                builder: (context) {
+                  final List<Task> teamTasks = taskProvider.tasksForTeamView(widget.teamId);
+
+                  if (taskProvider.isLoadingList && teamTasks.isEmpty && taskProvider.error == null) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (taskProvider.error != null && teamTasks.isEmpty && !taskProvider.isLoadingList) {
+                    return ListView(children: [Center(child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text("Ошибка загрузки задач: ${taskProvider.error}", textAlign: TextAlign.center),
+                    ))]);
+                  }
+                  if (teamTasks.isEmpty && !taskProvider.isLoadingList) {
+                    return const Center(child: Text("В этой команде пока нет задач."));
+                  }
+
+                  if (isMobile) {
+                    return MobileTaskListWidget(
+                      tasks: teamTasks,
+                      onTaskStatusChanged: (task, newStatus) => _handleTaskStatusChanged(task, newStatus),
+                      onTaskTap: (task) => _navigateToTaskDetails(context, task),
+                      onTaskDelete: (Task taskForDelete) => _checkedHandleTaskDelete(taskForDelete, canEditTasksOverall, currentUserId),
+                      onTaskEdit: (Task taskForEdit) => _checkedHandleTaskEdit(taskForEdit, canEditTasksOverall, currentUserId),
+                      currentUserId: currentUserId,
+                    );
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 16),
+                    child: KanbanBoardWidget(
+                      tasks: teamTasks,
+                      onTaskStatusChanged: (task, newStatus) => _handleTaskStatusChanged(task, newStatus),
+                      onTaskDelete: (Task taskForDelete) => _checkedHandleTaskDelete(taskForDelete, canEditTasksOverall, currentUserId),
+                      onTaskEdit: (Task taskForEdit) => _checkedHandleTaskEdit(taskForEdit, canEditTasksOverall, currentUserId),
                     ),
-                  ));
-                }
-
-                if (isMobile) {
-                  return MobileTaskListWidget(
-                    tasks: teamTasks,
-                    onTaskStatusChanged: (task, newStatus) => _handleTaskStatusChanged(task, newStatus),
-                    onTaskTap: (task) => _navigateToTaskDetails(context, task),
-                    onTaskDelete: (Task taskForDelete) => _checkedHandleTaskDelete(taskForDelete, canEditTasksOverall, currentUserId),
-                    onTaskEdit: (Task taskForEdit) => _checkedHandleTaskEdit(taskForEdit, canEditTasksOverall, currentUserId),
-                    currentUserId: currentUserId,
                   );
                 }
-
-                return Padding(
-                  padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 16),
-                  child: KanbanBoardWidget(
-                    tasks: teamTasks,
-                    onTaskStatusChanged: (task, newStatus) => _handleTaskStatusChanged(task, newStatus),
-                    onTaskDelete: (Task taskForDelete) => _checkedHandleTaskDelete(taskForDelete, canEditTasksOverall, currentUserId),
-                    onTaskEdit: (Task taskForEdit) => _checkedHandleTaskEdit(taskForEdit, canEditTasksOverall, currentUserId),
-                  ),
-                );
-              }
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
