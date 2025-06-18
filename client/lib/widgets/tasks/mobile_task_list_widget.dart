@@ -1,20 +1,14 @@
 // lib/widgets/tasks/mobile_task_list_widget.dart
-import '../tasks/task_edit_dialog.dart'; // << ИМПОРТ ДИАЛОГА
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
 import '../../models/task_model.dart';
-import '../../theme_provider.dart';
 import './mobile_task_list_item_widget.dart';
-// import '../../task_provider.dart'; // Не нужен здесь напрямую, если передаем коллбэки
 
 class MobileTaskListWidget extends StatelessWidget {
   final List<Task> tasks;
   final Function(Task, KanbanColumnStatus) onTaskStatusChanged;
   final Function(Task) onTaskTap;
   final Function(Task) onTaskDelete;
-  final Function(Task) onTaskEdit; // <<< НОВЫЙ ПАРАМЕТР
-  final String currentUserId;
+  final Function(Task) onTaskEdit;
   final ScrollController? scrollController;
 
   const MobileTaskListWidget({
@@ -23,51 +17,36 @@ class MobileTaskListWidget extends StatelessWidget {
     required this.onTaskStatusChanged,
     required this.onTaskTap,
     required this.onTaskDelete,
-    required this.onTaskEdit, // <<< НОВЫЙ ПАРАМЕТР
-    required this.currentUserId,
+    required this.onTaskEdit,
     this.scrollController,
+    // Неиспользуемый параметр currentUserId удален
   }) : super(key: key);
 
-  // <<< НОВЫЙ МЕТОД ДЛЯ ОТКРЫТИЯ ДИАЛОГА РЕДАКТИРОВАНИЯ >>>
-  void _showEditDialog(BuildContext context, Task task) {
-    showDialog<Task?>(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return TaskEditDialog(
-          taskToEdit: task,
-          onTaskSaved: (updatedTask) {
-            // TaskProvider обновит состояние, MobileTaskListWidget перерисуется через родителя
-            debugPrint("MobileTaskListWidget: TaskEditDialog.onTaskSaved for task ID: ${updatedTask.taskId}");
-          },
-        );
-      },
-    );
-    // .then((returnedTask) { // Не обязательно обрабатывать then, если onTaskSaved достаточно
-    //   if (returnedTask != null) {
-    //     // UI должен обновиться через TaskProvider -> родительский виджет -> MobileTaskListWidget
-    //   }
-    // });
+  String _getTaskSuffix(int count) {
+    if (count % 10 == 1 && count % 100 != 11) {
+      return 'задача';
+    } else if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)) {
+      return 'задачи';
+    } else {
+      return 'задач';
+    }
   }
 
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    final Map<KanbanColumnStatus, List<Task>> groupedTasks = {};
-    for (var status in KanbanColumnStatus.values) {
-      groupedTasks[status] = tasks.where((task) => task.status == status && !task.isDeleted).toList();
-      groupedTasks[status]?.sort((a, b) {
-        int priorityCompare = a.priority.index.compareTo(b.priority.index);
-        if (priorityCompare != 0) return priorityCompare;
-        if (a.deadline == null && b.deadline == null) return 0;
-        if (a.deadline == null) return 1;
-        if (b.deadline == null) return -1;
-        return a.deadline!.compareTo(b.deadline!);
-      });
+  List<Widget> _buildTaskGroupSlivers({
+    required BuildContext context,
+    required String sectionTitle,
+    required List<Task> tasks,
+    required Function(Task, KanbanColumnStatus) onTaskStatusChanged,
+    required Function(Task) onTaskTap,
+    required Function(Task) onTaskDelete,
+    required Function(Task) onTaskEdit,
+  }) {
+    if (tasks.isEmpty) {
+      return [];
     }
 
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final orderedStatuses = [
       KanbanColumnStatus.in_progress,
       KanbanColumnStatus.todo,
@@ -75,7 +54,107 @@ class MobileTaskListWidget extends StatelessWidget {
       KanbanColumnStatus.done,
     ];
 
-    if (tasks.where((t) => !t.isDeleted).isEmpty) {
+    final Map<KanbanColumnStatus, List<Task>> groupedTasks = {};
+    for (var status in orderedStatuses) {
+      groupedTasks[status] = tasks.where((task) => task.status == status).toList();
+    }
+
+    List<Widget> slivers = [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 4),
+          child: Text(
+            sectionTitle,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+      ),
+    ];
+
+    for (var status in orderedStatuses) {
+      final tasksInGroup = groupedTasks[status] ?? [];
+      if (tasksInGroup.isEmpty) {
+        // Не показываем пустые группы, кроме "Выполнено" для ясности
+        if (status != KanbanColumnStatus.done) continue;
+      }
+
+      slivers.add(SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                status.title.toUpperCase(),
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: colorScheme.primary.withOpacity(0.9),
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              Text(
+                "${tasksInGroup.length} ${_getTaskSuffix(tasksInGroup.length)}",
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ));
+
+      if (tasksInGroup.isEmpty) {
+        slivers.add(SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
+            child: Center(
+              child: Text(
+                "Нет выполненных задач",
+                style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
+              ),
+            ),
+          ),
+        ));
+      } else {
+        slivers.add(
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            sliver: SliverList.separated(
+              itemCount: tasksInGroup.length,
+              itemBuilder: (context, taskIndex) {
+                final task = tasksInGroup[taskIndex];
+                return MobileTaskListItemWidget(
+                  key: ValueKey(task.taskId + task.updatedAt.toIso8601String()),
+                  task: task,
+                  onTap: () => onTaskTap(task),
+                  onStatusChanged: (newStatus) => onTaskStatusChanged(task, newStatus),
+                  onDelete: () => onTaskDelete(task),
+                  onEdit: () => onTaskEdit(task),
+                );
+              },
+              separatorBuilder: (context, _) => const SizedBox(height: 8),
+            ),
+          ),
+        );
+      }
+    }
+
+    return slivers;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final personalTasks = tasks.where((t) => !t.isTeamTask && !t.isDeleted).toList();
+    final teamTasks = tasks.where((t) => t.isTeamTask && !t.isDeleted).toList();
+
+    if (personalTasks.isEmpty && teamTasks.isEmpty) {
       return Center(
         child: Opacity(
           opacity: 0.7,
@@ -104,100 +183,46 @@ class MobileTaskListWidget extends StatelessWidget {
       );
     }
 
+    List<Widget> slivers = [];
+
+    if (personalTasks.isNotEmpty) {
+      slivers.addAll(_buildTaskGroupSlivers(
+        context: context,
+        sectionTitle: "Личные задачи",
+        tasks: personalTasks,
+        onTaskStatusChanged: onTaskStatusChanged,
+        onTaskTap: onTaskTap,
+        onTaskDelete: onTaskDelete,
+        onTaskEdit: onTaskEdit,
+      ));
+    }
+
+    if (personalTasks.isNotEmpty && teamTasks.isNotEmpty) {
+      slivers.add(const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 8.0),
+          child: Divider(height: 32, thickness: 1.5, indent: 20, endIndent: 20),
+        ),
+      ));
+    }
+
+    if (teamTasks.isNotEmpty) {
+      slivers.addAll(_buildTaskGroupSlivers(
+        context: context,
+        sectionTitle: "Командные задачи",
+        tasks: teamTasks,
+        onTaskStatusChanged: onTaskStatusChanged,
+        onTaskTap: onTaskTap,
+        onTaskDelete: onTaskDelete,
+        onTaskEdit: onTaskEdit,
+      ));
+    }
+
+    slivers.add(const SliverToBoxAdapter(child: SizedBox(height: 16)));
+
     return CustomScrollView(
       controller: scrollController,
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                final status = orderedStatuses[index];
-                final tasksInGroup = groupedTasks[status] ?? [];
-
-                if (tasksInGroup.isEmpty && status != KanbanColumnStatus.done) {
-                  return const SizedBox.shrink();
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16.0, bottom: 8.0, left: 4.0, right: 4.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            status.title.toUpperCase(),
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: colorScheme.primary.withOpacity(0.9),
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.8,
-                            ),
-                          ),
-                          Text(
-                            "${tasksInGroup.length} задач${_getTaskSuffix(tasksInGroup.length)}",
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant.withOpacity(0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (tasksInGroup.isEmpty && status == KanbanColumnStatus.done)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16.0),
-                        child: Center(
-                          child: Text(
-                            "Нет выполненных задач",
-                            style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant.withOpacity(0.6)),
-                          ),
-                        ),
-                      )
-                    else
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: tasksInGroup.length,
-                        itemBuilder: (context, taskIndex) {
-                          final task = tasksInGroup[taskIndex];
-                          return MobileTaskListItemWidget(
-                            key: ValueKey(task.taskId + task.updatedAt.toIso8601String()), // Обновляем ключ при изменении updatedAt
-                            task: task,
-                            onTap: () => onTaskTap(task),
-                            onStatusChanged: (newStatus) => onTaskStatusChanged(task, newStatus),
-                            onDelete: () => onTaskDelete(task),
-                            onEdit: () => _showEditDialog(context, task), // <<< ВЫЗЫВАЕМ ДИАЛОГ РЕДАКТИРОВАНИЯ >>>
-                          );
-                        },
-                        separatorBuilder: (context, _) => const SizedBox(height: 8),
-                      ),
-                    if (index < orderedStatuses.length - 1)
-                      Divider(
-                        height: 24,
-                        thickness: 0.8,
-                        color: colorScheme.outlineVariant.withOpacity(0.3),
-                      )
-                    else
-                      const SizedBox(height: 16),
-                  ],
-                );
-              },
-              childCount: orderedStatuses.length,
-            ),
-          ),
-        ),
-      ],
+      slivers: slivers,
     );
-  }
-
-  String _getTaskSuffix(int count) {
-    if (count % 10 == 1 && count % 100 != 11) {
-      return '';
-    } else if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)) {
-      return 'и';
-    } else {
-      return '';
-    }
   }
 }

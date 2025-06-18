@@ -169,7 +169,6 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
         onTaskTap: (task) => _navigateToTaskDetails(context, task),
         onTaskDelete: (task) => _handleTaskDelete(context, task),
         onTaskEdit: (task) => _handleTaskEdit(context, task),
-        currentUserId: currentUserId ?? '',
       )
           : Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
@@ -192,7 +191,6 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
               ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
               : null,
         ),
-        // <<< ИЗМЕНЕНИЕ: Оборачиваем body в SafeArea >>>
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: _refreshData,

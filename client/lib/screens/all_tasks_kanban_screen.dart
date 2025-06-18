@@ -190,7 +190,6 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
         onTaskTap: (task) => _navigateToTaskDetails(context, task),
         onTaskDelete: (task) => _handleTaskDelete(context, task),
         onTaskEdit: (task) => _handleTaskEdit(context, task),
-        currentUserId: currentUserId ?? '',
       )
           : Padding(
         padding: const EdgeInsets.symmetric(vertical: 16.0),
@@ -203,7 +202,6 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
       );
     }
 
-    // <<< ИЗМЕНЕНИЕ: Добавляем Scaffold и SafeArea для мобильной версии >>>
     if (isMobile) {
       return Scaffold(
         appBar: AppBar(

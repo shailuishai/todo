@@ -139,19 +139,17 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final bool isMobile = ResponsiveUtil.isMobile(context);
-
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: colorScheme.surface, // Явно используем цвет surface
+      statusBarIconBrightness: colorScheme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+      statusBarBrightness: colorScheme.brightness,
+    ));
     return Consumer<AuthState>(
         builder: (context, authState, _) {
           final UserProfile? currentUser = authState.currentUser;
 
           if (isMobile) {
             return Scaffold(
-              appBar: AppBar(
-                systemOverlayStyle: SystemUiOverlayStyle(
-                  statusBarColor: theme.colorScheme.surface, // <-- Самое важное
-                  statusBarBrightness: Brightness.dark, // Для iOS
-                ),
-              ),
               body: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

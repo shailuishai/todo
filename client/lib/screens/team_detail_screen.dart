@@ -692,7 +692,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                       onTaskTap: (task) => _navigateToTaskDetails(context, task),
                       onTaskDelete: (Task taskForDelete) => _checkedHandleTaskDelete(taskForDelete, canEditTasksOverall, currentUserId),
                       onTaskEdit: (Task taskForEdit) => _checkedHandleTaskEdit(taskForEdit, canEditTasksOverall, currentUserId),
-                      currentUserId: currentUserId,
                     );
                   }
 
