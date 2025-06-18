@@ -19,6 +19,11 @@ class PersonalTasksKanbanScreen extends StatefulWidget {
 
 class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
 
+  Future<void> _refreshData() {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    return taskProvider.fetchTasks(viewType: TaskListViewType.personal, forceBackendCall: true);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -84,7 +89,6 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
       builder: (BuildContext dialogContext) {
         return TaskEditDialog(
           taskToEdit: task,
-          // <<< ИСПРАВЛЕНИЕ: Добавляем проверку на null >>>
           onTaskSaved: (Task? updatedTask) {
             if (updatedTask != null) {
               debugPrint("PersonalTasksKanbanScreen: TaskEditDialog.onTaskSaved for task ID: ${updatedTask.taskId}");
@@ -107,9 +111,9 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
 
     Widget content;
 
-    if (taskProvider.isLoadingList && displayedPersonalTasks.isEmpty && taskProvider.error == null) {
+    if (taskProvider.isLoadingList && displayedPersonalTasks.isEmpty) {
       content = const Center(child: CircularProgressIndicator());
-    } else if (taskProvider.error != null && displayedPersonalTasks.isEmpty && !taskProvider.isLoadingList) {
+    } else if (taskProvider.error != null && displayedPersonalTasks.isEmpty) {
       content = Center(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -125,7 +129,7 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.refresh),
                   label: const Text("Попробовать снова"),
-                  onPressed: () => taskProvider.fetchTasks(viewType: TaskListViewType.personal),
+                  onPressed: _refreshData,
                 )
               ],
             ),
@@ -177,17 +181,20 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
       );
     }
 
-    if (ResponsiveUtil.isMobile(context)) {
+    final isMobile = ResponsiveUtil.isMobile(context);
+
+    if (isMobile) {
       return Scaffold(
         appBar: AppBar(
-          automaticallyImplyLeading: false, // Убираем автоматическую кнопку назад
-          // Можно добавить кнопку назад, если мы перешли на этот экран с хаба
-          leading: (Provider.of<AppRouterDelegate>(context).canPop())
-              ? IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
-              : null,
           title: const Text("Личные задачи"),
+          leading: Provider.of<AppRouterDelegate>(context).canPop()
+              ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
+              : null,
         ),
-        body: content,
+        body: RefreshIndicator(
+          onRefresh: _refreshData,
+          child: content,
+        ),
       );
     }
 

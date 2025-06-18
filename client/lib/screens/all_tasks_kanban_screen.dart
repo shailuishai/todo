@@ -1,4 +1,3 @@
-// lib/screens/all_tasks_kanban_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/task_model.dart';
@@ -22,6 +21,11 @@ class AllTasksKanbanScreen extends StatefulWidget {
 
 class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
 
+  Future<void> _refreshData() {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    return taskProvider.fetchTasks(viewType: TaskListViewType.allAssignedOrCreated, forceBackendCall: true);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -29,7 +33,6 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
       if (mounted) {
         final taskProvider = Provider.of<TaskProvider>(context, listen: false);
         debugPrint("[AllTasksKanbanScreen] initState: Fetching tasks for global view.");
-        // Запрашиваем задачи для "Всех задач"
         taskProvider.fetchTasks(viewType: TaskListViewType.allAssignedOrCreated);
       }
     });
@@ -105,17 +108,6 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Не удалось загрузить детали команды: $error'), backgroundColor: Colors.red),
           );
-          showDialog<Task?>(
-            context: context,
-            builder: (BuildContext dialogContext) {
-              return TeamTaskEditDialog(
-                teamId: task.teamId!,
-                members: [],
-                taskToEdit: task,
-                onTaskSaved: (updatedTask) { /* ... */ },
-              );
-            },
-          );
         }
       });
     } else {
@@ -139,14 +131,10 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
 
     final List<Task> displayedTasks = taskProvider.tasksForGlobalView;
 
-    debugPrint("[AllTasksKanbanScreen] Building. isLoadingList: ${taskProvider.isLoadingList}, Error: ${taskProvider.error}, Displayed Global tasks: ${displayedTasks.length}");
-
     Widget content;
-    // Показываем индикатор, если идет загрузка И (список пуст ИЛИ произошла ошибка И список пуст)
-    // Это предотвращает мигание, если данные уже есть, но идет фоновое обновление.
-    if (taskProvider.isLoadingList && (displayedTasks.isEmpty || taskProvider.error != null)) {
+    if (taskProvider.isLoadingList && displayedTasks.isEmpty) {
       content = const Center(child: CircularProgressIndicator());
-    } else if (taskProvider.error != null && displayedTasks.isEmpty) { // Ошибка и нет данных для отображения
+    } else if (taskProvider.error != null && displayedTasks.isEmpty) {
       content = Center(
           child: Padding(
             padding: const EdgeInsets.all(16.0),
@@ -162,13 +150,13 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.refresh),
                   label: const Text("Попробовать снова"),
-                  onPressed: () => taskProvider.fetchTasks(viewType: TaskListViewType.allAssignedOrCreated),
+                  onPressed: () => _refreshData(),
                 )
               ],
             ),
           )
       );
-    } else if (displayedTasks.isEmpty && !taskProvider.isLoadingList) { // Загрузка завершена, ошибок нет, но список пуст
+    } else if (displayedTasks.isEmpty && !taskProvider.isLoadingList) {
       content = Center(
         child: Padding(
           padding: const EdgeInsets.all(20.0),
@@ -192,7 +180,7 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
           ),
         ),
       );
-    } else { // Есть задачи для отображения
+    } else {
       bool isMobile = ResponsiveUtil.isMobile(context);
       content = isMobile
           ? MobileTaskListWidget(
@@ -216,7 +204,10 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: content,
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        child: content,
+      ),
     );
   }
 }

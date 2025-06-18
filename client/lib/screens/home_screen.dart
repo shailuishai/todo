@@ -1,4 +1,3 @@
-// lib/screens/home_screen.dart
 import 'package:ToDo/core/utils/responsive_utils.dart';
 import 'package:ToDo/screens/tasks_hub_screen.dart';
 import 'package:flutter/material.dart';
@@ -72,9 +71,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
   }
 
-
   Widget _getCurrentPageContent(BuildContext context) {
-    // ... (Этот метод без изменений) ...
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     if (widget.teamIdToShow != null) {
@@ -127,7 +124,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   int _getActiveMenuIndex() {
-    // ... (Этот метод без изменений) ...
     if (widget.teamIdToShow != null) {
       return 3;
     }
@@ -181,7 +177,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         return _getCurrentPageContent(context);
       }
 
-      // <<< ИСПРАВЛЕНИЕ: Убираем SafeArea, меняем PopScope, устанавливаем фон AppBar >>>
       return PopScope(
         canPop: false,
         onPopInvoked: (bool didPop) {
@@ -191,14 +186,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           }
         },
         child: Scaffold(
-          // primary: false, // Не нужно
-          appBar: AppBar(
-            title: null,
-            backgroundColor: theme.colorScheme.surface, // Явно задаем цвет
-            automaticallyImplyLeading: false,
-            elevation: 1,
-            toolbarHeight: 0, // Убираем высоту, чтобы он был только для цвета системной панели
-          ),
           body: IndexedStack(
             index: _mobilePageIndex,
             children: _mobilePages,
@@ -211,7 +198,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
       );
 
-    } else { // Десктоп/планшет
+    } else {
       final Widget currentPageContent = _getCurrentPageContent(context);
       final int activeSidebarMenuIndex = _getActiveMenuIndex();
 

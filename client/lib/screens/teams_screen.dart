@@ -7,6 +7,7 @@ import '../team_provider.dart';
 import '../widgets/team/team_card_widget.dart';
 import '../core/routing/app_router_delegate.dart';
 import '../core/routing/app_route_path.dart';
+import '../widgets/team/team_search_dialog.dart';
 
 class TeamsScreen extends StatefulWidget {
   const TeamsScreen({Key? key}) : super(key: key);
@@ -33,7 +34,6 @@ class _TeamsScreenState extends State<TeamsScreen> {
         .navigateTo(TeamDetailPath(teamId));
   }
 
-  // <<< НОВЫЙ МЕТОД: вызов нижнего меню >>>
   void _showTeamActionsBottomSheet(BuildContext context) {
     final teamProvider = Provider.of<TeamProvider>(context, listen: false);
 
@@ -70,6 +70,18 @@ class _TeamsScreenState extends State<TeamsScreen> {
     );
   }
 
+  void _showTeamSearchDialog(BuildContext context) {
+    final teamProvider = Provider.of<TeamProvider>(context, listen: false);
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return ChangeNotifierProvider.value(
+          value: teamProvider,
+          child: const TeamSearchDialog(),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,69 +91,48 @@ class _TeamsScreenState extends State<TeamsScreen> {
 
     return Consumer<TeamProvider>(
       builder: (context, teamProvider, child) {
+        Widget bodyContent;
+        bool showFab = true;
+
         if (teamProvider.isLoadingMyTeams && teamProvider.myTeams.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (teamProvider.error != null && teamProvider.myTeams.isEmpty) {
-          return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('Ошибка: ${teamProvider.error}',
-                        style: TextStyle(color: colorScheme.error), textAlign: TextAlign.center),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                        onPressed: () => teamProvider.fetchMyTeams(),
-                        child: const Text('Попробовать снова')
-                    )
-                  ],
-                ),
-              ));
-        }
-
-        if (teamProvider.myTeams.isEmpty) {
-          return _buildEmptyState(context, colorScheme, theme, isMobile);
-        }
-
-        Widget content;
-
-        if (isMobile) {
-          // <<< ИЗМЕНЕНИЕ: Используем ListView для мобильных >>>
-          content = RefreshIndicator(
-            onRefresh: () => teamProvider.fetchMyTeams(),
-            child: ListView.builder(
-              padding: const EdgeInsets.all(12.0),
-              itemCount: teamProvider.myTeams.length,
-              itemBuilder: (context, index) {
-                final team = teamProvider.myTeams[index];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10.0),
-                  child: TeamCardWidget(
+          bodyContent = const Center(child: CircularProgressIndicator());
+          showFab = false;
+        } else if (teamProvider.error != null && teamProvider.myTeams.isEmpty) {
+          bodyContent = _buildErrorState(context, colorScheme, teamProvider);
+          showFab = true;
+        } else if (teamProvider.myTeams.isEmpty) {
+          bodyContent = _buildEmptyState(context, colorScheme, theme);
+          showFab = false;
+        } else {
+          if (isMobile) {
+            // <<< ИЗМЕНЕНИЕ: Используем ListView для мобильных >>>
+            bodyContent = RefreshIndicator(
+              onRefresh: () => teamProvider.fetchMyTeams(),
+              child: ListView.separated(
+                padding: const EdgeInsets.all(12.0),
+                itemCount: teamProvider.myTeams.length,
+                itemBuilder: (context, index) {
+                  final team = teamProvider.myTeams[index];
+                  return TeamCardWidget(
                     team: team,
                     onTap: () => _navigateToTeamDetail(context, team.teamId),
-                  ),
-                );
-              },
-            ),
-          );
-        } else {
-          // Десктопная версия с GridView
-          content = LayoutBuilder(
+                  );
+                },
+                separatorBuilder: (context, index) => const SizedBox(height: 10),
+              ),
+            );
+          } else {
+            // Десктопная версия с GridView
+            bodyContent = LayoutBuilder(
               builder: (context, constraints) {
                 int crossAxisCount;
                 double childAspectRatio;
                 if (constraints.maxWidth > 1200) {
-                  crossAxisCount = 5;
-                  childAspectRatio = 0.9;
+                  crossAxisCount = 5; childAspectRatio = 0.9;
                 } else if (constraints.maxWidth > 900) {
-                  crossAxisCount = 4;
-                  childAspectRatio = 0.95;
+                  crossAxisCount = 4; childAspectRatio = 0.95;
                 } else {
-                  crossAxisCount = 3;
-                  childAspectRatio = 0.9;
+                  crossAxisCount = 3; childAspectRatio = 0.9;
                 }
 
                 return RefreshIndicator(
@@ -164,21 +155,30 @@ class _TeamsScreenState extends State<TeamsScreen> {
                     },
                   ),
                 );
-              }
-          );
+              },
+            );
+          }
         }
 
-
-        // <<< ИЗМЕНЕНИЕ: Основная структура виджета >>>
-        if(isMobile) {
+        if (isMobile) {
           return Scaffold(
-              backgroundColor: theme.scaffoldBackgroundColor,
-              body: content,
-              floatingActionButton: FloatingActionButton(
-                onPressed: () => _showTeamActionsBottomSheet(context),
-                tooltip: 'Действия с командами',
-                child: const Icon(Icons.add_rounded),
-              )
+            appBar: AppBar(
+              title: const Text("Команды"),
+              centerTitle: false,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  tooltip: "Поиск команд",
+                  onPressed: () => _showTeamSearchDialog(context),
+                )
+              ],
+            ),
+            body: bodyContent,
+            floatingActionButton: showFab ? FloatingActionButton(
+              onPressed: () => _showTeamActionsBottomSheet(context),
+              tooltip: 'Действия',
+              child: const Icon(Icons.add_rounded),
+            ) : null,
           );
         }
 
@@ -188,45 +188,54 @@ class _TeamsScreenState extends State<TeamsScreen> {
             color: colorScheme.surfaceContainer,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5), width: 1.0),
-            boxShadow: [
-              BoxShadow(
-                color: theme.shadowColor.withOpacity(0.07),
-                blurRadius: 8.0,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            boxShadow: [ BoxShadow(color: theme.shadowColor.withOpacity(0.07), blurRadius: 8.0, offset: const Offset(0, 2)) ],
           ),
           clipBehavior: Clip.antiAlias,
-          child: content, // Используем уже созданный gridContent
+          child: bodyContent,
         );
       },
     );
   }
 
-  Widget _buildEmptyState(BuildContext context, ColorScheme colorScheme, ThemeData theme, bool isMobile) {
-    // <<< ИЗМЕНЕНИЕ: Кнопки теперь в _showTeamActionsBottomSheet, здесь только информация >>>
-    Widget actions = isMobile
-        ? FloatingActionButton.extended(
+  Widget _buildErrorState(BuildContext context, ColorScheme colorScheme, TeamProvider teamProvider) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('Ошибка: ${teamProvider.error}', style: TextStyle(color: colorScheme.error), textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          ElevatedButton(onPressed: () => teamProvider.fetchMyTeams(), child: const Text('Попробовать снова'))
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context, ColorScheme colorScheme, ThemeData theme) {
+    Widget actions = FloatingActionButton.extended(
       onPressed: () => _showTeamActionsBottomSheet(context),
       label: const Text("Начать"),
       icon: const Icon(Icons.add_rounded),
-    )
-        : Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        ElevatedButton.icon(
-          icon: const Icon(Icons.group_add_outlined),
-          label: const Text("Создать команду"),
-          onPressed: () => Provider.of<TeamProvider>(context, listen: false).displayCreateTeamDialog(context),
-        ),
-        const SizedBox(width: 16),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.sensor_door_outlined),
-          label: const Text("Войти по коду"),
-          onPressed: () => Provider.of<TeamProvider>(context, listen: false).displayJoinTeamDialog(context),
-        ),
-      ],
     );
+
+    if (!ResponsiveUtil.isMobile(context)) {
+      actions = Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ElevatedButton.icon(
+            icon: const Icon(Icons.group_add_outlined),
+            label: const Text("Создать команду"),
+            onPressed: () => Provider.of<TeamProvider>(context, listen: false).displayCreateTeamDialog(context),
+          ),
+          const SizedBox(width: 16),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.sensor_door_outlined),
+            label: const Text("Войти по коду"),
+            onPressed: () => Provider.of<TeamProvider>(context, listen: false).displayJoinTeamDialog(context),
+          ),
+        ],
+      );
+    }
 
     return Center(
       child: Opacity(
@@ -234,19 +243,11 @@ class _TeamsScreenState extends State<TeamsScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.people_outline_rounded, size: isMobile ? 56 : 72, color: colorScheme.onSurfaceVariant),
+            Icon(Icons.people_outline_rounded, size: 72, color: colorScheme.onSurfaceVariant),
             const SizedBox(height: 20),
-            Text(
-              "У вас пока нет команд",
-              style: theme.textTheme.headlineSmall?.copyWith(color: colorScheme.onSurfaceVariant),
-              textAlign: TextAlign.center,
-            ),
+            Text("У вас пока нет команд", style: theme.textTheme.headlineSmall?.copyWith(color: colorScheme.onSurfaceVariant), textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            Text(
-              "Создайте новую команду или присоединитесь к существующей.",
-              style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
-              textAlign: TextAlign.center,
-            ),
+            Text("Создайте новую команду или присоединитесь к существующей.", style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant), textAlign: TextAlign.center),
             const SizedBox(height: 24),
             actions,
           ],
