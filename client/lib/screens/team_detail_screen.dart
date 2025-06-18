@@ -589,8 +589,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Color(0xFF161616),
-        elevation: 1,
         leading: routerDelegate.canPop() ? BackButton(color: theme.colorScheme.onSurface, onPressed: () => routerDelegate.popRoute()) : null,
         title: Text(team.name, overflow: TextOverflow.ellipsis),
         centerTitle: true,
