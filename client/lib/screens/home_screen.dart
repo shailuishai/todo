@@ -37,18 +37,12 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   late int _mobilePageIndex;
-  late final List<Widget> _mobilePages;
+  // <<< ИЗМЕНЕНИЕ: Убираем инициализацию списка виджетов отсюда >>>
 
   @override
   void initState() {
     super.initState();
     _mobilePageIndex = _getInitialMobilePageIndex();
-    // <<< ИЗМЕНЕНИЕ: Каждый элемент теперь - это полноценный экран со своим Scaffold >>>
-    _mobilePages = [
-      const TasksHubScreen(),
-      const TeamsScreen(),
-      const SettingsScreen(),
-    ];
   }
 
   int _getInitialMobilePageIndex() {
@@ -59,17 +53,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (subRoute == AppRouteSegments.settings) {
       return 2;
     }
+    // <<< ИЗМЕНЕНИЕ: Любой другой subRoute (all-tasks, personal-tasks, calendar) теперь относится к вкладке 0 >>>
     return 0;
   }
 
   @override
   void didUpdateWidget(covariant HomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final newIndex = _getInitialMobilePageIndex();
-    if (_mobilePageIndex != newIndex) {
-      setState(() {
-        _mobilePageIndex = newIndex;
-      });
+    if (widget.initialSubRoute != oldWidget.initialSubRoute) {
+      final newIndex = _getInitialMobilePageIndex();
+      if (_mobilePageIndex != newIndex) {
+        setState(() {
+          _mobilePageIndex = newIndex;
+        });
+      }
     }
   }
 
@@ -120,10 +117,29 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         pageContent = const CalendarScreen();
         break;
       default:
+      // <<< ИЗМЕНЕНИЕ: Если subRoute неизвестен, для десктопа показываем канбан, для мобильного - хаб (логика ниже) >>>
         pageContent = const AllTasksKanbanScreen();
     }
     return pageContent;
   }
+
+  // <<< ИЗМЕНЕНИЕ: Новый метод для определения, какой экран показывать на первой вкладке мобильной навигации >>>
+  Widget _getTasksPageForMobile() {
+    switch (widget.initialSubRoute) {
+      case AppRouteSegments.allTasks:
+        return const AllTasksKanbanScreen();
+      case AppRouteSegments.personalTasks:
+        return const PersonalTasksKanbanScreen();
+      case AppRouteSegments.calendar:
+        return const CalendarScreen();
+      case AppRouteSegments.trash:
+        return const TrashScreen();
+      default:
+      // Показываем хаб, если мы не на конкретном экране задач
+        return const TasksHubScreen();
+    }
+  }
+
 
   int _getActiveMenuIndex() {
     if (widget.teamIdToShow != null) {
@@ -151,7 +167,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _onBottomNavItemTapped(int index, AppRouterDelegate routerDelegate) {
-    if (_mobilePageIndex == index) return;
+    if (_mobilePageIndex == index) {
+      // <<< ИЗМЕНЕНИЕ: Если мы уже на вкладке "Задачи", возвращаемся на хаб >>>
+      if (index == 0) {
+        routerDelegate.navigateTo(const HomeSubPath(AppRouteSegments.home));
+      }
+      return;
+    }
 
     setState(() {
       _mobilePageIndex = index;
@@ -159,10 +181,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     String targetRouteSegment;
     switch (index) {
-      case 0: targetRouteSegment = AppRouteSegments.allTasks; break;
+      case 0:
+      // <<< ИЗМЕНЕНИЕ: По умолчанию первая вкладка ведет на хаб >>>
+        targetRouteSegment = AppRouteSegments.home; // Используем 'home' как сигнал для показа хаба
+        break;
       case 1: targetRouteSegment = AppRouteSegments.teams; break;
       case 2: targetRouteSegment = AppRouteSegments.settings; break;
-      default: targetRouteSegment = AppRouteSegments.allTasks;
+      default: targetRouteSegment = AppRouteSegments.home;
     }
     routerDelegate.navigateTo(HomeSubPath(targetRouteSegment, showRightSidebar: false));
   }
@@ -175,17 +200,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final bool isMobile = ResponsiveUtil.isMobile(context);
 
     if (isMobile) {
+      // Экраны с деталями (команды/задачи) обрабатываются отдельно и имеют свой собственный Scaffold
       if (widget.teamIdToShow != null || widget.taskIdToShow != null) {
-        // Эти экраны сами строят свой Scaffold
         return _getCurrentPageContent(context);
       }
 
-      // <<< ИЗМЕНЕНИЕ: Убираем Scaffold и PopScope, так как теперь каждый дочерний экран имеет свой собственный. >>>
-      // Это ключевое изменение для корректной работы AppBar и SafeArea на каждой вкладке.
+      // <<< ИЗМЕНЕНИЕ: Динамически создаем список страниц для IndexedStack >>>
+      final List<Widget> mobilePages = [
+        _getTasksPageForMobile(),
+        const TeamsScreen(),
+        const SettingsScreen(),
+      ];
+
       return Scaffold(
         body: IndexedStack(
           index: _mobilePageIndex,
-          children: _mobilePages,
+          children: mobilePages,
         ),
         bottomNavigationBar: BottomNavigationBar(
           items: _buildBottomNavigationBarItems(context),
