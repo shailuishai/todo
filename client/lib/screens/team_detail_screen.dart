@@ -589,6 +589,18 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: theme.colorScheme.surface,
+
+        // 2. Устанавливаем цвет системного статус-бара НАПРЯМУЮ
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: theme.colorScheme.surface, // <-- Самое важное
+          statusBarBrightness: Brightness.dark, // Для iOS
+        ),
+
+        // 3. Отключаем другие эффекты Material 3 для чистоты эксперимента
+        elevation: 1,
+        scrolledUnderElevation: 1, // Чтобы цвет не менялся при скролле
+        surfaceTintColor: Colors.transparent,
         leading: routerDelegate.canPop() ? BackButton(color: theme.colorScheme.onSurface, onPressed: () => routerDelegate.popRoute()) : null,
         title: Text(team.name, overflow: TextOverflow.ellipsis),
         centerTitle: true,

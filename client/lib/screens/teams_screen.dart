@@ -47,6 +47,14 @@ class _TeamsScreenState extends State<TeamsScreen> {
           child: Wrap(
             children: <Widget>[
               ListTile(
+                leading: const Icon(Icons.search),
+                title: const Text("Найти команду по названию"),
+                onTap: () {
+                  Navigator.of(builderContext).pop();
+                  _showTeamSearchDialog(context);
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.group_add_outlined),
                 title: const Text('Создать команду'),
                 onTap: () {
@@ -209,11 +217,6 @@ class _TeamsScreenState extends State<TeamsScreen> {
       actions = Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          ElevatedButton.icon(
-            icon: const Icon(Icons.search),
-            label: const Text("Найти команду по названию"),
-            onPressed: () => _showTeamSearchDialog(context),
-          ),
           ElevatedButton.icon(
             icon: const Icon(Icons.group_add_outlined),
             label: const Text("Создать команду"),
