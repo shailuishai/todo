@@ -1,3 +1,4 @@
+// lib/screens/home_screen.dart
 import 'package:ToDo/core/utils/responsive_utils.dart';
 import 'package:ToDo/screens/tasks_hub_screen.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
     _mobilePageIndex = _getInitialMobilePageIndex();
+    // <<< ИЗМЕНЕНИЕ: Каждый элемент теперь - это полноценный экран со своим Scaffold >>>
     _mobilePages = [
       const TasksHubScreen(),
       const TeamsScreen(),
@@ -174,31 +176,26 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     if (isMobile) {
       if (widget.teamIdToShow != null || widget.taskIdToShow != null) {
+        // Эти экраны сами строят свой Scaffold
         return _getCurrentPageContent(context);
       }
 
-      return PopScope(
-        canPop: false,
-        onPopInvoked: (bool didPop) {
-          if (didPop) return;
-          if (routerDelegate.canPop()) {
-            routerDelegate.popRoute();
-          }
-        },
-        child: Scaffold(
-          body: IndexedStack(
-            index: _mobilePageIndex,
-            children: _mobilePages,
-          ),
-          bottomNavigationBar: BottomNavigationBar(
-            items: _buildBottomNavigationBarItems(context),
-            currentIndex: _mobilePageIndex,
-            onTap: (index) => _onBottomNavItemTapped(index, routerDelegate),
-          ),
+      // <<< ИЗМЕНЕНИЕ: Убираем Scaffold и PopScope, так как теперь каждый дочерний экран имеет свой собственный. >>>
+      // Это ключевое изменение для корректной работы AppBar и SafeArea на каждой вкладке.
+      return Scaffold(
+        body: IndexedStack(
+          index: _mobilePageIndex,
+          children: _mobilePages,
+        ),
+        bottomNavigationBar: BottomNavigationBar(
+          items: _buildBottomNavigationBarItems(context),
+          currentIndex: _mobilePageIndex,
+          onTap: (index) => _onBottomNavItemTapped(index, routerDelegate),
         ),
       );
 
     } else {
+      // Десктопная логика остается без изменений
       final Widget currentPageContent = _getCurrentPageContent(context);
       final int activeSidebarMenuIndex = _getActiveMenuIndex();
 

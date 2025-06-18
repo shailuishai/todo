@@ -143,6 +143,38 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         builder: (context, authState, _) {
           final UserProfile? currentUser = authState.currentUser;
 
+          // <<< ИЗМЕНЕНИЕ: Разделяем логику для mobile и desktop >>>
+          if (isMobile) {
+            return Scaffold(
+              appBar: AppBar(
+                title: const Text("Настройки"),
+                backgroundColor: colorScheme.surface,
+                elevation: 1,
+              ),
+              // <<< ИЗМЕНЕНИЕ: Используем SafeArea для мобильной версии >>>
+              body: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildTopTabBar(context, colorScheme, isMobile, currentUser),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          KeyedSubtree(key: const ValueKey<String>('appearance_tab'), child: _buildAppearanceSettings(context, theme, colorScheme, isMobile)),
+                          KeyedSubtree(key: const ValueKey<String>('tags_tab'), child: _buildUserTagsSettings(context, theme, colorScheme, isMobile)),
+                          KeyedSubtree(key: const ValueKey<String>('notifications_tab'), child: _buildNotificationsSettingsTab(context, authState)),
+                          const KeyedSubtree(key: ValueKey<String>('profile_tab'), child: ProfileSettingsTab()),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          // Логика для десктопа остается прежней
           Widget settingsContent = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -160,10 +192,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               ),
             ],
           );
-
-          if (isMobile) {
-            return settingsContent;
-          }
 
           return Container(
             margin: const EdgeInsets.only(top: 16.0, right: 16.0, bottom: 16.0),

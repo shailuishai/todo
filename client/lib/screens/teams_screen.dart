@@ -105,7 +105,6 @@ class _TeamsScreenState extends State<TeamsScreen> {
           showFab = false;
         } else {
           if (isMobile) {
-            // <<< ИЗМЕНЕНИЕ: Используем ListView для мобильных >>>
             bodyContent = RefreshIndicator(
               onRefresh: () => teamProvider.fetchMyTeams(),
               child: ListView.separated(
@@ -122,7 +121,6 @@ class _TeamsScreenState extends State<TeamsScreen> {
               ),
             );
           } else {
-            // Десктопная версия с GridView
             bodyContent = LayoutBuilder(
               builder: (context, constraints) {
                 int crossAxisCount;
@@ -173,7 +171,8 @@ class _TeamsScreenState extends State<TeamsScreen> {
                 )
               ],
             ),
-            body: bodyContent,
+            // <<< ИЗМЕНЕНИЕ: Оборачиваем body в SafeArea >>>
+            body: SafeArea(child: bodyContent),
             floatingActionButton: showFab ? FloatingActionButton(
               onPressed: () => _showTeamActionsBottomSheet(context),
               tooltip: 'Действия',

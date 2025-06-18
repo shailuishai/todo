@@ -1,3 +1,4 @@
+// lib/screens/all_tasks_kanban_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/task_model.dart';
@@ -128,6 +129,7 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
     final taskProvider = Provider.of<TaskProvider>(context);
     final authState = Provider.of<AuthState>(context, listen: false);
     final String? currentUserId = authState.currentUser?.userId.toString();
+    final bool isMobile = ResponsiveUtil.isMobile(context);
 
     final List<Task> displayedTasks = taskProvider.tasksForGlobalView;
 
@@ -181,7 +183,6 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
         ),
       );
     } else {
-      bool isMobile = ResponsiveUtil.isMobile(context);
       content = isMobile
           ? MobileTaskListWidget(
         tasks: displayedTasks,
@@ -202,8 +203,27 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
       );
     }
 
+    // <<< ИЗМЕНЕНИЕ: Добавляем Scaffold и SafeArea для мобильной версии >>>
+    if (isMobile) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Все задачи"),
+          leading: Provider.of<AppRouterDelegate>(context).canPop()
+              ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
+              : null,
+        ),
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _refreshData,
+            child: content,
+          ),
+        ),
+      );
+    }
+
+    // Для десктопа оставляем как есть, так как он встраивается в HomePage
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.transparent, // Для десктопа фон задает HomePage
       body: RefreshIndicator(
         onRefresh: _refreshData,
         child: content,

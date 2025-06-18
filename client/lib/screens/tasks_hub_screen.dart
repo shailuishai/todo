@@ -11,60 +11,70 @@ class TasksHubScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildNavigationCard(
-              context: context,
-              icon: Icons.list_alt_rounded,
-              title: "Все задачи",
-              subtitle: "Задачи, созданные вами или назначенные вам",
-              onTap: () {
-                Provider.of<AppRouterDelegate>(context, listen: false)
-                    .navigateTo(const HomeSubPath(AppRouteSegments.allTasks));
-              },
+    // <<< ИЗМЕНЕНИЕ: Оборачиваем весь экран в Scaffold для мобильной версии >>>
+    // Это добавляет AppBar и обеспечивает правильную обработку SafeArea.
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Задачи'),
+        // Можете добавить actions, если нужно
+      ),
+      body: SafeArea(
+        child: LayoutBuilder(builder: (context, constraints) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildNavigationCard(
+                  context: context,
+                  icon: Icons.list_alt_rounded,
+                  title: "Все задачи",
+                  subtitle: "Задачи, созданные вами или назначенные вам",
+                  onTap: () {
+                    Provider.of<AppRouterDelegate>(context, listen: false)
+                        .navigateTo(const HomeSubPath(AppRouteSegments.allTasks));
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildNavigationCard(
+                  context: context,
+                  icon: Icons.person_outline_rounded,
+                  title: "Личные задачи",
+                  subtitle: "Задачи, не привязанные к командам",
+                  onTap: () {
+                    Provider.of<AppRouterDelegate>(context, listen: false)
+                        .navigateTo(const HomeSubPath(AppRouteSegments.personalTasks));
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildNavigationCard(
+                  context: context,
+                  icon: Icons.calendar_today_outlined,
+                  title: "Календарь",
+                  subtitle: "Просмотр задач с дедлайнами на календаре",
+                  onTap: () {
+                    Provider.of<AppRouterDelegate>(context, listen: false)
+                        .navigateTo(const HomeSubPath(AppRouteSegments.calendar, showRightSidebar: false));
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildNavigationCard(
+                  context: context,
+                  icon: Icons.delete_outline_rounded,
+                  title: "Корзина",
+                  subtitle: "Просмотр и восстановление удаленных задач",
+                  color: Theme.of(context).colorScheme.error,
+                  onTap: () {
+                    Provider.of<AppRouterDelegate>(context, listen: false)
+                        .navigateTo(const HomeSubPath(AppRouteSegments.trash, showRightSidebar: false));
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            _buildNavigationCard(
-              context: context,
-              icon: Icons.person_outline_rounded,
-              title: "Личные задачи",
-              subtitle: "Задачи, не привязанные к командам",
-              onTap: () {
-                Provider.of<AppRouterDelegate>(context, listen: false)
-                    .navigateTo(const HomeSubPath(AppRouteSegments.personalTasks));
-              },
-            ),
-            const SizedBox(height: 16),
-            _buildNavigationCard(
-              context: context,
-              icon: Icons.calendar_today_outlined,
-              title: "Календарь",
-              subtitle: "Просмотр задач с дедлайнами на календаре",
-              onTap: () {
-                Provider.of<AppRouterDelegate>(context, listen: false)
-                    .navigateTo(const HomeSubPath(AppRouteSegments.calendar, showRightSidebar: false));
-              },
-            ),
-            const SizedBox(height: 16),
-            _buildNavigationCard(
-              context: context,
-              icon: Icons.delete_outline_rounded,
-              title: "Корзина",
-              subtitle: "Просмотр и восстановление удаленных задач",
-              color: Theme.of(context).colorScheme.error,
-              onTap: () {
-                Provider.of<AppRouterDelegate>(context, listen: false)
-                    .navigateTo(const HomeSubPath(AppRouteSegments.trash, showRightSidebar: false));
-              },
-            ),
-          ],
-        ),
-      );
-    });
+          );
+        }),
+      ),
+    );
   }
 
   Widget _buildNavigationCard({

@@ -1,3 +1,4 @@
+// lib/screens/team_detail_screen.dart
 import 'package:ToDo/core/utils/responsive_utils.dart';
 import 'package:ToDo/models/task_model.dart';
 import 'package:ToDo/task_provider.dart';
@@ -566,18 +567,19 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     bool canManageMembers = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin;
     bool canManageTeamTags = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin || userRole == TeamMemberRole.editor;
 
-    switch (section) {
-      case TeamDetailSection.tasks:
-        return _buildTasksTab(context, authState.currentUser?.userId.toString() ?? '', team.teamId, canEditTasks);
-      case TeamDetailSection.chat:
-        return _buildChatTab(context, team);
-      case TeamDetailSection.members:
-        return _buildMembersTab(context, team, canManageMembers, authState.currentUser?.userId ?? 0);
-      case TeamDetailSection.teamTags:
-        return _buildTeamTagsTab(context, team, canManageTeamTags);
-      case TeamDetailSection.management:
-        return _buildManagementTab(context, team);
-    }
+    // <<< ИЗМЕНЕНИЕ: Оборачиваем каждую вкладку в SafeArea >>>
+    return SafeArea(
+      // Отключаем отступы сверху и снизу для десктопа, чтобы не было двойных отступов
+      top: ResponsiveUtil.isMobile(context),
+      bottom: ResponsiveUtil.isMobile(context),
+      child: switch (section) {
+        TeamDetailSection.tasks => _buildTasksTab(context, authState.currentUser?.userId.toString() ?? '', team.teamId, canEditTasks),
+        TeamDetailSection.chat => _buildChatTab(context, team),
+        TeamDetailSection.members => _buildMembersTab(context, team, canManageMembers, authState.currentUser?.userId ?? 0),
+        TeamDetailSection.teamTags => _buildTeamTagsTab(context, team, canManageTeamTags),
+        TeamDetailSection.management => _buildManagementTab(context, team),
+      },
+    );
   }
 
   Widget _buildMobileLayout(TeamDetail team) {
@@ -587,10 +589,9 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     final theme = Theme.of(context);
     final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
 
-    // <<< ИСПРАВЛЕНИЕ: AppBar теперь контролирует фон и кнопку "назад" >>>
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: theme.colorScheme.surface,
+        // <<< ИЗМЕНЕНИЕ: Цвет AppBar будет взят из общей темы, что правильно >>>
         elevation: 1,
         leading: routerDelegate.canPop() ? BackButton(color: theme.colorScheme.onSurface) : null,
         title: Text(team.name, overflow: TextOverflow.ellipsis),

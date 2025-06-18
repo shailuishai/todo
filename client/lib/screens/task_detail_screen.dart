@@ -1,3 +1,4 @@
+// lib/screens/task_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
@@ -183,7 +184,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
         if (taskProvider.isLoadingList && task == null) {
           return Scaffold(
-            backgroundColor: isMobile ? colorScheme.surface : colorScheme.surfaceContainerLowest,
+            backgroundColor: isMobile ? colorScheme.surface : colorScheme.background,
             appBar: isMobile ? AppBar(title: const Text('Загрузка задачи...')) : null,
             body: const Center(child: CircularProgressIndicator()),
           );
@@ -191,7 +192,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
         if (taskProvider.error != null && task == null) {
           return Scaffold(
-            backgroundColor: isMobile ? colorScheme.surface : colorScheme.surfaceContainerLowest,
+            backgroundColor: isMobile ? colorScheme.surface : colorScheme.background,
             appBar: isMobile ? AppBar(title: const Text('Ошибка')) : null,
             body: Center(
               child: Padding(
@@ -204,7 +205,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
         if (task == null) {
           return Scaffold(
-            backgroundColor: isMobile ? colorScheme.surface : colorScheme.surfaceContainerLowest,
+            backgroundColor: isMobile ? colorScheme.surface : colorScheme.background,
             appBar: isMobile ? AppBar(leading: routerDelegate.canPop() ? BackButton(onPressed: () => routerDelegate.popRoute()) : null, title: const Text('Задача не найдена')) : null,
             body: const Center(child: Text('Не удалось загрузить детали задачи. Возможно, она была удалена.')),
           );
@@ -422,27 +423,32 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         if (isMobile) {
           bodyContent = SingleChildScrollView(padding: const EdgeInsets.all(16.0), child: mainContentColumn);
         } else {
-          bodyContent = SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 900),
-                child: Card(
-                  elevation: 1.0,
-                  margin: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.3))),
-                  clipBehavior: Clip.antiAlias,
-                  child: Padding(padding: const EdgeInsets.all(24.0), child: mainContentColumn),
-                ),
+          // <<< ИЗМЕНЕНИЕ: Убираем лишний SingleChildScrollView, так как он уже есть в Scaffold ниже (для десктопа) >>>
+          bodyContent = Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 900),
+              child: Card(
+                elevation: 1.0,
+                margin: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.3))),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(padding: const EdgeInsets.all(24.0), child: mainContentColumn),
               ),
             ),
           );
         }
 
         return Scaffold(
-          backgroundColor: isMobile ? colorScheme.surface : colorScheme.surfaceContainerLowest,
+          // <<< ИЗМЕНЕНИЕ: Устанавливаем корректный фон >>>
+          backgroundColor: isMobile ? colorScheme.surface : colorScheme.background,
           appBar: isMobile ? (pageHeader as AppBar) : null,
-          body: bodyContent,
+          // <<< ИЗМЕНЕНИЕ: Добавляем SafeArea и ScrollView >>>
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: isMobile ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
+              child: bodyContent,
+            ),
+          ),
         );
       },
     );

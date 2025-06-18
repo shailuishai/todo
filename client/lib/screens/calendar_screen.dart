@@ -1,3 +1,4 @@
+// lib/screens/calendar_screen.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -308,12 +309,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
               : null,
         ),
-        body: body,
+        // <<< ИЗМЕНЕНИЕ: Оборачиваем body в SafeArea >>>
+        body: SafeArea(child: body),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.transparent, // Для десктопа фон от HomePage
       body: body,
     );
   }

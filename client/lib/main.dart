@@ -141,16 +141,6 @@ class _MyAppState extends State<MyApp> {
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, _) {
         final ThemeData currentTheme = themeProvider.currentTheme;
-        final ColorScheme colorScheme = currentTheme.colorScheme;
-
-        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-          statusBarColor: colorScheme.surface,
-          statusBarIconBrightness: colorScheme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
-          statusBarBrightness: colorScheme.brightness,
-          systemNavigationBarColor: currentTheme.bottomNavigationBarTheme.backgroundColor ?? colorScheme.surface,
-          systemNavigationBarDividerColor: currentTheme.dividerColor,
-          systemNavigationBarIconBrightness: colorScheme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
-        ));
 
         return MaterialApp.router(
           title: 'ToDo',

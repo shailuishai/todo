@@ -1,3 +1,4 @@
+// lib/screens/personal_tasks_kanban_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/task_model.dart';
@@ -191,15 +192,18 @@ class _PersonalTasksKanbanScreenState extends State<PersonalTasksKanbanScreen> {
               ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
               : null,
         ),
-        body: RefreshIndicator(
-          onRefresh: _refreshData,
-          child: content,
+        // <<< ИЗМЕНЕНИЕ: Оборачиваем body в SafeArea >>>
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _refreshData,
+            child: content,
+          ),
         ),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.transparent, // Для десктопа фон от HomePage
       body: content,
     );
   }

@@ -1,3 +1,4 @@
+// lib/screens/trash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/routing/app_router_delegate.dart';
@@ -142,7 +143,8 @@ class _TrashScreenState extends State<TrashScreen> {
               ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
               : null,
         ),
-        body: bodyContent,
+        // <<< ИЗМЕНЕНИЕ: Оборачиваем body в SafeArea >>>
+        body: SafeArea(child: bodyContent),
       );
     }
 
