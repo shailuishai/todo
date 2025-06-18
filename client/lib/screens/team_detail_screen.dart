@@ -130,6 +130,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     }
   }
 
+
   void _addTab(TeamDetailSection section, String title, IconData icon) {
     _tabs.add(Tab(
       key: ValueKey(section),
@@ -165,7 +166,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     super.didChangeDependencies();
     final teamProvider = Provider.of<TeamProvider>(context, listen: false);
     if (teamProvider.currentTeamDetail?.teamId != widget.teamId && !teamProvider.isLoadingTeamDetail) {
-      debugPrint("[TeamDetailScreen] teamId in provider ${teamProvider.currentTeamDetail?.teamId} differs from widget.teamId ${widget.teamId}. Refetching team details.");
       teamProvider.fetchTeamDetails(widget.teamId, forceRefresh: true).then((_){
         if (mounted) {
           setState(() {
@@ -580,7 +580,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     }
   }
 
-  // <<< ИСПРАВЛЕНИЕ: Переработанный мобильный layout >>>
   Widget _buildMobileLayout(TeamDetail team) {
     if (_tabs.isEmpty) {
       return Scaffold(appBar: AppBar(title: const Text("Загрузка...")), body: const Center(child: CircularProgressIndicator()));
@@ -588,65 +587,38 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     final theme = Theme.of(context);
     final routerDelegate = Provider.of<AppRouterDelegate>(context, listen: false);
 
-    return Stack(
-      children: [
-        Scaffold(
-          appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(kToolbarHeight + kTextTabBarHeight),
-            child: Material(
-              color: theme.colorScheme.surface,
-              elevation: 1,
-              child: SafeArea(
-                top: true,
-                bottom: false,
-                child: Column(
-                  children: [
-                    AppBar(
-                      toolbarHeight: kToolbarHeight,
-                      elevation: 0,
-                      backgroundColor: Colors.transparent,
-                      centerTitle: true,
-                      title: Text(team.name, overflow: TextOverflow.ellipsis),
-                      automaticallyImplyLeading: false,
-                    ),
-                    TabBar(
-                      controller: _tabController,
-                      tabs: _tabs,
-                      isScrollable: false,
-                      tabAlignment: TabAlignment.fill,
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      indicatorWeight: 2.5,
-                      labelPadding: EdgeInsets.zero,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          body: TabBarView(
-            controller: _tabController,
-            children: _tabViews,
-          ),
-          floatingActionButton: _tabController.index == 0
-              ? FloatingActionButton(
-            onPressed: () => _showTaskManagementBottomSheet(context, team),
-            tooltip: 'Действия с задачами',
-            child: const Icon(Icons.more_horiz_rounded),
-          )
-              : null,
+    // <<< ИСПРАВЛЕНИЕ: Переработан AppBar >>>
+    return Scaffold(
+      appBar: AppBar(
+        // Используем цвет surface, который должен быть #161616 в темной теме
+        backgroundColor: theme.colorScheme.surface,
+        elevation: 1,
+        // Кнопку "назад" делаем стандартной для AppBar
+        leading: routerDelegate.canPop() ? BackButton(color: theme.colorScheme.onSurface) : null,
+        title: Text(team.name, overflow: TextOverflow.ellipsis),
+        centerTitle: true,
+        // `bottom` теперь отрисовывается в рамках AppBar, решая проблему с фоном
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: _tabs,
+          isScrollable: false,
+          tabAlignment: TabAlignment.fill,
+          indicatorSize: TabBarIndicatorSize.tab,
+          indicatorWeight: 2.5,
+          labelPadding: EdgeInsets.zero,
         ),
-        if (routerDelegate.canPop())
-          Positioned(
-            top: 0,
-            left: 0,
-            child: SafeArea(
-              child: BackButton(
-                onPressed: () => routerDelegate.popRoute(),
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-          ),
-      ],
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: _tabViews,
+      ),
+      floatingActionButton: _tabController.index == 0
+          ? FloatingActionButton(
+        onPressed: () => _showTaskManagementBottomSheet(context, team),
+        tooltip: 'Действия с задачами',
+        child: const Icon(Icons.more_horiz_rounded),
+      )
+          : null,
     );
   }
 
@@ -681,7 +653,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     );
   }
 
-  // <<< ИСПРАВЛЕНИЕ: Добавлен RefreshIndicator >>>
   Widget _buildTasksTab(BuildContext context, String currentUserId, String teamIdForDialog, bool canEditTasksOverall) {
     final isMobile = ResponsiveUtil.isMobile(context);
     final taskProvider = Provider.of<TaskProvider>(context);
