@@ -11,12 +11,11 @@ class TasksHubScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // <<< ИЗМЕНЕНИЕ: Оборачиваем весь экран в Scaffold для мобильной версии >>>
-    // Это добавляет AppBar и обеспечивает правильную обработку SafeArea.
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Задачи'),
-        // Можете добавить actions, если нужно
+        backgroundColor: theme.appBarTheme.backgroundColor,
       ),
       body: SafeArea(
         child: LayoutBuilder(builder: (context, constraints) {

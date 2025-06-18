@@ -567,9 +567,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     bool canManageMembers = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin;
     bool canManageTeamTags = userRole == TeamMemberRole.owner || userRole == TeamMemberRole.admin || userRole == TeamMemberRole.editor;
 
-    // <<< ИЗМЕНЕНИЕ: Оборачиваем каждую вкладку в SafeArea >>>
     return SafeArea(
-      // Отключаем отступы сверху и снизу для десктопа, чтобы не было двойных отступов
       top: ResponsiveUtil.isMobile(context),
       bottom: ResponsiveUtil.isMobile(context),
       child: switch (section) {
@@ -591,11 +589,9 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
 
     return Scaffold(
       appBar: AppBar(
-        // <<< ИЗМЕНЕНИЕ: Цвет AppBar будет взят из общей темы, что правильно >>>
+        backgroundColor: theme.appBarTheme.backgroundColor,
         elevation: 1,
         leading: routerDelegate.canPop() ? BackButton(color: theme.colorScheme.onSurface) : null,
-        title: Text(team.name, overflow: TextOverflow.ellipsis),
-        centerTitle: true,
         bottom: TabBar(
           controller: _tabController,
           tabs: _tabs,

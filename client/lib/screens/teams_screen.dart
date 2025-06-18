@@ -161,7 +161,7 @@ class _TeamsScreenState extends State<TeamsScreen> {
         if (isMobile) {
           return Scaffold(
             appBar: AppBar(
-              title: const Text("Команды"),
+              backgroundColor: theme.appBarTheme.backgroundColor,
               centerTitle: false,
               actions: [
                 IconButton(
@@ -171,7 +171,6 @@ class _TeamsScreenState extends State<TeamsScreen> {
                 )
               ],
             ),
-            // <<< ИЗМЕНЕНИЕ: Оборачиваем body в SafeArea >>>
             body: SafeArea(child: bodyContent),
             floatingActionButton: showFab ? FloatingActionButton(
               onPressed: () => _showTeamActionsBottomSheet(context),

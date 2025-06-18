@@ -143,15 +143,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         builder: (context, authState, _) {
           final UserProfile? currentUser = authState.currentUser;
 
-          // <<< ИЗМЕНЕНИЕ: Разделяем логику для mobile и desktop >>>
           if (isMobile) {
             return Scaffold(
               appBar: AppBar(
-                title: const Text("Настройки"),
-                backgroundColor: colorScheme.surface,
+                // <<< ИЗМЕНЕНИЕ: Убран title, добавлен явный цвет для консистентности >>>
+                backgroundColor: theme.appBarTheme.backgroundColor,
                 elevation: 1,
               ),
-              // <<< ИЗМЕНЕНИЕ: Используем SafeArea для мобильной версии >>>
               body: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
