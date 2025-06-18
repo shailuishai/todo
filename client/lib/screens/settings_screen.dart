@@ -1,5 +1,6 @@
 // lib/screens/settings_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../auth_state.dart';
 import '../services/api_service.dart';
@@ -145,6 +146,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
           if (isMobile) {
             return Scaffold(
+              appBar: AppBar(
+                systemOverlayStyle: SystemUiOverlayStyle(
+                  statusBarColor: theme.colorScheme.surface, // <-- Самое важное
+                  statusBarBrightness: Brightness.dark, // Для iOS
+                ),
+              ),
               body: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
