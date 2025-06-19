@@ -1,6 +1,8 @@
 // lib/screens/trash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/routing/app_pages.dart';
+import '../core/routing/app_route_path.dart';
 import '../core/routing/app_router_delegate.dart';
 import '../core/utils/responsive_utils.dart';
 import '../deleted_tasks_provider.dart';
@@ -138,10 +140,9 @@ class _TrashScreenState extends State<TrashScreen> {
     if (isMobile) {
       return Scaffold(
         appBar: AppBar(
+          centerTitle: true,
           title: const Text("Корзина"),
-          leading: Provider.of<AppRouterDelegate>(context).canPop()
-              ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
-              : null,
+          leading: BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).navigateTo(HomeSubPath(AppRouteSegments.home,showRightSidebar: false))),
         ),
         // <<< ИЗМЕНЕНИЕ: Оборачиваем body в SafeArea >>>
         body: SafeArea(child: bodyContent),

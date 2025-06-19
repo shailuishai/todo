@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
+import '../core/routing/app_pages.dart';
 import '../models/task_model.dart';
 import '../task_provider.dart';
 import '../theme_provider.dart';
@@ -305,9 +306,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return Scaffold(
         appBar: AppBar(
           title: const Text("Календарь"),
-          leading: Provider.of<AppRouterDelegate>(context).canPop()
-              ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
-              : null,
+          centerTitle: true,
+          leading: BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).navigateTo(HomeSubPath(AppRouteSegments.home,showRightSidebar: false))),
         ),
         // <<< ИЗМЕНЕНИЕ: Оборачиваем body в SafeArea >>>
         body: SafeArea(child: body),

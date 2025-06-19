@@ -1,5 +1,6 @@
 // lib/screens/task_detail_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -232,6 +233,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         Widget pageHeader;
         if (isMobile) {
           pageHeader = AppBar(
+            backgroundColor: theme.colorScheme.surface,
+
+            // 2. Устанавливаем цвет системного статус-бара НАПРЯМУЮ
+            systemOverlayStyle: SystemUiOverlayStyle(
+              statusBarColor: theme.colorScheme.surface, // <-- Самое важное
+              statusBarBrightness: Brightness.dark, // Для iOS
+            ),
+
+            // 3. Отключаем другие эффекты Material 3 для чистоты эксперимента
+            elevation: 1,
+            scrolledUnderElevation: 1, // Чтобы цвет не менялся при скролле
+            surfaceTintColor: Colors.transparent,
+
             leading: routerDelegate.canPop() ? BackButton(onPressed: () => routerDelegate.popRoute()) : null,
             title: Text(nonNullTask.title, overflow: TextOverflow.ellipsis),
             actions: [

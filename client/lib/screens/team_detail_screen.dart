@@ -3,6 +3,7 @@ import 'package:ToDo/core/utils/responsive_utils.dart';
 import 'package:ToDo/models/task_model.dart';
 import 'package:ToDo/task_provider.dart';
 import 'package:ToDo/widgets/kanban_board/kanban_board_widget.dart';
+import 'package:ToDo/widgets/sidebar/right_sidebar.dart';
 import 'package:ToDo/widgets/tasks/TaskFilterDialog.dart';
 import 'package:ToDo/widgets/tasks/TaskSortDialog.dart';
 import 'package:ToDo/widgets/tasks/mobile_task_list_widget.dart';
@@ -124,10 +125,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     if (!mounted) return;
     final section = _sidebarStateProvider.currentTeamDetailSection;
 
-    // ИЗМЕНЕНИЕ: Запускаем проверку на загрузку данных КАЖДЫЙ РАЗ при смене секции
     _handleSectionChange(section);
 
-    // Обновляем UI (TabController) для мобильной версии
     if (ResponsiveUtil.isMobile(context) && _tabController.length > 0) {
       final tabIndex = _tabs.indexWhere((tab) => (tab.key as ValueKey<TeamDetailSection>?)?.value == section);
       if (tabIndex != -1 && _tabController.index != tabIndex) {
@@ -190,7 +189,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     if (section == TeamDetailSection.tasks) {
       _triggerFetchTeamTasksIfNeeded(forceCall: isInitialCall);
     } else if (section == TeamDetailSection.teamTags && teamIdInt != null) {
-      // ИЗМЕНЕНИЕ: Упрощаем и исправляем условие. Загружаем, если тегов для этой команды нет в кеше.
       if (!tagProvider.teamTagsByTeamId.containsKey(teamIdInt) && !tagProvider.isLoadingTeamTags) {
         tagProvider.fetchTeamTags(teamIdInt, forceRefresh: true);
       }
@@ -212,7 +210,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     Provider.of<TaskProvider>(context, listen: false).locallyUpdateTaskStatus(task.taskId, newStatus);
   }
 
-  // ... (Остальные методы-обработчики действий остаются без изменений)
   void _checkedHandleTaskDelete(Task taskToDelete, bool canGenericEdit, String currentUserId) {
     if (canGenericEdit || taskToDelete.createdByUserId == currentUserId) {
       showDialog<bool>(
@@ -595,18 +592,15 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     return Scaffold(
       appBar: AppBar(
         backgroundColor: theme.colorScheme.surface,
-
-        // 2. Устанавливаем цвет системного статус-бара НАПРЯМУЮ
         systemOverlayStyle: SystemUiOverlayStyle(
-          statusBarColor: theme.colorScheme.surface, // <-- Самое важное
-          statusBarBrightness: Brightness.dark, // Для iOS
+          statusBarColor: theme.colorScheme.surface,
+          statusBarBrightness: theme.brightness == Brightness.dark ? Brightness.light : Brightness.dark,
         ),
-
-        // 3. Отключаем другие эффекты Material 3 для чистоты эксперимента
         elevation: 1,
-        scrolledUnderElevation: 1, // Чтобы цвет не менялся при скролле
+        scrolledUnderElevation: 1,
         surfaceTintColor: Colors.transparent,
-        leading: routerDelegate.canPop() ? BackButton(color: theme.colorScheme.onSurface, onPressed: () => routerDelegate.popRoute()) : null,
+        // ИЗМЕНЕНИЕ: Обновлена логика кнопки "назад"
+        leading: BackButton(onPressed: () => routerDelegate.navigateTo(const HomeSubPath(AppRouteSegments.teams))),
         title: Text(team.name, overflow: TextOverflow.ellipsis),
         centerTitle: true,
         bottom: TabBar(
@@ -623,11 +617,14 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         controller: _tabController,
         children: _tabViews,
       ),
+      // ИЗМЕНЕНИЕ: Стилизация FAB
       floatingActionButton: _tabController.index == 0
-          ? FloatingActionButton(
-        onPressed: () => _showTaskManagementBottomSheet(context, team),
+          ? ActionButton(
+        icon: Icons.more_horiz_rounded,
         tooltip: 'Действия с задачами',
-        child: const Icon(Icons.more_horiz_rounded),
+        onPressed: () => _showTaskManagementBottomSheet(context, team),
+        backgroundColor: theme.colorScheme.primaryContainer,
+        iconColor: theme.colorScheme.onPrimaryContainer,
       )
           : null,
     );

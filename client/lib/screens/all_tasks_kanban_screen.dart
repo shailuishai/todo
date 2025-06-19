@@ -1,11 +1,15 @@
 // lib/screens/all_tasks_kanban_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/routing/app_pages.dart';
 import '../models/task_model.dart';
 import '../task_provider.dart';
 import '../auth_state.dart';
 import '../widgets/kanban_board/kanban_board_widget.dart';
 import '../core/utils/responsive_utils.dart';
+import '../widgets/sidebar/right_sidebar.dart';
+import '../widgets/tasks/TaskFilterDialog.dart';
+import '../widgets/tasks/TaskSortDialog.dart';
 import '../widgets/tasks/mobile_task_list_widget.dart';
 import '../core/routing/app_router_delegate.dart';
 import '../core/routing/app_route_path.dart';
@@ -124,11 +128,85 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
     }
   }
 
+  // ИЗМЕНЕНИЕ: Метод для вызова диалога создания личной задачи
+  void _showCreatePersonalTaskDialog(BuildContext context) {
+    showDialog<Task?>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return TaskEditDialog(
+          onTaskSaved: (newTask) {
+            if (mounted) {
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(content: Text('Задача "${newTask.title}" добавлена!')),
+              );
+            }
+          },
+        );
+      },
+    );
+  }
+
+  // ИЗМЕНЕНИЕ: Метод для показа меню действий
+  void _showTaskActionsBottomSheet(BuildContext context) {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (builderContext) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(builderContext).viewInsets.bottom),
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.add_task_outlined),
+                title: const Text('Добавить личную задачу'),
+                onTap: () {
+                  Navigator.of(builderContext).pop();
+                  _showCreatePersonalTaskDialog(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.filter_list_rounded),
+                title: const Text('Фильтры'),
+                onTap: () {
+                  Navigator.of(builderContext).pop();
+                  showDialog(
+                    context: context,
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: taskProvider,
+                      child: const TaskFilterDialog(viewType: TaskListViewType.allAssignedOrCreated),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.swap_vert_rounded),
+                title: const Text('Сортировка'),
+                onTap: () {
+                  Navigator.of(builderContext).pop();
+                  showDialog(
+                    context: context,
+                    builder: (_) => ChangeNotifierProvider.value(
+                      value: taskProvider,
+                      child: const TaskSortDialog(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final taskProvider = Provider.of<TaskProvider>(context);
     final authState = Provider.of<AuthState>(context, listen: false);
-    final String? currentUserId = authState.currentUser?.userId.toString();
     final bool isMobile = ResponsiveUtil.isMobile(context);
 
     final List<Task> displayedTasks = taskProvider.tasksForGlobalView;
@@ -206,15 +284,23 @@ class _AllTasksKanbanScreenState extends State<AllTasksKanbanScreen> {
       return Scaffold(
         appBar: AppBar(
           title: const Text("Все задачи"),
-          leading: Provider.of<AppRouterDelegate>(context).canPop()
-              ? BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).popRoute())
-              : null,
+          centerTitle: true,
+          // ИЗМЕНЕНИЕ: Обновлена логика кнопки "назад"
+          leading: BackButton(onPressed: () => Provider.of<AppRouterDelegate>(context, listen: false).navigateTo(const HomeSubPath(AppRouteSegments.home, showRightSidebar: false))),
         ),
         body: SafeArea(
           child: RefreshIndicator(
             onRefresh: _refreshData,
             child: content,
           ),
+        ),
+        // ИЗМЕНЕНИЕ: Добавлена FAB
+        floatingActionButton: ActionButton(
+          icon: Icons.more_horiz_rounded,
+          tooltip: 'Действия с задачами',
+          onPressed: () => _showTaskActionsBottomSheet(context),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          iconColor: Theme.of(context).colorScheme.onPrimaryContainer,
         ),
       );
     }
