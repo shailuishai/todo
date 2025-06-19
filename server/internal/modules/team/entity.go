@@ -1,3 +1,4 @@
+// internal/modules/team/entity.go
 package team
 
 import (
@@ -73,10 +74,6 @@ type Team struct {
 	UpdatedAt       time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP"`
 	IsDeleted       bool       `gorm:"default:false;not null;column:is_deleted"`
 	DeletedAt       *time.Time `gorm:"column:deleted_at"`
-
-	// Отношения для GORM (если нужны для Preload/Joins)
-	// Members []UserTeamMembership `gorm:"foreignKey:TeamID"`
-	// Tasks   []task.Task          `gorm:"foreignKey:TeamID"` // Потребует импорта task
 }
 
 func (Team) TableName() string {
@@ -89,10 +86,6 @@ type UserTeamMembership struct {
 	TeamID   uint           `gorm:"primaryKey;column:team_id;not null"` // Внешний ключ к Teams
 	Role     TeamMemberRole `gorm:"type:team_member_role;not null;default:'member';column:role"`
 	JoinedAt time.Time      `gorm:"column:joined_at;not null;default:CURRENT_TIMESTAMP"`
-
-	// Отношения для GORM
-	// User User `gorm:"foreignKey:UserID"` // Потребует импорта user
-	// Team Team `gorm:"foreignKey:TeamID"`
 }
 
 func (UserTeamMembership) TableName() string {
@@ -135,7 +128,6 @@ type TeamResponse struct {
 type TeamDetailResponse struct {
 	TeamResponse                       // Встраиваем базовую информацию о команде
 	Members      []*TeamMemberResponse `json:"members,omitempty"`
-	// TODO: Возможно, добавить сюда количество активных задач или другую сводную информацию
 }
 
 // TeamInviteLinkResponse - DTO для ответа при генерации ссылки-приглашения
@@ -160,12 +152,6 @@ func ToTeamResponse(team *Team, imageBaseURL string, currentUserRole *TeamMember
 	}
 	var fullImageURL *string
 	if team.ImageURLS3Key != nil && *team.ImageURLS3Key != "" && imageBaseURL != "" {
-		// Логика формирования полного URL аналогична аватару пользователя
-		// cleanBaseURL := strings.TrimSuffix(imageBaseURL, "/")
-		// cleanKey := strings.TrimPrefix(*team.ImageURLS3Key, "/")
-		// urlValue := cleanBaseURL + "/" + cleanKey
-		// fullImageURL = &urlValue
-		// Пока что заглушка, т.к. нет s3BaseURL для командных картинок
 		urlValue := imageBaseURL + "/" + *team.ImageURLS3Key // Упрощенно
 		fullImageURL = &urlValue
 
@@ -184,69 +170,45 @@ func ToTeamResponse(team *Team, imageBaseURL string, currentUserRole *TeamMember
 	}
 }
 
-// ToTeamMemberResponse (потребует User GORM модель или UserLiteResponse как входной параметр)
-// func ToTeamMemberResponse(membership *UserTeamMembership, user *user.User, avatarBaseURL string) *TeamMemberResponse { ... }
-
 // --- Параметры для фильтрации и сортировки (если нужны для списков команд) ---
 type GetTeamsRequestParams struct {
 	UserID     uint    // Для получения команд, где пользователь является участником
 	SearchName *string // Для поиска команд по названию
-	// TODO: Добавить сортировку, если нужно
 }
 
 type CreateTeamRequest struct {
 	Name        string  `json:"name" validate:"required,min=1,max=100"`
-	Description *string `json:"description,omitempty" validate:"omitempty,max=65535"`   // Max length для TEXT
-	Color       *string `json:"color,omitempty" validate:"omitempty,hexcolor|rgb|rgba"` // Валидация цвета
+	Description *string `json:"description,omitempty" validate:"omitempty,max=65535"`
+	Color       *string `json:"color,omitempty" validate:"omitempty,hexcolor|rgb|rgba"`
 }
 
-// UpdateTeamDetailsRequest - DTO для обновления деталей команды (PUT/PATCH).
-// Для PATCH все поля будут указателями. Для PUT - часть обязательна.
-// В UseCase будем решать, как обрабатывать PATCH (только измененные поля).
-// Этот DTO будет использоваться в multipart/form-data вместе с файлом изображения.
 type UpdateTeamDetailsRequest struct {
 	Name        *string `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
 	Description *string `json:"description,omitempty" validate:"omitempty,max=65535"`
 	Color       *string `json:"color,omitempty" validate:"omitempty,hexcolor|rgb|rgba"`
-	ResetImage  *bool   `json:"reset_image,omitempty"` // Флаг для сброса изображения команды
+	ResetImage  *bool   `json:"reset_image,omitempty"`
 }
 
-// GetMyTeamsRequest - DTO для параметров запроса списка команд пользователя.
 type GetMyTeamsRequest struct {
-	Search *string `form:"search" validate:"omitempty,min=1"` // Поисковый запрос по названию команды
-	// TODO: Добавить параметры сортировки, если потребуется в будущем
-	// SortBy    *string `form:"sort_by"`
-	// SortOrder *string `form:"sort_order"`
+	Search *string `form:"search" validate:"omitempty,min=1"`
 }
 
 // --- DTO для Управления Участниками ---
 
-// AddTeamMemberRequest - DTO для добавления участника в команду.
 type AddTeamMemberRequest struct {
-	// Пользователь будет идентифицироваться по UserID или Login/Email.
-	// Пока сделаем UserID, т.к. поиск по логину/email - это отдельная логика.
-	// Если добавляем по логину/email, то нужен будет UseCase пользователя для поиска.
-	// Для простоты начнем с UserID.
 	UserID uint            `json:"user_id" validate:"required,gt=0"`
-	Role   *TeamMemberRole `json:"role,omitempty" validate:"omitempty,oneof=admin editor member"` // Owner не назначается так
+	Role   *TeamMemberRole `json:"role,omitempty" validate:"omitempty,oneof=admin editor member"`
 }
 
-// UpdateTeamMemberRoleRequest - DTO для изменения роли участника.
 type UpdateTeamMemberRoleRequest struct {
-	Role TeamMemberRole `json:"role" validate:"required,oneof=admin editor member"` // Owner не изменяется так
+	Role TeamMemberRole `json:"role" validate:"required,oneof=admin editor member"`
 }
 
 type GenerateInviteTokenRequest struct {
-	// Срок действия токена в часах. Если не указан, используется значение по умолчанию.
-	ExpiresInHours *uint `json:"expires_in_hours,omitempty" validate:"omitempty,min=1,max=720"` // Например, от 1 часа до 30 дней (720 часов)
-	// Роль, которая будет назначена пользователю при вступлении по этому токену.
-	// По умолчанию 'member'. Owner/Admin не могут быть назначены через токен.
-	RoleToAssign *TeamMemberRole `json:"role_to_assign,omitempty" validate:"omitempty,oneof=editor member"`
-	// Можно добавить поле для максимального количества использований токена (пока не будем усложнять)
-	// MaxUses *int `json:"max_uses,omitempty" validate:"omitempty,min=1"`
+	ExpiresInHours *uint           `json:"expires_in_hours,omitempty" validate:"omitempty,min=1,max=720"`
+	RoleToAssign   *TeamMemberRole `json:"role_to_assign,omitempty" validate:"omitempty,oneof=editor member"`
 }
 
-// JoinTeamByTokenRequest - DTO для присоединения к команде по токену.
 type JoinTeamByTokenRequest struct {
 	InviteToken string `json:"invite_token" validate:"required"`
 }
@@ -266,8 +228,8 @@ type Controller interface {
 	RemoveTeamMember(w http.ResponseWriter, r *http.Request)
 	LeaveTeam(w http.ResponseWriter, r *http.Request)
 
-	GenerateInviteToken(w http.ResponseWriter, r *http.Request) // Новый метод
-	JoinTeamByToken(w http.ResponseWriter, r *http.Request)     // Новый метод
+	GenerateInviteToken(w http.ResponseWriter, r *http.Request)
+	JoinTeamByToken(w http.ResponseWriter, r *http.Request)
 }
 
 type UseCase interface {
@@ -283,10 +245,9 @@ type UseCase interface {
 	RemoveTeamMember(teamID uint, currentUserID uint, targetUserID uint) error
 	LeaveTeam(teamID uint, userID uint) error
 
-	GenerateInviteToken(teamID uint, userID uint, req GenerateInviteTokenRequest) (*TeamInviteTokenResponse, error) // Новый метод
-	JoinTeamByToken(tokenValue string, userID uint) (*TeamResponse, error)                                          // Новый метод
+	GenerateInviteToken(teamID uint, userID uint, req GenerateInviteTokenRequest) (*TeamInviteTokenResponse, error)
+	JoinTeamByToken(tokenValue string, userID uint) (*TeamResponse, error)
 
-	// Методы TeamService ... (без изменений)
 	IsUserMember(userID, teamID uint) (bool, error)
 	GetUserRoleInTeam(userID, teamID uint) (*TeamMemberRole, error)
 	CanUserCreateTeamTask(userID, teamID uint) (bool, error)
@@ -294,14 +255,12 @@ type UseCase interface {
 	CanUserChangeTeamTaskStatus(userID, teamID uint, taskAssignedToUserID *uint) (bool, error)
 	CanUserDeleteTeamTask(userID, teamID uint, taskCreatorID uint) (bool, error)
 	IsUserTeamMemberWithUserID(teamID uint, targetUserID uint) (bool, error)
+	IsUserMemberByLogin(teamID uint, userLogin string) (bool, *UserLiteResponse, error)
+	GetTeamName(teamID uint) (string, error)
 }
 
 // Repo определяет методы для взаимодействия с хранилищем данных для команд.
 type Repo interface {
-	// Team CRUD ... (без изменений)
-	// Membership ... (без изменений)
-	// Задачи ... (без изменений)
-	// S3 ... (без изменений)
 	CreateTeam(teamModel *Team) (*Team, error)
 	GetTeamByID(teamID uint) (*Team, error)
 	GetTeamsByUserID(userID uint, searchName *string) ([]*Team, error)
@@ -315,7 +274,6 @@ type Repo interface {
 	IsTeamMember(userID, teamID uint) (bool, error)
 	LogicallyDeleteTasksByTeamID(teamID uint, deletedByUserID uint) error
 
-	// Методы для кэширования (остаются для проксирования к TeamCache)
 	GetTeam(teamID uint) (*Team, error)
 	SaveTeam(teamModel *Team) error
 	DeleteTeam(teamID uint) error
@@ -334,7 +292,6 @@ type Repo interface {
 	DeleteTeamImage(bucketName string, s3Key string) error
 	GetTeamImagePublicURL(s3Key string) string
 
-	// Методы для хранения и проверки токенов приглашений (могут быть реализованы через Cache)
 	SaveInviteToken(token string, teamID uint, roleToAssign TeamMemberRole, expiresAt time.Time) error
 	GetInviteTokenData(token string) (teamID uint, roleToAssign TeamMemberRole, isValid bool, err error)
 	DeleteInviteToken(token string) error

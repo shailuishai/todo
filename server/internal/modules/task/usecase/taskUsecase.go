@@ -1,12 +1,15 @@
 package usecase
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"server/internal/modules/notification"
 	"server/internal/modules/tag"
 	"server/internal/modules/task" // Пакет task (entity, repo, errors)
+	gouser "server/internal/modules/user"
 	"strconv"
 	"strings"
 	"time"
@@ -20,16 +23,19 @@ type TeamService interface {
 	CanUserChangeTeamTaskStatus(userID, teamID uint, taskAssignedToUserID *uint) (bool, error)
 	CanUserDeleteTeamTask(userID, teamID uint, taskCreatorID uint) (bool, error)
 	IsUserTeamMemberWithUserID(teamID uint, targetUserID uint) (bool, error)
+	GetTeamName(teamID uint) (string, error)
 }
 
 // TaskUseCase реализует интерфейс task.UseCase
 type TaskUseCase struct {
-	repo        task.Repo
-	tagUC       tag.UseCase
-	tagRepo     tag.Repo
-	log         *slog.Logger
-	teamService TeamService
-	cacheTTL    time.Duration
+	repo             task.Repo
+	tagUC            tag.UseCase
+	tagRepo          tag.Repo
+	log              *slog.Logger
+	teamService      TeamService
+	cacheTTL         time.Duration
+	dispatcher       notification.Dispatcher
+	userInfoProvider notification.UserNotificationInfoProvider
 }
 
 // NewTaskUseCase создает новый экземпляр TaskUseCase.
@@ -40,18 +46,96 @@ func NewTaskUseCase(
 	teamService TeamService,
 	log *slog.Logger,
 	cacheTTL time.Duration,
+	userInfoProvider notification.UserNotificationInfoProvider,
+	dispatcher notification.Dispatcher,
 ) task.UseCase {
 	if cacheTTL == 0 {
 		cacheTTL = 5 * time.Minute
 	}
 	return &TaskUseCase{
-		repo:        repo,
-		tagUC:       tagUC,
-		tagRepo:     tagRepo,
-		log:         log,
-		teamService: teamService,
-		cacheTTL:    cacheTTL,
+		repo:             repo,
+		tagUC:            tagUC,
+		tagRepo:          tagRepo,
+		log:              log,
+		teamService:      teamService,
+		cacheTTL:         cacheTTL,
+		userInfoProvider: userInfoProvider,
+		dispatcher:       dispatcher,
 	}
+}
+
+func (uc *TaskUseCase) ProcessDeadlineChecks(ctx context.Context) error {
+	op := "TaskUseCase.ProcessDeadlineChecks"
+	log := uc.log.With(slog.String("op", op))
+	log.Info("Starting deadline check process")
+
+	now := time.Now()
+
+	tasks, err := uc.repo.GetTasksForDeadlineCheck(ctx, now)
+	if err != nil {
+		log.Error("failed to get tasks for deadline check from repo", "error", err)
+		return err
+	}
+
+	if len(tasks) == 0 {
+		log.Info("No pending tasks found for deadline notification check.")
+		return nil
+	}
+
+	for _, t := range tasks {
+		if t.AssignedToUserID == nil {
+			continue
+		}
+		assigneeID := *t.AssignedToUserID
+
+		settings, err := uc.userInfoProvider.GetUserNotificationSettings(assigneeID)
+		if err != nil {
+			log.Error("failed to get user settings for deadline check", "userID", assigneeID, "taskID", t.TaskID, "error", err)
+			continue
+		}
+
+		if !settings.TaskDeadlineRemindersEnabled {
+			continue // Пользователь отключил напоминания
+		}
+
+		var notifyTime time.Time
+		switch settings.TaskDeadlineReminderTimePreference {
+		case gouser.DeadlineReminderPreferenceOneHour:
+			notifyTime = t.Deadline.Add(-1 * time.Hour)
+		case gouser.DeadlineReminderPreferenceOneDay:
+			notifyTime = t.Deadline.Add(-24 * time.Hour)
+		case gouser.DeadlineReminderPreferenceTwoDays:
+			notifyTime = t.Deadline.Add(-48 * time.Hour)
+		default:
+			log.Warn("unknown deadline reminder preference", "preference", settings.TaskDeadlineReminderTimePreference)
+			continue // Неизвестная настройка
+		}
+
+		// Если текущее время больше или равно времени, когда нужно отправить уведомление
+		if now.After(notifyTime) || now.Equal(notifyTime) {
+			log.Info("Dispatching deadline notification", "taskID", t.TaskID, "userID", assigneeID)
+
+			if uc.dispatcher != nil {
+				event := notification.Event{
+					Type: notification.EventTaskDeadlineDue,
+					Payload: notification.TaskDeadlineEventPayload{
+						TaskID:     t.TaskID,
+						TaskTitle:  t.Title,
+						AssigneeID: assigneeID,
+						Deadline:   *t.Deadline,
+					},
+				}
+				uc.dispatcher.Dispatch(ctx, event)
+			}
+
+			// Маркируем, что уведомление отправлено
+			if err := uc.repo.MarkDeadlineNotificationSent(ctx, t.TaskID, now); err != nil {
+				log.Error("failed to mark deadline notification as sent", "taskID", t.TaskID, "error", err)
+			}
+		}
+	}
+	log.Info("Deadline check process finished")
+	return nil
 }
 
 func (uc *TaskUseCase) generateTasksCacheKey(userID uint, reqParams task.GetTasksRequest) string {
@@ -271,6 +355,22 @@ func (uc *TaskUseCase) CreateTask(userID uint, req task.CreateTaskRequest) (*tas
 	if err != nil {
 		log.Error("failed to build task response after create, returning basic task", "error", err, "taskID", createdTask.TaskID)
 		return task.ToTaskResponse(createdTask), nil
+	}
+
+	if uc.dispatcher != nil && createdTask.TeamID != nil && createdTask.AssignedToUserID != nil && *createdTask.AssignedToUserID != userID {
+		teamName, _ := uc.teamService.GetTeamName(*createdTask.TeamID)
+		event := notification.Event{
+			Type: notification.EventTaskAssigned,
+			Payload: notification.TaskAssignedEventPayload{
+				TaskID:     createdTask.TaskID,
+				TaskTitle:  createdTask.Title,
+				AssignerID: userID,
+				AssigneeID: *createdTask.AssignedToUserID,
+				TeamID:     createdTask.TeamID,
+				TeamName:   &teamName,
+			},
+		}
+		uc.dispatcher.Dispatch(context.Background(), event)
 	}
 
 	log.Info("task created successfully", slog.Uint64("taskID", uint64(createdTask.TaskID)))
@@ -554,6 +654,27 @@ func (uc *TaskUseCase) UpdateTask(taskID uint, userID uint, req task.UpdateTaskR
 
 	_ = uc.repo.DeleteTaskCache(taskID)
 	uc.invalidateTaskListsCache(userID, existingTask.TeamID)
+
+	assigneeChanged := existingTask.AssignedToUserID != nil && req.AssignedToUserID != nil && *existingTask.AssignedToUserID != *req.AssignedToUserID
+	if !assigneeChanged {
+		assigneeChanged = (existingTask.AssignedToUserID == nil && req.AssignedToUserID != nil) || (existingTask.AssignedToUserID != nil && req.AssignedToUserID == nil)
+	}
+
+	if uc.dispatcher != nil && assigneeChanged && updatedTaskModel.TeamID != nil && updatedTaskModel.AssignedToUserID != nil && *updatedTaskModel.AssignedToUserID != userID {
+		teamName, _ := uc.teamService.GetTeamName(*updatedTaskModel.TeamID)
+		event := notification.Event{
+			Type: notification.EventTaskAssigned,
+			Payload: notification.TaskAssignedEventPayload{
+				TaskID:     updatedTaskModel.TaskID,
+				TaskTitle:  updatedTaskModel.Title,
+				AssignerID: userID,
+				AssigneeID: *updatedTaskModel.AssignedToUserID,
+				TeamID:     updatedTaskModel.TeamID,
+				TeamName:   &teamName,
+			},
+		}
+		uc.dispatcher.Dispatch(context.Background(), event)
+	}
 
 	log.Info("task updated successfully (PUT)")
 	return uc.buildTaskResponse(updatedTaskModel, userID)

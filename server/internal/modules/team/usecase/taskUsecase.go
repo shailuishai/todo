@@ -1,20 +1,21 @@
+// internal/modules/team/usecase/teamUsecase.go
 package usecase
 
 import (
-	"bytes" // Для avatarManager
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io" // Для io.ReadAll
+	"io"
 	"log/slog"
 	"mime/multipart"
 	"server/config"
 	"server/internal/modules/team"
 	usermodels "server/internal/modules/user"
-	avatarManager "server/pkg/lib/avatarMenager" // Убедитесь, что путь корректен
+	avatarManager "server/pkg/lib/avatarMenager"
 	"strings"
 	"time"
 
@@ -24,25 +25,26 @@ import (
 type TeamUseCase struct {
 	repo    team.Repo
 	log     *slog.Logger
-	s3Cfg   config.S3Config // Храним всю S3Config для доступа к разным бакетам и настройкам
+	s3Cfg   config.S3Config
 	ttlCfg  config.CacheConfig
 	httpCfg config.HttpServerConfig
-	// maxTeamImageSizeBytes убран, будем брать из s3Cfg
 }
 
 func NewTeamUseCase(
 	repo team.Repo,
 	log *slog.Logger,
-	appCfg config.Config, // Передаем всю конфигурацию
+	appCfg config.Config,
 ) team.UseCase {
 	return &TeamUseCase{
 		repo:    repo,
 		log:     log,
-		s3Cfg:   appCfg.S3Config, // Сохраняем S3Config
+		s3Cfg:   appCfg.S3Config,
 		ttlCfg:  appCfg.CacheConfig,
 		httpCfg: appCfg.HttpServerConfig,
 	}
 }
+
+// ... (все существующие методы без изменений) ...
 
 func (uc *TeamUseCase) toTeamResponse(t *team.Team, role *team.TeamMemberRole, memberCount int) *team.TeamResponse {
 	if t == nil {
@@ -50,10 +52,6 @@ func (uc *TeamUseCase) toTeamResponse(t *team.Team, role *team.TeamMemberRole, m
 	}
 	var fullImageURL *string
 	if t.ImageURLS3Key != nil && *t.ImageURLS3Key != "" {
-		// Используем метод репозитория, который делегирует в TeamS3
-		// GetTeamImagePublicURL должен использовать s3TeamImageBaseURL, который формируется в NewTeamS3
-		// или напрямую из конфигурации в TeamS3.
-		// Передаем только ключ, как и для аватаров пользователей.
 		urlValue := uc.repo.GetTeamImagePublicURL(*t.ImageURLS3Key)
 		if urlValue != "" {
 			fullImageURL = &urlValue
@@ -75,7 +73,7 @@ func (uc *TeamUseCase) toTeamResponse(t *team.Team, role *team.TeamMemberRole, m
 	}
 }
 
-func (uc *TeamUseCase) CreateTeam(userID uint, req team.CreateTeamRequest /* imageFileHeader interface{} - убрано, будет в UpdateTeamDetails */) (*team.TeamResponse, error) {
+func (uc *TeamUseCase) CreateTeam(userID uint, req team.CreateTeamRequest) (*team.TeamResponse, error) {
 	op := "TeamUseCase.CreateTeam"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("userID", uint64(userID)), slog.String("teamName", req.Name))
 
@@ -88,7 +86,7 @@ func (uc *TeamUseCase) CreateTeam(userID uint, req team.CreateTeamRequest /* ima
 		Description:     req.Description,
 		Color:           req.Color,
 		CreatedByUserID: userID,
-		ImageURLS3Key:   nil, // Изображение не добавляется при создании команды напрямую через этот DTO
+		ImageURLS3Key:   nil,
 	}
 
 	createdTeam, err := uc.repo.CreateTeam(&teamModel)
@@ -104,17 +102,14 @@ func (uc *TeamUseCase) CreateTeam(userID uint, req team.CreateTeamRequest /* ima
 	}
 	if err := uc.repo.CreateMembership(&membership); err != nil {
 		log.Error("failed to create owner membership", "error", err, "teamID", createdTeam.TeamID)
-		// Рассмотреть откат создания команды
-		// r.repo.DeleteTeamByID(createdTeam.TeamID) // Примерно так, если бы был такой метод
 		return nil, team.ErrTeamInternal
 	}
 
 	_ = uc.repo.DeleteUserTeams(userID)
-	_ = uc.repo.DeleteTeamMembers(createdTeam.TeamID) // Кэш участников пуст, но на всякий случай
+	_ = uc.repo.DeleteTeamMembers(createdTeam.TeamID)
 
 	log.Info("team created successfully", slog.Uint64("teamID", uint64(createdTeam.TeamID)))
 	ownerRole := team.RoleOwner
-	// При создании команды 1 участник (владелец)
 	return uc.toTeamResponse(createdTeam, &ownerRole, 1), nil
 }
 
@@ -134,7 +129,7 @@ func (uc *TeamUseCase) GetTeamByID(teamID uint, userID uint) (*team.TeamDetailRe
 
 	dbTeam, err := uc.repo.GetTeamByID(teamID)
 	if err != nil {
-		log.Warn("failed to get team from DB", "error", err) // GetTeamByID уже проверяет is_deleted
+		log.Warn("failed to get team from DB", "error", err)
 		return nil, err
 	}
 
@@ -143,11 +138,6 @@ func (uc *TeamUseCase) GetTeamByID(teamID uint, userID uint) (*team.TeamDetailRe
 		log.Warn("failed to get/cache team members", "error", membersErr)
 	}
 	memberCount := len(members)
-
-	// Кэширование основной информации о команде
-	// if errSave := uc.repo.SaveTeam(dbTeam); errSave != nil {
-	// log.Warn("failed to save team to cache", "error", errSave)
-	// } // repo.GetTeamByID уже может использовать кэш
 
 	log.Info("team details retrieved", slog.Int("member_count", memberCount))
 	baseTeamResponse := uc.toTeamResponse(dbTeam, &currentUserMembership.Role, memberCount)
@@ -164,25 +154,21 @@ func (uc *TeamUseCase) getAndCacheTeamMembersDetails(teamID uint, currentUserIDF
 	op := "TeamUseCase.getAndCacheTeamMembersDetails"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("teamID", uint64(teamID)), slog.Uint64("currentUserID_for_log", uint64(currentUserIDForLog)))
 
-	// Сначала пытаемся получить из кэша (repo.GetTeamMembers должен это делать)
 	cachedMemberships, err := uc.repo.GetTeamMembers(teamID)
-	if err == nil && len(cachedMemberships) > 0 { // Проверяем, что список не пуст
+	if err == nil && len(cachedMemberships) > 0 {
 		log.Info("team memberships retrieved from cache, converting")
 		return uc.convertToTeamMemberResponses(cachedMemberships, currentUserIDForLog)
 	}
-	if err != nil && !errors.Is(err, usermodels.ErrNotFound) { // Если ошибка не "не найдено", логируем
+	if err != nil && !errors.Is(err, usermodels.ErrNotFound) {
 		log.Error("error getting team memberships from cache", "error", err)
-		// Не возвращаем ошибку, пытаемся получить из БД
 	}
 
-	// Если в кэше нет или ошибка (кроме NotFound), идем в БД
 	dbMemberships, err := uc.repo.GetTeamMemberships(teamID)
 	if err != nil {
 		log.Error("failed to get team memberships from DB", "error", err)
-		return nil, team.ErrTeamInternal // Здесь возвращаем ошибку, если БД не смогла
+		return nil, team.ErrTeamInternal
 	}
 
-	// Сохраняем в кэш, если что-то получили из БД
 	if len(dbMemberships) > 0 {
 		if errSave := uc.repo.SaveTeamMembers(teamID, dbMemberships); errSave != nil {
 			log.Warn("failed to save team memberships to cache", "error", errSave)
@@ -202,8 +188,6 @@ func (uc *TeamUseCase) convertToTeamMemberResponses(memberships []*team.UserTeam
 		userLite, err := uc.repo.GetUserLiteByID(m.UserID)
 		if err != nil {
 			log.Error("failed to get user lite details for member response", "error", err, "memberUserID", m.UserID, "teamID", m.TeamID)
-			// Можно пропустить этого участника или вернуть ошибку для всего списка
-			// Пока пропускаем
 			continue
 		}
 		memberResponses = append(memberResponses, &team.TeamMemberResponse{
@@ -238,7 +222,7 @@ func (uc *TeamUseCase) GetMyTeams(userID uint, params team.GetMyTeamsRequest) ([
 		count, errCount := uc.repo.GetTeamMembershipsCount(t.TeamID)
 		if errCount != nil {
 			log.Warn("could not get member count for team in list", "teamID", t.TeamID, "error", errCount)
-			count = 0 // По умолчанию 0, если не удалось получить
+			count = 0
 		}
 		responses = append(responses, uc.toTeamResponse(t, rolePtr, count))
 	}
@@ -253,14 +237,13 @@ func (uc *TeamUseCase) UpdateTeamDetails(teamID uint, userID uint, req team.Upda
 	existingTeam, err := uc.repo.GetTeamByID(teamID)
 	if err != nil {
 		return nil, err
-	} // ErrTeamNotFound
+	}
 
 	membership, err := uc.repo.GetMembership(userID, teamID)
 	if err != nil {
 		return nil, team.ErrTeamAccessDenied
 	}
 
-	// Разрешаем редактирование владельцу или администратору
 	if membership.Role != team.RoleOwner && membership.Role != team.RoleAdmin {
 		log.Warn("user not owner or admin for team update", "role", membership.Role)
 		return nil, team.ErrTeamAccessDenied
@@ -285,12 +268,11 @@ func (uc *TeamUseCase) UpdateTeamDetails(teamID uint, userID uint, req team.Upda
 			return nil, team.ErrTeamImageUploadFailed
 		}
 
-		if int(len(fileBytes)) > uc.s3Cfg.MaxTeamImageSizeBytes { // Используем из s3Cfg
+		if int(len(fileBytes)) > uc.s3Cfg.MaxTeamImageSizeBytes {
 			log.Warn("team image file too large", "size", len(fileBytes), "limit", uc.s3Cfg.MaxTeamImageSizeBytes)
 			return nil, team.ErrTeamImageInvalidSize
 		}
 
-		// Используем avatarManager для обработки изображения команды
 		_, processedBytes, errParse := avatarManager.ParsingAvatarImage(bytes.NewReader(fileBytes))
 		if errParse != nil {
 			log.Error("failed to parse team image", "error", errParse)
@@ -303,8 +285,6 @@ func (uc *TeamUseCase) UpdateTeamDetails(teamID uint, userID uint, req team.Upda
 			return nil, team.ErrTeamImageUploadFailed
 		}
 
-		// Генерируем ключ для S3
-		// Используем расширение .webp так как ParsingAvatarImage конвертирует в WebP
 		generatedKey := fmt.Sprintf("team_%d/image_%s.webp", teamID, uuid.NewString())
 
 		errUpload := uc.repo.UploadTeamImage(uc.s3Cfg.BucketTeamImages, generatedKey, processedBytes, "image/webp")
@@ -326,7 +306,7 @@ func (uc *TeamUseCase) UpdateTeamDetails(teamID uint, userID uint, req team.Upda
 		if existingTeam.ImageURLS3Key != nil && *existingTeam.ImageURLS3Key != "" {
 			oldS3KeyToDelete = existingTeam.ImageURLS3Key
 		}
-		newS3Key = nil // Указываем, что ключ нужно обнулить
+		newS3Key = nil
 		madeChangesToImage = true
 	}
 
@@ -335,15 +315,13 @@ func (uc *TeamUseCase) UpdateTeamDetails(teamID uint, userID uint, req team.Upda
 		existingTeam.Name = *req.Name
 		changedInDB = true
 	}
-	if req.Description != nil { // Позволяем установить пустое описание
-		// Если текущее описание nil, а новое не nil (даже если пустая строка), это изменение
-		// Если текущее не nil, а новое отличается
+	if req.Description != nil {
 		if (existingTeam.Description == nil && req.Description != nil) || (existingTeam.Description != nil && *req.Description != *existingTeam.Description) {
 			existingTeam.Description = req.Description
 			changedInDB = true
 		}
 	}
-	if req.Color != nil { // Позволяем установить пустой цвет (для сброса)
+	if req.Color != nil {
 		if (existingTeam.Color == nil && req.Color != nil) || (existingTeam.Color != nil && *req.Color != *existingTeam.Color) {
 			existingTeam.Color = req.Color
 			changedInDB = true
@@ -351,24 +329,21 @@ func (uc *TeamUseCase) UpdateTeamDetails(teamID uint, userID uint, req team.Upda
 	}
 
 	if madeChangesToImage {
-		existingTeam.ImageURLS3Key = newS3Key // Обновляем S3 ключ в модели
+		existingTeam.ImageURLS3Key = newS3Key
 		changedInDB = true
 	}
 
 	if !changedInDB {
 		log.Info("no details changed for team update in DB fields")
-		// Если изменилось только изображение, changedInDB может быть false, но madeChangesToImage=true
-		// В этом случае все равно нужно вернуть обновленный TeamResponse
 		if !madeChangesToImage {
-			return nil, team.ErrTeamNoChanges // Или просто вернуть текущее состояние
+			return nil, team.ErrTeamNoChanges
 		}
 	}
 
-	existingTeam.UpdatedAt = time.Now() // Обновляем время изменения
+	existingTeam.UpdatedAt = time.Now()
 	updatedTeamDB, err := uc.repo.UpdateTeam(existingTeam)
 	if err != nil {
 		log.Error("failed to update team in repo", "error", err)
-		// Если загрузили новое изображение, но не смогли обновить команду, нужно удалить загруженное изображение
 		if madeChangesToImage && newS3Key != nil && (req.ResetImage == nil || !*req.ResetImage) {
 			_ = uc.repo.DeleteTeamImage(uc.s3Cfg.BucketTeamImages, *newS3Key)
 		}
@@ -382,7 +357,6 @@ func (uc *TeamUseCase) UpdateTeamDetails(teamID uint, userID uint, req team.Upda
 		}
 	}
 
-	// Инвалидация кэшей
 	_ = uc.repo.DeleteTeam(teamID)
 	membershipsForCacheInvalidation, _ := uc.repo.GetTeamMemberships(teamID)
 	for _, m := range membershipsForCacheInvalidation {
@@ -415,20 +389,18 @@ func (uc *TeamUseCase) DeleteTeam(teamID uint, userID uint) error {
 	teamToDelete.IsDeleted = true
 	teamToDelete.DeletedAt = &now
 
-	oldS3Key := teamToDelete.ImageURLS3Key // Сохраняем ключ перед обнулением
-	teamToDelete.ImageURLS3Key = nil       // Обнуляем ключ S3 при удалении команды
+	oldS3Key := teamToDelete.ImageURLS3Key
+	teamToDelete.ImageURLS3Key = nil
 
 	if _, errDB := uc.repo.UpdateTeam(teamToDelete); errDB != nil {
 		log.Error("failed to logically delete team in DB", "error", errDB)
 		return team.ErrTeamInternal
 	}
 
-	// Удаляем изображение из S3, если оно было
 	if oldS3Key != nil && *oldS3Key != "" {
 		log.Info("deleting S3 team image during team delete", "s3_key", *oldS3Key)
 		if errS3 := uc.repo.DeleteTeamImage(uc.s3Cfg.BucketTeamImages, *oldS3Key); errS3 != nil {
 			log.Error("failed to delete team image from S3 during team delete, but proceeding", "s3_key", *oldS3Key, "error", errS3)
-			// Не фатально, команда все равно удалена логически
 		}
 	}
 
@@ -436,9 +408,8 @@ func (uc *TeamUseCase) DeleteTeam(teamID uint, userID uint) error {
 		log.Error("failed to logically delete tasks for team", "error", err)
 	}
 
-	// Инвалидация кэшей
 	_ = uc.repo.DeleteTeam(teamID)
-	membershipsForCacheInvalidation, _ := uc.repo.GetTeamMemberships(teamID) // Получаем ДО удаления
+	membershipsForCacheInvalidation, _ := uc.repo.GetTeamMemberships(teamID)
 	_ = uc.repo.DeleteTeamMembers(teamID)
 	for _, m := range membershipsForCacheInvalidation {
 		_ = uc.repo.DeleteUserTeams(m.UserID)
@@ -449,14 +420,11 @@ func (uc *TeamUseCase) DeleteTeam(teamID uint, userID uint) error {
 }
 
 func (uc *TeamUseCase) GetTeamMembers(teamID uint, userID uint) ([]*team.TeamMemberResponse, error) {
-	//TODO implement me
 	panic("implement me")
 }
 
 func (uc *TeamUseCase) AddTeamMember(teamID uint, currentUserID uint, req team.AddTeamMemberRequest) (*team.TeamMemberResponse, error) {
-	// ... (существующая логика до return) ...
-	// Перед return:
-	_ = uc.repo.DeleteTeam(teamID) // Инвалидация кэша команды для обновления MemberCount при следующем GetTeamByID
+	_ = uc.repo.DeleteTeam(teamID)
 
 	createdMembership, err := uc.repo.GetMembership(req.UserID, teamID)
 	if err != nil {
@@ -464,11 +432,10 @@ func (uc *TeamUseCase) AddTeamMember(teamID uint, currentUserID uint, req team.A
 		return nil, team.ErrTeamInternal
 	}
 
-	// Получаем UserLite для ответа
 	targetUserLite, errUser := uc.repo.GetUserLiteByID(req.UserID)
 	if errUser != nil {
 		uc.log.Error("failed to get target user lite for response after add", "error", errUser, "targetUserID", req.UserID)
-		return nil, team.ErrTeamInternal // Или вернуть ошибку, что пользователь не найден
+		return nil, team.ErrTeamInternal
 	}
 
 	return &team.TeamMemberResponse{
@@ -482,12 +449,10 @@ func (uc *TeamUseCase) UpdateTeamMemberRole(teamID, currentUserID, targetUserID 
 	op := "TeamUseCase.UpdateTeamMemberRole"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("teamID", uint64(teamID)), slog.Uint64("currentUserID", uint64(currentUserID)), slog.Uint64("targetUserID", uint64(targetUserID)))
 
-	// Проверяем, что пользователь не пытается изменить свою собственную роль
 	if currentUserID == targetUserID {
 		return nil, team.ErrCannotPerformActionOnSelf
 	}
 
-	// 1. Проверяем права текущего пользователя (currentUserID)
 	currentUserMembership, err := uc.repo.GetMembership(currentUserID, teamID)
 	if err != nil {
 		log.Error("failed to get current user membership", "error", err)
@@ -499,14 +464,12 @@ func (uc *TeamUseCase) UpdateTeamMemberRole(teamID, currentUserID, targetUserID 
 		return nil, team.ErrTeamAccessDenied
 	}
 
-	// 2. Получаем текущую запись участника, которого хотим изменить
 	memberToUpdate, err := uc.repo.GetMembership(targetUserID, teamID)
 	if err != nil {
 		log.Error("failed to get target user membership", "error", err)
-		return nil, team.ErrUserNotMember // Используем более конкретную ошибку
+		return nil, team.ErrUserNotMember
 	}
 
-	// 3. Проверяем логику (админ не может менять роль другого админа или владельца)
 	if currentUserMembership.Role == team.RoleAdmin && (memberToUpdate.Role == team.RoleAdmin || memberToUpdate.Role == team.RoleOwner) {
 		log.Warn("admin attempted to change role of another admin or owner")
 		return nil, team.ErrTeamAccessDenied
@@ -516,19 +479,16 @@ func (uc *TeamUseCase) UpdateTeamMemberRole(teamID, currentUserID, targetUserID 
 		return nil, team.ErrCannotChangeOwnerRole
 	}
 
-	// 4. Обновляем роль в базе данных
 	updatedMembership, err := uc.repo.UpdateTeamMemberRole(targetUserID, teamID, req.Role)
 	if err != nil {
 		log.Error("failed to update team member role in repo", "error", err)
 		return nil, team.ErrTeamInternal
 	}
 
-	// <<< КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Инвалидация кэша участников >>>
 	_ = uc.repo.DeleteTeamMembers(teamID)
-	_ = uc.repo.DeleteTeam(teamID) // Также инвалидируем кэш команды (на случай если MemberCount кэшируется)
+	_ = uc.repo.DeleteTeam(teamID)
 	log.Info("team members and team cache invalidated", slog.Uint64("teamID", uint64(teamID)))
 
-	// 6. Формируем ответ на основе актуальных данных
 	targetUserLite, errUser := uc.repo.GetUserLiteByID(targetUserID)
 	if errUser != nil {
 		log.Error("failed to get target user lite for response after role update", "error", errUser, "targetUserID", targetUserID)
@@ -580,7 +540,6 @@ func (uc *TeamUseCase) RemoveTeamMember(teamID uint, currentUserID uint, targetU
 		return team.ErrCannotRemoveLastOwner
 	}
 
-	// <<< ИСПРАВЛЕНА ЛОГИКА: Проверяем, что текущий пользователь - Owner
 	if currentUserMembership.Role == team.RoleAdmin && targetMembership.Role == team.RoleAdmin {
 		log.Warn("admin cannot remove another admin")
 		return team.ErrTeamAccessDenied
@@ -650,7 +609,7 @@ func (uc *TeamUseCase) GetUserRoleInTeam(userID, teamID uint) (*team.TeamMemberR
 	if err != nil {
 		if errors.Is(err, team.ErrUserNotMember) {
 			return nil, nil
-		} // Не ошибка, просто не участник
+		}
 		return nil, err
 	}
 	return &m.Role, nil
@@ -691,7 +650,7 @@ func (uc *TeamUseCase) GenerateInviteToken(teamID uint, userID uint, req team.Ge
 	op := "TeamUseCase.GenerateInviteToken"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("teamID", uint64(teamID)), slog.Uint64("userID", uint64(userID)))
 
-	_, err := uc.repo.GetTeamByID(teamID) // Проверяем, что команда существует и не удалена
+	_, err := uc.repo.GetTeamByID(teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -733,7 +692,6 @@ func (uc *TeamUseCase) GenerateInviteToken(teamID uint, userID uint, req team.Ge
 		frontendBase = strings.TrimSuffix(uc.httpCfg.AllowedOrigins[0], "/")
 	} else {
 		log.Warn("AllowedOrigins[0] is not configured for http server, invite link will be relative or use a placeholder")
-		// ВАЖНО: Установите здесь дефолтный URL вашего фронтенда для таких случаев или сделайте его обязательным в конфигурации.
 		frontendBase = "https://your-frontend-placeholder.com"
 	}
 
@@ -776,16 +734,13 @@ func (uc *TeamUseCase) JoinTeamByToken(tokenValue string, userID uint) (*team.Te
 		TeamID: teamID,
 		Role:   roleToAssign,
 	}
-	if err := uc.repo.CreateMembership(&membership); err != nil { // CreateMembership должен обработать уже существующее (хотя мы проверили)
+	if err := uc.repo.CreateMembership(&membership); err != nil {
 		return nil, err
 	}
 
-	// Удаляем токен, если он одноразовый (сейчас он не помечен как одноразовый, но можно добавить логику)
-	// _ = uc.repo.DeleteInviteToken(tokenValue)
-
-	_ = uc.repo.DeleteTeamMembers(teamID) // Обновляем кэш участников
-	_ = uc.repo.DeleteUserTeams(userID)   // Обновляем кэш списка команд пользователя
-	_ = uc.repo.DeleteTeam(teamID)        // Обновляем кэш самой команды (например, для member_count)
+	_ = uc.repo.DeleteTeamMembers(teamID)
+	_ = uc.repo.DeleteUserTeams(userID)
+	_ = uc.repo.DeleteTeam(teamID)
 
 	memberCountAfterJoin, _ := uc.repo.GetTeamMembershipsCount(teamID)
 	return uc.toTeamResponse(teamModel, &roleToAssign, memberCountAfterJoin), nil
@@ -801,5 +756,59 @@ func generateSecureRandomToken(length int) (string, error) {
 
 func hashTokenForLog(token string) string {
 	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:8]) // Логируем только первые 8 байт хеша (16 символов)
+	return hex.EncodeToString(h[:8])
+}
+
+// ИЗМЕНЕНИЕ: Новые методы
+
+// IsUserMemberByLogin проверяет, является ли пользователь с указанным логином участником команды.
+func (uc *TeamUseCase) IsUserMemberByLogin(teamID uint, userLogin string) (bool, *team.UserLiteResponse, error) {
+	log := uc.log.With("op", "TeamUseCase.IsUserMemberByLogin", "teamID", teamID, "userLogin", userLogin)
+
+	// 1. Находим пользователя по логину
+	user, err := uc.repo.GetUserByLoginOrEmail(userLogin)
+	if err != nil {
+		if errors.Is(err, usermodels.ErrUserNotFound) {
+			log.Warn("user not found by login")
+			return false, nil, nil // Не ошибка, просто пользователь не найден
+		}
+		log.Error("failed to get user by login", "error", err)
+		return false, nil, team.ErrTeamInternal
+	}
+
+	// 2. Проверяем его членство в команде
+	isMember, err := uc.repo.IsTeamMember(user.UserId, teamID)
+	if err != nil {
+		log.Error("failed to check team membership", "error", err)
+		return false, nil, team.ErrTeamInternal
+	}
+
+	if !isMember {
+		return false, nil, nil
+	}
+
+	// 3. Если он участник, возвращаем его UserLite DTO
+	userLite, err := uc.repo.GetUserLiteByID(user.UserId)
+	if err != nil {
+		log.Error("failed to get user lite info for member", "error", err)
+		return true, nil, team.ErrTeamInternal // Он участник, но не смогли получить DTO
+	}
+
+	return true, userLite, nil
+}
+
+// GetTeamName возвращает название команды по ее ID.
+func (uc *TeamUseCase) GetTeamName(teamID uint) (string, error) {
+	log := uc.log.With("op", "TeamUseCase.GetTeamName", "teamID", teamID)
+
+	teamModel, err := uc.repo.GetTeamByID(teamID)
+	if err != nil {
+		if errors.Is(err, team.ErrTeamNotFound) {
+			log.Warn("team not found by id")
+			return "", team.ErrTeamNotFound
+		}
+		log.Error("failed to get team by id", "error", err)
+		return "", team.ErrTeamInternal
+	}
+	return teamModel.Name, nil
 }

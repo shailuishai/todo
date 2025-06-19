@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"server/internal/modules/notification"
+	"server/internal/modules/notification/dispatcher"
 	"server/pkg/lib/pushsender"
 	"server/pkg/lib/pushsender/fcm"
 	"strings"
@@ -156,15 +158,62 @@ func NewApp(cfg *config.Config, log *slog.Logger) (*App, error) {
 	}
 
 	router := chi.NewRouter()
-	bgTaskService := TaskService.NewTaskService(storage.Db, log) // Передаем storage.Db вместо app.Storage.Db
+	// ИЗМЕНЕНИЕ: Настройка Cron задач
+	profileDBImpl := profileDb.NewProfileDatabase(storage.Db, log, cfg.S3Config.Endpoint, cfg.S3Config.BucketUserAvatars)
+	profileS3Impl := profileS3.NewProfileS3(log, s3s)
+	profileRepoImpl := profileRepo.NewRepo(profileDBImpl, profileS3Impl)
+	profileUseCaseImpl := profileUC.NewProfileUseCase(log, profileRepoImpl, cfg.S3Config.BucketUserAvatars, cfg.S3Config.Endpoint)
+
+	var notificationDispatcher notification.Dispatcher
+	if pushNotificationSvc != nil {
+		notificationDispatcher = dispatcher.New(pushNotificationSvc, profileUseCaseImpl, log)
+		log.Info("NotificationDispatcher initialized.")
+	} else {
+		log.Warn("PushNotificationSender is nil, NotificationDispatcher will not be initialized.")
+	}
+
+	teamDBImpl := teamDbRepo.NewTeamDatabase(storage.Db, log, cfg.S3Config)
+	teamCacheImpl := teamCacheRepo.NewTeamCache(appCache, log, cfg.CacheConfig)
+	s3BaseURLForTeamImages := fmt.Sprintf("https://%s/%s", strings.TrimSuffix(cfg.S3Config.Endpoint, "/"), strings.TrimPrefix(cfg.S3Config.BucketTeamImages, "/"))
+	teamS3Impl := teamS3Repo.NewTeamS3(log, s3s, cfg.S3Config)
+	teamRepoImpl := teamRepo.NewRepo(teamDBImpl, teamCacheImpl, teamS3Impl, log, cfg.S3Config.BucketTeamImages, s3BaseURLForTeamImages)
+	teamUseCaseImpl := teamUC.NewTeamUseCase(teamRepoImpl, log, *cfg)
+
+	tagDBImpl := tagDbRepo.NewTagDatabase(storage.Db, log)
+	tagCacheImpl := tagCacheRepo.NewTagCache(appCache, log, cfg.CacheConfig.DefaultTeamListCacheTtl)
+	tagRepoImpl := tagRepo.NewRepo(tagDBImpl, tagCacheImpl, log)
+	var teamServiceProviderForTag tagUC.TeamServiceForTag = teamUseCaseImpl
+	tagUseCaseImpl := tagUC.NewTagUseCase(tagRepoImpl, teamServiceProviderForTag, log)
+
+	taskDBImpl := taskDbRepo.NewTaskDatabase(storage.Db, log)
+	taskCacheImpl := taskCacheRepo.NewTaskCache(appCache, log, cfg.CacheConfig)
+	taskRepoImpl := taskRepo.NewRepo(taskDBImpl, taskCacheImpl)
+	var teamServiceProviderForTask taskUC.TeamService = teamUseCaseImpl
+	taskUseCaseImpl := taskUC.NewTaskUseCase(taskRepoImpl, tagUseCaseImpl, tagRepoImpl, teamServiceProviderForTask, log, cfg.CacheConfig.DefaultTaskCacheTtl, profileUseCaseImpl, notificationDispatcher)
+
+	bgTaskService := TaskService.NewTaskService(storage.Db, log)
 	cronScheduler := cron.New()
-	_, err = cronScheduler.AddFunc("0 0 * * *", func() { // Ежедневно в полночь
+
+	// Задача очистки пользователей (раз в сутки)
+	_, err = cronScheduler.AddFunc("0 0 * * *", func() {
+		log.Info("Cron: Running CleanUnverifiedUsers task")
 		bgTaskService.CleanUnverifiedUsers()
-		// Можно добавить другие задачи, например, bgTaskService.ArchiveOldTasks()
 	})
 	if err != nil {
-		return nil, fmt.Errorf("cron init failed: %w", err)
+		return nil, fmt.Errorf("cron CleanUnverifiedUsers init failed: %w", err)
 	}
+
+	// Задача проверки дедлайнов (каждые 5 минут)
+	_, err = cronScheduler.AddFunc("@every 5m", func() {
+		log.Info("Cron: Running ProcessDeadlineChecks task")
+		if err := taskUseCaseImpl.ProcessDeadlineChecks(context.Background()); err != nil {
+			log.Error("Cron: failed to process deadline checks", "error", err)
+		}
+	})
+	if err != nil {
+		return nil, fmt.Errorf("cron ProcessDeadlineChecks init failed: %w", err)
+	}
+
 	cronScheduler.Start()
 
 	return &App{
@@ -390,6 +439,9 @@ func (app *App) SetupRoutes() {
 		r.With(AuthUserMiddleware).Post("/logout", authCtrl.Logout)
 	})
 
+	// --- Notifications Module ---
+	notificationDispatcher := dispatcher.New(*app.PushNotificationSender, profileUseCaseImpl, app.Log)
+
 	// --- Team Module ---
 	teamDBImpl := teamDbRepo.NewTeamDatabase(app.Storage.Db, app.Log, app.Cfg.S3Config)
 	teamCacheImpl := teamCacheRepo.NewTeamCache(app.Cache, app.Log, app.Cfg.CacheConfig)
@@ -446,7 +498,7 @@ func (app *App) SetupRoutes() {
 	taskCacheImpl := taskCacheRepo.NewTaskCache(app.Cache, app.Log, app.Cfg.CacheConfig)
 	taskRepoImpl := taskRepo.NewRepo(taskDBImpl, taskCacheImpl)
 	var teamServiceProviderForTask taskUC.TeamService = teamUseCaseImpl // Приведение типа
-	taskUseCaseImpl := taskUC.NewTaskUseCase(taskRepoImpl, tagUseCaseImpl, tagRepoImpl, teamServiceProviderForTask, app.Log, app.Cfg.CacheConfig.DefaultTaskCacheTtl)
+	taskUseCaseImpl := taskUC.NewTaskUseCase(taskRepoImpl, tagUseCaseImpl, tagRepoImpl, teamServiceProviderForTask, app.Log, app.Cfg.CacheConfig.DefaultTaskCacheTtl, profileUseCaseImpl, notificationDispatcher)
 	taskCtrl := taskC.NewTaskController(taskUseCaseImpl, app.Log)
 	app.Router.Route(apiVersion+"/tasks", func(r chi.Router) {
 		r.Use(AuthUserMiddleware)
@@ -465,7 +517,7 @@ func (app *App) SetupRoutes() {
 	chatDatabaseRepo := chatDB.NewDBRepo(app.Storage.Db, chatLog.With(slog.String("layer", "db_repo")))
 
 	// Убедимся, что teamUseCaseImpl и profileUseCaseImpl реализуют нужные интерфейсы
-	var teamCheckerForChat chatEntity.TeamChecker = teamUseCaseImpl
+	var teamCheckerForChat chatEntity.TeamServiceProvider = teamUseCaseImpl
 	var userInfoProviderForChat chatEntity.UserInfoProvider = profileUseCaseImpl
 
 	chatUseCaseInstance := chatUC.NewUseCase(
@@ -473,6 +525,7 @@ func (app *App) SetupRoutes() {
 		chatDatabaseRepo,
 		teamCheckerForChat,
 		userInfoProviderForChat,
+		notificationDispatcher,
 	)
 	chatHubInstance := ws.NewHub(chatLog.With(slog.String("component", "hub")), chatUseCaseInstance)
 	app.ChatHub = chatHubInstance // Сохраняем хаб в App

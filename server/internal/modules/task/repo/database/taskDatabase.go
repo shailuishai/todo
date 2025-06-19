@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
@@ -254,5 +255,50 @@ func (r *TaskDatabase) DeleteTaskPermanently(taskID uint) error {
 	}
 
 	log.Info("task permanently deleted successfully")
+	return nil
+}
+
+// ИЗМЕНЕНИЕ: Новый метод для получения задач для проверки дедлайнов
+func (r *TaskDatabase) GetTasksForDeadlineCheck(ctx context.Context, checkTime time.Time) ([]*task.Task, error) {
+	op := "TaskDatabase.GetTasksForDeadlineCheck"
+	log := r.log.With(slog.String("op", op))
+	var tasks []*task.Task
+
+	// Ищем задачи, у которых:
+	// 1. Установлен дедлайн.
+	// 2. Дедлайн еще не прошел.
+	// 3. Задача не выполнена и не удалена.
+	// 4. Уведомление о дедлайне еще не было отправлено.
+	err := r.db.WithContext(ctx).
+		Where("deadline IS NOT NULL AND deadline > ? AND status != ? AND is_deleted = ? AND deadline_notification_sent_at IS NULL",
+			checkTime, "done", false).
+		Find(&tasks).Error
+
+	if err != nil {
+		log.Error("failed to fetch tasks for deadline check", "error", err)
+		return nil, task.ErrTaskInternal
+	}
+	log.Debug("tasks for deadline check retrieved", "count", len(tasks))
+	return tasks, nil
+}
+
+// ИЗМЕНЕНИЕ: Новый метод для отметки об отправке уведомления
+func (r *TaskDatabase) MarkDeadlineNotificationSent(ctx context.Context, taskID uint, sentTime time.Time) error {
+	op := "TaskDatabase.MarkDeadlineNotificationSent"
+	log := r.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)))
+
+	result := r.db.WithContext(ctx).Model(&task.Task{}).
+		Where("task_id = ?", taskID).
+		Update("deadline_notification_sent_at", sentTime)
+
+	if result.Error != nil {
+		log.Error("failed to mark deadline notification as sent", "error", result.Error)
+		return task.ErrTaskInternal
+	}
+	if result.RowsAffected == 0 {
+		log.Warn("no task found to mark deadline notification as sent, or it was already marked")
+		// Не возвращаем ошибку, т.к. это не критично
+	}
+
 	return nil
 }

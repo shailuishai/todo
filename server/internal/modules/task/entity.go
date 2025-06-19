@@ -2,6 +2,7 @@
 package task
 
 import (
+	"context"
 	"net/http" // Для Controller
 	"server/internal/modules/tag"
 	"time"
@@ -9,21 +10,22 @@ import (
 
 // Task - GORM модель для таблицы 'tasks'
 type Task struct {
-	TaskID           uint       `gorm:"primaryKey;column:task_id;autoIncrement"`
-	Title            string     `gorm:"type:varchar(255);not null;column:title"`
-	Description      *string    `gorm:"type:text;column:description"`
-	Deadline         *time.Time `gorm:"column:deadline"`
-	Status           string     `gorm:"type:varchar(50);default:'todo';not null;column:status"`
-	Priority         int        `gorm:"default:1;not null;column:priority"`
-	CreatedByUserID  uint       `gorm:"column:created_by_user_id;not null"`
-	AssignedToUserID *uint      `gorm:"column:assigned_to_user_id"`
-	TeamID           *uint      `gorm:"column:team_id"`
-	CreatedAt        time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP"`
-	UpdatedAt        time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP"`
-	CompletedAt      *time.Time `gorm:"column:completed_at"`
-	IsDeleted        bool       `gorm:"default:false;not null;column:is_deleted"`
-	DeletedAt        *time.Time `gorm:"column:deleted_at"`
-	DeletedByUserID  *uint      `gorm:"column:deleted_by_user_id"`
+	TaskID                     uint       `gorm:"primaryKey;column:task_id;autoIncrement"`
+	Title                      string     `gorm:"type:varchar(255);not null;column:title"`
+	Description                *string    `gorm:"type:text;column:description"`
+	Deadline                   *time.Time `gorm:"column:deadline"`
+	Status                     string     `gorm:"type:varchar(50);default:'todo';not null;column:status"`
+	Priority                   int        `gorm:"default:1;not null;column:priority"`
+	CreatedByUserID            uint       `gorm:"column:created_by_user_id;not null"`
+	AssignedToUserID           *uint      `gorm:"column:assigned_to_user_id"`
+	TeamID                     *uint      `gorm:"column:team_id"`
+	CreatedAt                  time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP"`
+	UpdatedAt                  time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP"`
+	CompletedAt                *time.Time `gorm:"column:completed_at"`
+	IsDeleted                  bool       `gorm:"default:false;not null;column:is_deleted"`
+	DeletedAt                  *time.Time `gorm:"column:deleted_at"`
+	DeletedByUserID            *uint      `gorm:"column:deleted_by_user_id"`
+	DeadlineNotificationSentAt *time.Time `gorm:"column:deadline_notification_sent_at"`
 }
 
 func (Task) TableName() string {
@@ -197,7 +199,8 @@ type UseCase interface {
 	PatchTask(taskID uint, userID uint, req PatchTaskRequest) (*TaskResponse, error)
 	DeleteTask(taskID uint, userID uint) error
 	RestoreTask(taskID uint, userID uint) (*TaskResponse, error) // <<< ДОБАВЛЕНО
-	DeleteTaskPermanently(taskID uint, userID uint) error        // <<< ДОБАВЛЕНО
+	DeleteTaskPermanently(taskID uint, userID uint) error
+	ProcessDeadlineChecks(ctx context.Context) error // <<< ДОБАВЛЕНО
 }
 
 type Repo interface {
@@ -215,4 +218,7 @@ type Repo interface {
 	GetTasksCache(cacheKey string) ([]*Task, error)
 	SaveTasks(cacheKey string, tasks []*Task) error
 	InvalidateTasks(keys ...string) error
+
+	GetTasksForDeadlineCheck(ctx context.Context, checkTime time.Time) ([]*Task, error)
+	MarkDeadlineNotificationSent(ctx context.Context, taskID uint, sentTime time.Time) error
 }

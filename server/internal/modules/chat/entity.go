@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"server/internal/modules/team"
 	"server/internal/modules/user/profile"
 	"time"
 )
@@ -201,8 +202,12 @@ type HTTPGetHistoryResponse struct {
 }
 
 // --- Интерфейсы ---
-type TeamChecker interface {
+
+// ИЗМЕНЕНИЕ: Переименовываем и расширяем интерфейс
+type TeamServiceProvider interface {
 	IsUserMember(userID uint, teamID uint) (bool, error)
+	IsUserMemberByLogin(teamID uint, userLogin string) (bool, *team.UserLiteResponse, error)
+	GetTeamName(teamID uint) (string, error)
 }
 type UserInfoProvider interface {
 	GetUser(userID uint) (*profile.UserProfileResponse, error)

@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"context"
 	"server/internal/modules/task" // Импортируем пакет task для доступа к task.Task, task.GetTasksParams, task.Repo
+	"time"
 )
 
 type TaskDb interface {
@@ -12,6 +14,8 @@ type TaskDb interface {
 	UpdateTask(taskModel *task.Task) (*task.Task, error)
 	DeleteTask(taskID uint, userID uint, isTeamTask bool, deletedByUserID *uint) error
 	DeleteTaskPermanently(taskID uint) error // <<< ДОБАВЛЕНО
+	GetTasksForDeadlineCheck(ctx context.Context, checkTime time.Time) ([]*task.Task, error)
+	MarkDeadlineNotificationSent(ctx context.Context, taskID uint, sentTime time.Time) error
 }
 
 type TaskCache interface {
@@ -63,6 +67,14 @@ func (r *repo) DeleteTask(taskID uint, userID uint, isTeamTask bool, deletedByUs
 
 func (r *repo) DeleteTaskPermanently(taskID uint) error {
 	return r.db.DeleteTaskPermanently(taskID)
+}
+
+func (r *repo) GetTasksForDeadlineCheck(ctx context.Context, checkTime time.Time) ([]*task.Task, error) {
+	return r.db.GetTasksForDeadlineCheck(ctx, checkTime)
+}
+
+func (r *repo) MarkDeadlineNotificationSent(ctx context.Context, taskID uint, sentTime time.Time) error {
+	return r.db.MarkDeadlineNotificationSent(ctx, taskID, sentTime)
 }
 
 func (r *repo) GetTask(taskID uint) (*task.Task, error) {
