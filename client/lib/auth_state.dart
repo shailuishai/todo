@@ -6,6 +6,7 @@ import 'package:ToDo/themes.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // <<< НОВЫЙ ИМПОРТ
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -13,6 +14,8 @@ import 'package:shelf_router/shelf_router.dart' as shelf_router;
 
 import 'core/routing/app_pages.dart';
 import 'services/api_service.dart';
+
+const String _fcmTokenKey = 'fcm_device_token'; // <<< КОНСТАНТА ИЗ main.dart
 
 class AuthState extends ChangeNotifier {
   final ApiService _apiService;
@@ -29,6 +32,7 @@ class AuthState extends ChangeNotifier {
   String? _emailPendingConfirmation;
   String? _oauthErrorMessage;
   String? _pendingInviteToken;
+  String? _lastSentFcmToken; // <<< ДЛЯ ОТСЛЕЖИВАНИЯ ПОСЛЕДНЕГО ОТПРАВЛЕННОГО ТОКЕНА
 
 
   StreamController<String?> _oauthRedirectControllerWeb = StreamController.broadcast();
@@ -52,6 +56,74 @@ class AuthState extends ChangeNotifier {
 
   AuthState({required ApiService apiService}) : _apiService = apiService {
     _checkInitialAuthStatus();
+    // ИЗМЕНЕНИЕ: Слушаем изменения состояния, чтобы отправить токен при логине
+    addListener(_onAuthStateChangedForFcm);
+  }
+
+  // ИЗМЕНЕНИЕ: Новый слушатель для отправки/удаления токена
+  void _onAuthStateChangedForFcm() {
+    if (isLoggedIn) {
+      _registerOrUpdateDeviceToken();
+    }
+  }
+
+  // ИЗМЕНЕНИЕ: Новый метод для регистрации токена
+  Future<void> _registerOrUpdateDeviceToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_fcmTokenKey);
+
+    if (token == null || token.isEmpty) {
+      debugPrint("FCM: No token found in prefs to register.");
+      return;
+    }
+
+    // Отправляем токен, только если он изменился с момента последней отправки
+    if (token == _lastSentFcmToken) {
+      debugPrint("FCM: Token is the same as last sent. Skipping registration.");
+      return;
+    }
+
+    String deviceType;
+    if (kIsWeb) {
+      deviceType = 'web';
+    } else if (Platform.isAndroid) {
+      deviceType = 'android';
+    } else if (Platform.isIOS) {
+      deviceType = 'ios';
+    } else {
+      debugPrint("FCM: Cannot determine device type for token registration.");
+      return;
+    }
+
+    try {
+      debugPrint("FCM: Attempting to register device token: $token");
+      await _apiService.registerDeviceToken(token, deviceType);
+      _lastSentFcmToken = token; // Запоминаем успешно отправленный токен
+      debugPrint("FCM: Device token registered successfully.");
+    } catch (e) {
+      debugPrint("FCM: Failed to register device token. Error: $e");
+      // Не показываем ошибку пользователю, это фоновый процесс
+    }
+  }
+
+  // ИЗМЕНЕНИЕ: Новый метод для удаления токена
+  Future<void> _unregisterDeviceToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_fcmTokenKey);
+
+    if (token == null || token.isEmpty) {
+      debugPrint("FCM: No token found in prefs to unregister.");
+      return;
+    }
+
+    try {
+      debugPrint("FCM: Attempting to unregister device token: $token");
+      await _apiService.unregisterDeviceToken(token);
+      _lastSentFcmToken = null; // Сбрасываем отправленный токен
+      debugPrint("FCM: Device token unregistered successfully.");
+    } catch (e) {
+      debugPrint("FCM: Failed to unregister device token. Error: $e");
+    }
   }
 
   Future<void> _checkInitialAuthStatus() async {
@@ -192,6 +264,9 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // ИЗМЕНЕНИЕ: Удаляем токен перед выходом
+    await _unregisterDeviceToken();
+
     _errorMessage = null;
     _oauthErrorMessage = null;
     _emailPendingConfirmation = null;
@@ -324,7 +399,6 @@ class AuthState extends ChangeNotifier {
     }
   }
 
-  // <<< ИЗМЕНЕННЫЙ ХЕНДЛЕР С ДОБАВЛЕНИЕМ СТИЛЕЙ >>>
   Future<shelf.Response> _nativeOAuthLandingHandler(shelf.Request request) async {
     debugPrint('AuthState (_nativeOAuthLandingHandler): Received: ${request.requestedUri}');
     bool success = false;
@@ -384,7 +458,6 @@ class AuthState extends ChangeNotifier {
       Future.delayed(const Duration(seconds: 1), () => _stopNativeOAuthHttpServer());
     }
 
-    // Используем цвета из темы
     final theme = getDarkTheme(const Color(0xFF5457FF));
     final colorScheme = theme.colorScheme;
     final String backgroundColor = '#${colorScheme.background.value.toRadixString(16).substring(2)}';
@@ -604,6 +677,7 @@ class AuthState extends ChangeNotifier {
 
   @override
   void dispose() {
+    removeListener(_onAuthStateChangedForFcm); // ИЗМЕНЕНИЕ: Удаляем слушателя
     _oauthRedirectControllerWeb.close();
     _stopNativeOAuthHttpServer();
     super.dispose();

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // <<< НОВЫЙ ИМПОРТ
 import 'chat_provider.dart';
 import 'core/routing/app_route_path.dart';
 import 'theme_provider.dart';
@@ -23,10 +24,11 @@ import 'html_stub.dart' if (dart.library.html) 'dart:html' as html_lib;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
-// ИЗМЕНЕНИЕ: Импорты для Firebase
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'firebase_options.dart'; // Сгенерированный файл с опциями
+import 'firebase_options.dart';
+
+const String _fcmTokenKey = 'fcm_device_token'; // <<< КЛЮЧ ДЛЯ ХРАНЕНИЯ ТОКЕНА
 
 class MyHttpOverrides extends HttpOverrides {
   @override
@@ -40,10 +42,8 @@ class MyHttpOverrides extends HttpOverrides {
   }
 }
 
-// ИЗМЕНЕНИЕ: Новая функция для инициализации Firebase с проверкой платформы
+// ИЗМЕНЕНИЕ: Функция теперь сохраняет токен в SharedPreferences
 Future<void> _initializeFirebase() async {
-  // Выполняем код только на поддерживаемых платформах (Web, Android, iOS, macOS)
-  // Это предотвратит креш на Linux, где конфигурация отсутствует
   if (kIsWeb || Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
     try {
       final app = await Firebase.initializeApp(
@@ -51,14 +51,26 @@ Future<void> _initializeFirebase() async {
       );
       debugPrint("Firebase initialized for app: ${app.name}");
 
-      // Получаем токен только если Firebase успешно инициализирован
       final FirebaseMessaging messaging = FirebaseMessaging.instance;
-      // Запрашиваем разрешение на получение уведомлений (важно для iOS и Web)
       await messaging.requestPermission();
 
       final fcmToken = await messaging.getToken();
-      debugPrint("Firebase Messaging Token: ${fcmToken ?? "not available"}");
-      // TODO: Отправьте fcmToken на ваш бэкенд для привязки к пользователю
+      if (fcmToken != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_fcmTokenKey, fcmToken);
+        debugPrint("Firebase Messaging Token stored: ${fcmToken}");
+      } else {
+        debugPrint("Firebase Messaging Token is null.");
+      }
+
+      // Слушаем обновления токена
+      messaging.onTokenRefresh.listen((newToken) async {
+        debugPrint("Firebase Token Refreshed: $newToken");
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_fcmTokenKey, newToken);
+        // AuthState сам обработает отправку нового токена, если пользователь залогинен
+      });
+
     } catch (e) {
       debugPrint("Failed to initialize Firebase: $e");
     }
@@ -71,7 +83,6 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ru_RU', null);
 
-  // ИЗМЕНЕНИЕ: Вызываем новую функцию для инициализации Firebase
   await _initializeFirebase();
 
   if (kDebugMode && !kIsWeb) {
@@ -91,12 +102,10 @@ void main() async {
         ChangeNotifierProvider.value(value: authState),
         ChangeNotifierProvider.value(value: teamProvider),
         ChangeNotifierProvider.value(value: routerDelegate),
-
         ChangeNotifierProxyProvider<AuthState, ThemeProvider>(
           create: (context) => ThemeProvider(context.read<AuthState>()),
           update: (context, auth, previous) => ThemeProvider(auth),
         ),
-
         ChangeNotifierProxyProvider<AuthState, ChatProvider>(
           create: (context) => ChatProvider(
             context.read<ApiService>(),
@@ -106,7 +115,6 @@ void main() async {
               context.read<ApiService>(), auth
           ),
         ),
-
         ChangeNotifierProxyProvider<AuthState, DeletedTasksProvider>(
           create: (context) => DeletedTasksProvider(
             context.read<ApiService>(),
@@ -117,7 +125,6 @@ void main() async {
             auth,
           ),
         ),
-
         ChangeNotifierProxyProvider2<AuthState, DeletedTasksProvider, TaskProvider>(
           create: (context) => TaskProvider(
               context.read<ApiService>(),
@@ -130,7 +137,6 @@ void main() async {
               deletedTasks
           ),
         ),
-
         ChangeNotifierProxyProvider<AuthState, TagProvider>(
           create: (context) => TagProvider(
               context.read<ApiService>(),
