@@ -23,6 +23,11 @@ import 'html_stub.dart' if (dart.library.html) 'dart:html' as html_lib;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+// ИЗМЕНЕНИЕ: Импорты для Firebase
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'firebase_options.dart'; // Сгенерированный файл с опциями
+
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
@@ -35,10 +40,39 @@ class MyHttpOverrides extends HttpOverrides {
   }
 }
 
+// ИЗМЕНЕНИЕ: Новая функция для инициализации Firebase с проверкой платформы
+Future<void> _initializeFirebase() async {
+  // Выполняем код только на поддерживаемых платформах (Web, Android, iOS, macOS)
+  // Это предотвратит креш на Linux, где конфигурация отсутствует
+  if (kIsWeb || Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
+    try {
+      final app = await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint("Firebase initialized for app: ${app.name}");
+
+      // Получаем токен только если Firebase успешно инициализирован
+      final FirebaseMessaging messaging = FirebaseMessaging.instance;
+      // Запрашиваем разрешение на получение уведомлений (важно для iOS и Web)
+      await messaging.requestPermission();
+
+      final fcmToken = await messaging.getToken();
+      debugPrint("Firebase Messaging Token: ${fcmToken ?? "not available"}");
+      // TODO: Отправьте fcmToken на ваш бэкенд для привязки к пользователю
+    } catch (e) {
+      debugPrint("Failed to initialize Firebase: $e");
+    }
+  } else {
+    debugPrint("Firebase is not supported on this platform (Linux). Skipping initialization.");
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('ru_RU', null);
+
+  // ИЗМЕНЕНИЕ: Вызываем новую функцию для инициализации Firebase
+  await _initializeFirebase();
 
   if (kDebugMode && !kIsWeb) {
     HttpOverrides.global = MyHttpOverrides();
@@ -122,8 +156,6 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   final AppRouteInformationParser _routeInformationParser = AppRouteInformationParser();
 
-  // Этот initState больше не нужен для обработки URI,
-  // так как этим будет заниматься OAuthCallbackScreen
   @override
   void initState() {
     super.initState();
