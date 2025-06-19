@@ -1,3 +1,1 @@
--- Новая миграция
-ALTER TABLE Tasks
-    DROP COLUMN IF EXISTS deadline_notification_sent_at;
+ALTER TABLE "tasks" ADD COLUMN "deadline_notification_sent_at" TIMESTAMP WITH TIME ZONE;

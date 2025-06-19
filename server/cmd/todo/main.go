@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	firebase "firebase.google.com/go/v4"
 	"fmt"
+	"google.golang.org/api/option"
 	"log/slog"
 	"net/http"
 	"os"
@@ -99,6 +101,12 @@ type App struct {
 }
 
 func NewApp(cfg *config.Config, log *slog.Logger) (*App, error) {
+	opt := option.WithCredentialsFile(cfg.FCMConfig.ServiceAccountKeyJSONPath)
+	_, err := firebase.NewApp(context.Background(), nil, opt)
+	if err != nil {
+		return nil, fmt.Errorf("error initializing app: %v", err)
+	}
+
 	storage, err := database.NewStorage(cfg.DbConfig)
 	if err != nil {
 		return nil, fmt.Errorf("db init failed: %w", err)
