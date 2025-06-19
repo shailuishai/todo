@@ -22,7 +22,7 @@ type httpChatController struct {
 
 type wsChatController struct {
 	hub         *ws.Hub
-	teamService chat.TeamChecker
+	teamService chat.TeamServiceProvider
 	log         *slog.Logger
 }
 
@@ -35,7 +35,7 @@ func NewController(
 	log *slog.Logger,
 	uc chat.UseCase,
 	hub *ws.Hub,
-	teamService chat.TeamChecker,
+	teamService chat.TeamServiceProvider,
 	validate *validator.Validate,
 ) chat.Controller {
 	if validate == nil {
