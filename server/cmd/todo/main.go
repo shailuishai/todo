@@ -102,7 +102,8 @@ type App struct {
 
 func NewApp(cfg *config.Config, log *slog.Logger) (*App, error) {
 	opt := option.WithCredentialsFile(cfg.FCMConfig.ServiceAccountKeyJSONPath)
-	_, err := firebase.NewApp(context.Background(), nil, opt)
+	c := &firebase.Config{ProjectID: cfg.FCMConfig.ProjectID}
+	_, err := firebase.NewApp(context.Background(), c, opt)
 	if err != nil {
 		return nil, fmt.Errorf("error initializing app: %v", err)
 	}
