@@ -77,9 +77,7 @@ class MobileTaskListItemWidget extends StatelessWidget {
       }
 
       final displayTag = actualTag ?? taskTagInfo;
-      if (actualTag == null && taskTagInfo.id != 0 && displayTag.id == taskTagInfo.id) {
-        continue;
-      }
+
       if (displayTag.id == 0 && displayTag.name.trim().isEmpty) {
         continue;
       }

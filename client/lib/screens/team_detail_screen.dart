@@ -121,8 +121,14 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   }
 
   void _onSidebarSectionChanged() {
+    if (!mounted) return;
+    final section = _sidebarStateProvider.currentTeamDetailSection;
+
+    // ИЗМЕНЕНИЕ: Запускаем проверку на загрузку данных КАЖДЫЙ РАЗ при смене секции
+    _handleSectionChange(section);
+
+    // Обновляем UI (TabController) для мобильной версии
     if (ResponsiveUtil.isMobile(context) && _tabController.length > 0) {
-      final section = _sidebarStateProvider.currentTeamDetailSection;
       final tabIndex = _tabs.indexWhere((tab) => (tab.key as ValueKey<TeamDetailSection>?)?.value == section);
       if (tabIndex != -1 && _tabController.index != tabIndex) {
         _tabController.animateTo(tabIndex);
@@ -184,10 +190,9 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     if (section == TeamDetailSection.tasks) {
       _triggerFetchTeamTasksIfNeeded(forceCall: isInitialCall);
     } else if (section == TeamDetailSection.teamTags && teamIdInt != null) {
-      if (isInitialCall || !tagProvider.teamTagsByTeamId.containsKey(teamIdInt) || (tagProvider.teamTagsByTeamId[teamIdInt]?.isEmpty ?? true) ) {
-        if (!tagProvider.isLoadingTeamTags) {
-          tagProvider.fetchTeamTags(teamIdInt);
-        }
+      // ИЗМЕНЕНИЕ: Упрощаем и исправляем условие. Загружаем, если тегов для этой команды нет в кеше.
+      if (!tagProvider.teamTagsByTeamId.containsKey(teamIdInt) && !tagProvider.isLoadingTeamTags) {
+        tagProvider.fetchTeamTags(teamIdInt, forceRefresh: true);
       }
     }
   }
