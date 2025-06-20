@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // <<< НОВЫЙ ИМПОРТ
+import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_provider.dart';
 import 'core/routing/app_route_path.dart';
 import 'theme_provider.dart';
@@ -27,8 +27,9 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
+import 'package:permission_handler/permission_handler.dart'; // <<< НОВЫЙ ИМПОРТ
 
-const String _fcmTokenKey = 'fcm_device_token'; // <<< КЛЮЧ ДЛЯ ХРАНЕНИЯ ТОКЕНА
+const String _fcmTokenKey = 'fcm_device_token';
 
 class MyHttpOverrides extends HttpOverrides {
   @override
@@ -42,7 +43,6 @@ class MyHttpOverrides extends HttpOverrides {
   }
 }
 
-// ИЗМЕНЕНИЕ: Функция теперь сохраняет токен в SharedPreferences
 Future<void> _initializeFirebase() async {
   if (kIsWeb || Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
     try {
@@ -52,7 +52,9 @@ Future<void> _initializeFirebase() async {
       debugPrint("Firebase initialized for app: ${app.name}");
 
       final FirebaseMessaging messaging = FirebaseMessaging.instance;
-      await messaging.requestPermission();
+
+      // Здесь мы больше не запрашиваем разрешение, это будет делаться в UI
+      // await messaging.requestPermission();
 
       final fcmToken = await messaging.getToken();
       if (fcmToken != null) {
@@ -63,12 +65,10 @@ Future<void> _initializeFirebase() async {
         debugPrint("Firebase Messaging Token is null.");
       }
 
-      // Слушаем обновления токена
       messaging.onTokenRefresh.listen((newToken) async {
         debugPrint("Firebase Token Refreshed: $newToken");
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_fcmTokenKey, newToken);
-        // AuthState сам обработает отправку нового токена, если пользователь залогинен
       });
 
     } catch (e) {
@@ -162,10 +162,38 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   final AppRouteInformationParser _routeInformationParser = AppRouteInformationParser();
 
+  // ИЗМЕНЕНИЕ: Добавляем вызов запроса разрешений в initState
   @override
   void initState() {
     super.initState();
+    // Делаем задержку, чтобы убедиться, что первый кадр отрисован
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestPermissions();
+    });
   }
+
+  // ИЗМЕНЕНИЕ: Новый метод для запроса разрешений
+  Future<void> _requestPermissions() async {
+    // Запрашиваем только на мобильных платформах, где это имеет смысл
+    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) {
+      return;
+    }
+
+    // Запрос разрешения на уведомления
+    PermissionStatus notificationStatus = await Permission.notification.request();
+
+    if (notificationStatus.isGranted) {
+      debugPrint("Notification permission granted.");
+    } else if (notificationStatus.isDenied) {
+      debugPrint("Notification permission denied.");
+      // Можно показать Snackbar или диалог, объясняющий, почему уведомления важны
+    } else if (notificationStatus.isPermanentlyDenied) {
+      debugPrint("Notification permission permanently denied.");
+      // Пользователь навсегда запретил разрешение, нужно открыть настройки приложения
+      // openAppSettings();
+    }
+  }
+
 
   @override
   void dispose() {
