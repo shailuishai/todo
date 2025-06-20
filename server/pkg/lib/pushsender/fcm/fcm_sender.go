@@ -23,10 +23,9 @@ type FCMSender struct {
 func NewFCMSender(ctx context.Context, config config.FCMConfig, logger *slog.Logger) (*FCMSender, error) {
 	log := logger.With(slog.String("component", "FCMSender"))
 
-	// Проверяем, что хотя бы что-то для аутентификации предоставлено
-	if config.ProjectID == "" && config.ServiceAccountKeyJSONPath == "" {
-		log.Error("Either ProjectID (for ADC) or ServiceAccountKeyJSONPath must be provided for FCM")
-		return nil, errors.New("FCM configuration error: ProjectID or ServiceAccountKeyJSONPath is missing")
+	if config.ProjectID == "" {
+		log.Error("FCMConfig.ProjectID must be provided")
+		return nil, errors.New("FCM configuration error: ProjectID is missing")
 	}
 
 	var clientOpt option.ClientOption
@@ -36,13 +35,15 @@ func NewFCMSender(ctx context.Context, config config.FCMConfig, logger *slog.Log
 		clientOpt = option.WithCredentialsFile(config.ServiceAccountKeyJSONPath)
 	} else {
 		log.Info("Service account key path not provided, attempting to use Application Default Credentials for FCM.")
-		// Для ADC опция не нужна, SDK подхватит автоматически
 	}
 
-	// ИЗМЕНЕНИЕ: Второй аргумент (firebase.Config) должен быть nil,
-	// чтобы SDK использовал эндпоинты по умолчанию.
-	// ProjectID будет взят из ключа сервисного аккаунта или ADC.
-	app, err := firebase.NewApp(ctx, nil, clientOpt)
+	// ИЗМЕНЕНИЕ: Мы создаем объект Config, но ТОЛЬКО с ProjectID.
+	// Это скажет SDK, какой проект использовать, но не будет переопределять
+	// другие важные настройки, такие как хост API.
+	fbConfig := &firebase.Config{ProjectID: config.ProjectID}
+
+	// Передаем и конфиг (с ProjectID), и опцию с учетными данными.
+	app, err := firebase.NewApp(ctx, fbConfig, clientOpt)
 
 	if err != nil {
 		log.Error("Error initializing Firebase App for FCM", "error", err, "projectID", config.ProjectID)
@@ -62,7 +63,6 @@ func NewFCMSender(ctx context.Context, config config.FCMConfig, logger *slog.Log
 	}, nil
 }
 
-// ... (остальные методы Send и Ping без изменений)
 func (s *FCMSender) Send(ctx context.Context, msg pushsender.PushMessage) (*pushsender.SendResult, error) {
 	op := "FCMSender.Send"
 	log := s.log.With(slog.String("op", op))
