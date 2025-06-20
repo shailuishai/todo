@@ -99,7 +99,7 @@ func (s *FCMSender) Send(ctx context.Context, msg pushsender.PushMessage) (*push
 		},
 	}
 
-	br, err := s.client.SendMulticast(ctx, fcmMessage)
+	br, err := s.client.SendEachForMulticast(context.Background(), fcmMessage)
 	if err != nil {
 		log.Error("Error sending multicast message via FCM", "error", err)
 		return &pushsender.SendResult{FailureCount: len(msg.Tokens), FailedTokens: msg.Tokens}, fmt.Errorf("fcm send multicast: %w", err)
@@ -111,23 +111,15 @@ func (s *FCMSender) Send(ctx context.Context, msg pushsender.PushMessage) (*push
 	}
 
 	if br.FailureCount > 0 {
-		log.Warn("Some messages failed to send via FCM", "success_count", br.SuccessCount, "failure_count", br.FailureCount)
+		var failedTokens []string
 		for idx, resp := range br.Responses {
-			if !resp.Success && idx < len(msg.Tokens) {
-				failedToken := msg.Tokens[idx]
-				result.FailedTokens = append(result.FailedTokens, failedToken)
-				var errMsg string
-				if resp.Error != nil {
-					errMsg = resp.Error.Error()
-				} else {
-					errMsg = "unknown FCM send error"
-				}
-				log.Warn("FCM send failure details",
-					slog.String("error_code", errMsg),
-					slog.String("message_id", resp.MessageID),
-				)
+			if !resp.Success {
+				// The order of responses corresponds to the order of the registration tokens.
+				failedTokens = append(failedTokens, msg.Tokens[idx])
 			}
 		}
+
+		fmt.Printf("List of tokens that caused failures: %v\n", failedTokens)
 	}
 
 	if br.SuccessCount > 0 {
