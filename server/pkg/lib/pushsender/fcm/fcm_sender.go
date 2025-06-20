@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt" // Добавлен для fmt.Errorf
 	"log/slog"
+	"server/config"
 
 	firebase "firebase.google.com/go/v4"  // Основной пакет Firebase
 	"firebase.google.com/go/v4/messaging" // Пакет для Cloud Messaging
@@ -24,36 +25,16 @@ type FCMSender struct {
 // projectID: ID вашего Firebase проекта.
 // Если serviceAccountKeyJSON пустой, будет попытка использовать Google Application Default Credentials (ADC).
 // В этом случае projectID может быть не нужен, если ADC могут его определить, но лучше указать.
-func NewFCMSender(ctx context.Context, serviceAccountKeyJSON []byte, projectID string, logger *slog.Logger) (*FCMSender, error) {
+func NewFCMSender(ctx context.Context, config config.FCMConfig, logger *slog.Logger) (*FCMSender, error) {
 	log := logger.With(slog.String("component", "FCMSender"))
 
-	if len(serviceAccountKeyJSON) == 0 && projectID == "" { // Либо ключ, либо ProjectID (если ADC) должны быть
-		log.Error("Firebase service account key JSON or Project ID must be provided for FCM")
-		return nil, errors.New("FCM configuration error: service account key JSON or Project ID is missing")
-	}
+	opt := option.WithCredentialsFile(config.ServiceAccountKeyJSONPath)
+	fbConfig := &firebase.Config{ProjectID: config.ProjectID}
 
-	var clientOpts []option.ClientOption // Используем слайс опций
-
-	if len(serviceAccountKeyJSON) > 0 {
-		clientOpts = append(clientOpts, option.WithCredentialsJSON(serviceAccountKeyJSON))
-		log.Info("Using provided service account key JSON for FCM authentication.")
-	} else {
-		log.Info("Service account key JSON not provided, attempting to use Application Default Credentials for FCM.")
-		// Для ADC дополнительные опции аутентификации обычно не нужны, Firebase SDK их подхватит.
-		// Если projectID не определяется автоматически через ADC, его нужно передать в firebase.Config.
-	}
-
-	var app *firebase.App
-	var err error
-
-	// ProjectID может быть получен из сервис-аккаунта, но если он не указан в ключе или используются ADC,
-	// его явное указание в firebase.Config может быть необходимо.
-	fbConfig := &firebase.Config{ProjectID: projectID}
-
-	app, err = firebase.NewApp(ctx, fbConfig, clientOpts...) // Передаем слайс опций
+	app, err := firebase.NewApp(ctx, fbConfig, opt) // Передаем слайс опций
 
 	if err != nil {
-		log.Error("Error initializing Firebase App for FCM", "error", err, "projectID", projectID)
+		log.Error("Error initializing Firebase App for FCM", "error", err, "projectID", config.ProjectID)
 		return nil, fmt.Errorf("initializing Firebase App: %w", err)
 	}
 

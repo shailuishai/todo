@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	firebase "firebase.google.com/go/v4"
 	"fmt"
-	"google.golang.org/api/option"
 	"log/slog"
 	"net/http"
 	"os"
@@ -101,13 +99,6 @@ type App struct {
 }
 
 func NewApp(cfg *config.Config, log *slog.Logger) (*App, error) {
-	opt := option.WithCredentialsFile(cfg.FCMConfig.ServiceAccountKeyJSONPath)
-	c := &firebase.Config{ProjectID: cfg.FCMConfig.ProjectID}
-	_, err := firebase.NewApp(context.Background(), c, opt)
-	if err != nil {
-		return nil, fmt.Errorf("error initializing app: %v", err)
-	}
-
 	storage, err := database.NewStorage(cfg.DbConfig)
 	if err != nil {
 		return nil, fmt.Errorf("db init failed: %w", err)
@@ -128,43 +119,12 @@ func NewApp(cfg *config.Config, log *slog.Logger) (*App, error) {
 		return nil, fmt.Errorf("email sender init failed: %w", err)
 	}
 
-	var pushNotificationSvc pushsender.Sender
-	if cfg.FCMConfig.ProjectID != "" { // Инициализируем FCM только если есть ProjectID
-		var fcmServiceAccountJSON []byte
-		var errFcmKey error
-
-		// ServiceAccountKeyJSONPath теперь указывает на путь внутри контейнера
-		if cfg.FCMConfig.ServiceAccountKeyJSONPath != "" {
-			log.Info("Loading FCM service account key from path specified in config", "path", cfg.FCMConfig.ServiceAccountKeyJSONPath)
-			fcmServiceAccountJSON, errFcmKey = os.ReadFile(cfg.FCMConfig.ServiceAccountKeyJSONPath)
-			if errFcmKey != nil {
-				log.Error("Failed to read FCM service account key JSON file", "path", cfg.FCMConfig.ServiceAccountKeyJSONPath, "error", errFcmKey)
-				// Можно решить, является ли это фатальной ошибкой. Если Push критичны, то да.
-				// return nil, fmt.Errorf("read FCM key file %s: %w", cfg.FCMConfig.ServiceAccountKeyJSONPath, errFcmKey)
-			}
-		} else {
-			log.Info("FCM service account key path not provided in config; if ProjectID is set, FCM will attempt to use Application Default Credentials.")
-		}
-
-		if errFcmKey == nil { // Продолжаем инициализацию, только если ключ успешно прочитан (или не указан путь, и мы полагаемся на ADC)
-			fcmSender, errFCM := fcm.NewFCMSender(context.Background(), fcmServiceAccountJSON, cfg.FCMConfig.ProjectID, log)
-			if errFCM != nil {
-				log.Error("Failed to initialize FCMSender", "error", errFCM)
-				// Опять же, решить, фатально ли это.
-			} else {
-				pushNotificationSvc = fcmSender
-				log.Info("FCMSender initialized.")
-				// Опциональный пинг при старте
-				if errPing := pushNotificationSvc.Ping(context.Background()); errPing != nil {
-					log.Error("FCMSender Ping failed on startup", "error", errPing)
-				} else {
-					log.Info("FCMSender Ping successful on startup.")
-				}
-			}
-		}
-	} else {
-		log.Warn("FCMConfig.ProjectID is not set. Push notifications via FCM will be disabled.")
+	fcmSendler, err := fcm.NewFCMSender(context.Background(), cfg.FCMConfig, log)
+	if err != nil {
+		return nil, fmt.Errorf("fcm init failed: %w", err)
 	}
+
+	var pushNotificationSvc pushsender.Sender = fcmSendler
 
 	router := chi.NewRouter()
 	// ИЗМЕНЕНИЕ: Настройка Cron задач
