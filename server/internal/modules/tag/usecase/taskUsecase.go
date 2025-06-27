@@ -453,3 +453,27 @@ func (uc *TagUseCase) ValidateAndGetTeamTags(teamID uint, userID uint, tagIDs []
 	// Все запрошенные теги найдены и принадлежат команде
 	return foundTags, nil
 }
+
+func (uc *TagUseCase) GetUserTagsMap(userID uint, tagIDs []uint) (map[uint]*tag.UserTag, error) {
+	tags, err := uc.ValidateAndGetUserTags(userID, tagIDs)
+	if err != nil {
+		return nil, err
+	}
+	tagsMap := make(map[uint]*tag.UserTag, len(tags))
+	for _, t := range tags {
+		tagsMap[t.UserTagID] = t
+	}
+	return tagsMap, nil
+}
+
+func (uc *TagUseCase) GetTeamTagsMap(teamID uint, userID uint, tagIDs []uint) (map[uint]*tag.TeamTag, error) {
+	tags, err := uc.ValidateAndGetTeamTags(teamID, userID, tagIDs)
+	if err != nil {
+		return nil, err
+	}
+	tagsMap := make(map[uint]*tag.TeamTag, len(tags))
+	for _, t := range tags {
+		tagsMap[t.TeamTagID] = t
+	}
+	return tagsMap, nil
+}

@@ -28,7 +28,8 @@ type TagDb interface {
 	ClearTaskTags(taskID uint) error
 	AddTaskUserTag(taskID uint, userTagID uint) error
 	AddTaskTeamTag(taskID uint, teamTagID uint) error
-	GetTaskTags(taskID uint) ([]*tag.TaskTag, error) // Возвращает записи из связующей таблицы
+	GetTaskTags(taskID uint) ([]*tag.TaskTag, error)
+	GetLinksForTaskIDs(taskIDs []uint) ([]*tag.TaskTag, error) // Возвращает записи из связующей таблицы
 	// Для получения полных TagResponse для задачи, UseCase должен будет сначала получить TaskTag,
 	// а затем UserTag/TeamTag по ID из TaskTag.
 }
@@ -167,6 +168,9 @@ func (r *repo) AddTaskTeamTag(taskID uint, teamTagID uint) error {
 }
 func (r *repo) GetTaskTags(taskID uint) ([]*tag.TaskTag, error) {
 	return r.db.GetTaskTags(taskID)
+}
+func (r *repo) GetLinksForTaskIDs(taskIDs []uint) ([]*tag.TaskTag, error) {
+	return r.db.GetLinksForTaskIDs(taskIDs)
 }
 
 // Методы из team.Repo, которые были добавлены по ошибке в task.Repo, теперь удалены из task.Repo

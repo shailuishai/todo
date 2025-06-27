@@ -135,6 +135,8 @@ type UseCase interface {
 	// Возвращают полные модели, чтобы TaskUseCase мог получить ID.
 	ValidateAndGetUserTags(userID uint, tagIDs []uint) ([]*UserTag, error)
 	ValidateAndGetTeamTags(teamID uint, userID uint, tagIDs []uint) ([]*TeamTag, error) // userID для проверки прав на команду
+	GetUserTagsMap(userID uint, tagIDs []uint) (map[uint]*UserTag, error)
+	GetTeamTagsMap(teamID uint, userID uint, tagIDs []uint) (map[uint]*TeamTag, error)
 }
 
 // Repo определяет методы для взаимодействия с хранилищем данных для тегов.
@@ -162,4 +164,5 @@ type Repo interface {
 	AddTaskUserTag(taskID uint, userTagID uint) error
 	AddTaskTeamTag(taskID uint, teamTagID uint) error
 	GetTaskTags(taskID uint) ([]*TaskTag, error)
+	GetLinksForTaskIDs(taskIDs []uint) ([]*TaskTag, error)
 }

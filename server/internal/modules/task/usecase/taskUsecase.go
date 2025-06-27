@@ -1,3 +1,4 @@
+// internal/modules/task/usecase/task_usecase.go
 package usecase
 
 import (
@@ -8,14 +9,14 @@ import (
 	"log/slog"
 	"server/internal/modules/notification"
 	"server/internal/modules/tag"
-	"server/internal/modules/task" // Пакет task (entity, repo, errors)
+	"server/internal/modules/task"
 	gouser "server/internal/modules/user"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// --- Заглушка для TeamService ---
+// TeamService ... (без изменений)
 type TeamService interface {
 	IsUserMember(userID, teamID uint) (bool, error)
 	CanUserCreateTeamTask(userID, teamID uint) (bool, error)
@@ -26,7 +27,7 @@ type TeamService interface {
 	GetTeamName(teamID uint) (string, error)
 }
 
-// TaskUseCase реализует интерфейс task.UseCase
+// TaskUseCase ... (без изменений)
 type TaskUseCase struct {
 	repo             task.Repo
 	tagUC            tag.UseCase
@@ -38,7 +39,7 @@ type TaskUseCase struct {
 	userInfoProvider notification.UserNotificationInfoProvider
 }
 
-// NewTaskUseCase создает новый экземпляр TaskUseCase.
+// NewTaskUseCase ... (без изменений)
 func NewTaskUseCase(
 	repo task.Repo,
 	tagUC tag.UseCase,
@@ -64,6 +65,7 @@ func NewTaskUseCase(
 	}
 }
 
+// ProcessDeadlineChecks ... (без изменений)
 func (uc *TaskUseCase) ProcessDeadlineChecks(ctx context.Context) error {
 	op := "TaskUseCase.ProcessDeadlineChecks"
 	log := uc.log.With(slog.String("op", op))
@@ -95,7 +97,7 @@ func (uc *TaskUseCase) ProcessDeadlineChecks(ctx context.Context) error {
 		}
 
 		if !settings.TaskDeadlineRemindersEnabled {
-			continue // Пользователь отключил напоминания
+			continue
 		}
 
 		var notifyTime time.Time
@@ -108,10 +110,9 @@ func (uc *TaskUseCase) ProcessDeadlineChecks(ctx context.Context) error {
 			notifyTime = t.Deadline.Add(-48 * time.Hour)
 		default:
 			log.Warn("unknown deadline reminder preference", "preference", settings.TaskDeadlineReminderTimePreference)
-			continue // Неизвестная настройка
+			continue
 		}
 
-		// Если текущее время больше или равно времени, когда нужно отправить уведомление
 		if now.After(notifyTime) || now.Equal(notifyTime) {
 			log.Info("Dispatching deadline notification", "taskID", t.TaskID, "userID", assigneeID)
 
@@ -128,7 +129,6 @@ func (uc *TaskUseCase) ProcessDeadlineChecks(ctx context.Context) error {
 				uc.dispatcher.Dispatch(ctx, event)
 			}
 
-			// Маркируем, что уведомление отправлено
 			if err := uc.repo.MarkDeadlineNotificationSent(ctx, t.TaskID, now); err != nil {
 				log.Error("failed to mark deadline notification as sent", "taskID", t.TaskID, "error", err)
 			}
@@ -138,22 +138,17 @@ func (uc *TaskUseCase) ProcessDeadlineChecks(ctx context.Context) error {
 	return nil
 }
 
-// generateTasksCacheKey ГЕНЕРИРУЕТ УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ КЭШИРОВАНИЯ СПИСКА ЗАДАЧ
-// ИСПРАВЛЕНА: теперь включает ViewType для избежания коллизий.
+// generateTasksCacheKey ... (оставляем исправленную версию)
 func (uc *TaskUseCase) generateTasksCacheKey(userID uint, reqParams task.GetTasksRequest) string {
 	var keyParts []string
 	keyParts = append(keyParts, "tasks", "user", strconv.FormatUint(uint64(userID), 10))
 
-	// Сначала добавляем ViewType, так как он более общий
 	if reqParams.ViewType != nil {
 		keyParts = append(keyParts, "view", string(*reqParams.ViewType))
 	} else {
-		// Если ViewType не указан, используется значение по умолчанию.
-		// Лучше явно указать это в ключе, чтобы избежать коллизий.
 		keyParts = append(keyParts, "view", string(task.ViewTypeDefault))
 	}
 
-	// Затем, если указан TeamID, добавляем его.
 	if reqParams.TeamID != nil {
 		keyParts = append(keyParts, "team", strconv.FormatUint(uint64(*reqParams.TeamID), 10))
 	}
@@ -182,20 +177,24 @@ func (uc *TaskUseCase) generateTasksCacheKey(userID uint, reqParams task.GetTask
 		h.Write([]byte(*reqParams.Search))
 		keyParts = append(keyParts, "search", hex.EncodeToString(h.Sum(nil))[:16])
 	}
+
+	// Важно, чтобы сортировка по умолчанию также была частью ключа
+	sortBy := task.FieldUpdatedAt
+	sortOrder := task.SortDirectionDesc
 	if reqParams.SortBy != nil {
-		keyParts = append(keyParts, "sort", string(*reqParams.SortBy))
+		sortBy = *reqParams.SortBy
 		if reqParams.SortOrder != nil {
-			keyParts = append(keyParts, string(*reqParams.SortOrder))
+			sortOrder = *reqParams.SortOrder
 		} else {
-			keyParts = append(keyParts, string(task.SortDirectionAsc))
+			sortOrder = task.SortDirectionAsc // Явно указываем
 		}
-	} else {
-		// Добавим сортировку по умолчанию в ключ, чтобы избежать коллизий
-		keyParts = append(keyParts, "sort", string(task.FieldUpdatedAt), string(task.SortDirectionDesc))
 	}
+	keyParts = append(keyParts, "sort", string(sortBy), string(sortOrder))
+
 	return strings.Join(keyParts, ":")
 }
 
+// updateTaskTags ... (без изменений)
 func (uc *TaskUseCase) updateTaskTags(taskID uint, userID uint, teamID *uint, userTagIDs []uint, teamTagIDs []uint) error {
 	op := "TaskUseCase.updateTaskTags"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)))
@@ -243,6 +242,227 @@ func (uc *TaskUseCase) updateTaskTags(taskID uint, userID uint, teamID *uint, us
 	return nil
 }
 
+// buildTaskResponsesInBatch - НОВАЯ ФУНКЦИЯ для пакетной загрузки тегов и сборки ответов
+func (uc *TaskUseCase) buildTaskResponsesInBatch(tasks []*task.Task, userID uint) ([]*task.TaskResponse, error) {
+	op := "TaskUseCase.buildTaskResponsesInBatch"
+	log := uc.log.With(slog.String("op", op), slog.Int("task_count", len(tasks)))
+
+	if len(tasks) == 0 {
+		return []*task.TaskResponse{}, nil
+	}
+
+	// 1. Собираем все ID
+	taskIDs := make([]uint, len(tasks))
+	tasksByTeam := make(map[uint][]*task.Task) // Группируем задачи по командам
+	for i, t := range tasks {
+		taskIDs[i] = t.TaskID
+		if t.TeamID != nil {
+			tasksByTeam[*t.TeamID] = append(tasksByTeam[*t.TeamID], t)
+		}
+	}
+
+	// 2. Один запрос на все связи task-tag
+	links, err := uc.tagRepo.GetLinksForTaskIDs(taskIDs) // Используем новый метод репо
+	if err != nil {
+		log.Error("failed to get links for task IDs", "error", err)
+		return nil, task.ErrTaskInternal
+	}
+
+	// 3. Распределяем ID тегов по типам и собираем их для пакетных запросов
+	userTagIDsToFetch := make([]uint, 0)
+	teamTagIDsByTeam := make(map[uint][]uint) // map[teamID][]tagID
+	linksByTaskID := make(map[uint][]*tag.TaskTag)
+
+	for i := range links {
+		link := links[i]
+		linksByTaskID[link.TaskID] = append(linksByTaskID[link.TaskID], link)
+		if link.UserTagID != nil {
+			userTagIDsToFetch = append(userTagIDsToFetch, *link.UserTagID)
+		} else if link.TeamTagID != nil {
+			// Находим TeamID для этого тега
+			for _, t := range tasks {
+				if t.TaskID == link.TaskID && t.TeamID != nil {
+					teamTagIDsByTeam[*t.TeamID] = append(teamTagIDsByTeam[*t.TeamID], *link.TeamTagID)
+					break
+				}
+			}
+		}
+	}
+
+	// 4. Пакетно загружаем все теги
+	userTagsMap := make(map[uint]*tag.UserTag)
+	if len(userTagIDsToFetch) > 0 {
+		// Используем ValidateAndGetUserTags, который у нас уже есть
+		validUserTags, err := uc.tagUC.ValidateAndGetUserTags(userID, userTagIDsToFetch)
+		if err != nil {
+			log.Warn("could not validate all user tags, some may be missing", "error", err)
+		}
+		for _, ut := range validUserTags {
+			userTagsMap[ut.UserTagID] = ut
+		}
+	}
+
+	teamTagsMap := make(map[uint]*tag.TeamTag)
+	for teamID, tagIDs := range teamTagIDsByTeam {
+		// Используем ValidateAndGetTeamTags для каждой команды
+		validTeamTags, err := uc.tagUC.ValidateAndGetTeamTags(teamID, userID, tagIDs)
+		if err != nil {
+			log.Warn("could not validate all team tags for a team, some may be missing", "teamID", teamID, "error", err)
+		}
+		for _, tt := range validTeamTags {
+			teamTagsMap[tt.TeamTagID] = tt
+		}
+	}
+
+	// 5. Собираем финальные ответы
+	responses := make([]*task.TaskResponse, len(tasks))
+	for i, t := range tasks {
+		resp := task.ToTaskResponse(t)
+		tagResponses := make([]*tag.TagResponse, 0)
+		for _, link := range linksByTaskID[t.TaskID] {
+			if link.UserTagID != nil {
+				if ut, ok := userTagsMap[*link.UserTagID]; ok {
+					tagResponses = append(tagResponses, &tag.TagResponse{
+						ID: ut.UserTagID, Name: ut.Name, Color: ut.Color, Type: "user", OwnerID: ut.OwnerUserID,
+						CreatedAt: ut.CreatedAt, UpdatedAt: ut.UpdatedAt,
+					})
+				}
+			} else if link.TeamTagID != nil {
+				if tt, ok := teamTagsMap[*link.TeamTagID]; ok {
+					tagResponses = append(tagResponses, &tag.TagResponse{
+						ID: tt.TeamTagID, Name: tt.Name, Color: tt.Color, Type: "team", OwnerID: tt.TeamID,
+						CreatedAt: tt.CreatedAt, UpdatedAt: tt.UpdatedAt,
+					})
+				}
+			}
+		}
+		resp.Tags = tagResponses
+		responses[i] = resp
+	}
+
+	return responses, nil
+}
+
+// GetTasks ИСПРАВЛЕНА: использует пакетную загрузку тегов
+func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]*task.TaskResponse, error) {
+	op := "TaskUseCase.GetTasks"
+	viewTypeToUse := task.ViewTypeDefault
+	if reqParams.ViewType != nil {
+		viewTypeToUse = *reqParams.ViewType
+	}
+	log := uc.log.With(slog.String("op", op), slog.Uint64("userID", uint64(userID)), slog.String("viewType", string(viewTypeToUse)))
+
+	cacheKey := uc.generateTasksCacheKey(userID, reqParams)
+	log = log.With(slog.String("cacheKey", cacheKey))
+
+	var tasksToProcess []*task.Task
+
+	// Попытка получить из кэша
+	cachedTaskModels, errCache := uc.repo.GetTasksCache(cacheKey)
+	if errCache == nil && cachedTaskModels != nil {
+		log.Info("task models list retrieved from cache", slog.Int("count", len(cachedTaskModels)))
+		tasksToProcess = cachedTaskModels
+	} else {
+		// Ветка CACHE-MISS
+		log.Info("no data in cache or cache error, proceeding to DB", "error", errCache)
+
+		if reqParams.TeamID != nil {
+			isMember, teamErr := uc.teamService.IsUserMember(userID, *reqParams.TeamID)
+			if teamErr != nil {
+				log.Error("failed to check team membership", "error", teamErr)
+				return nil, task.ErrTaskInternal
+			}
+			if !isMember {
+				log.Warn("user not member of requested team")
+				return []*task.TaskResponse{}, nil
+			}
+		}
+
+		paramsForRepo := task.GetTasksParams{
+			UserID:           userID,
+			ViewType:         viewTypeToUse,
+			TeamID:           reqParams.TeamID,
+			Status:           reqParams.Status,
+			Priority:         reqParams.Priority,
+			AssignedToUserID: reqParams.AssignedToUserID,
+			DeadlineFrom:     reqParams.DeadlineFrom,
+			DeadlineTo:       reqParams.DeadlineTo,
+			SearchQuery:      reqParams.Search,
+			IsDeleted:        reqParams.IsDeleted,
+		}
+		if reqParams.SortBy != nil {
+			paramsForRepo.SortBy = *reqParams.SortBy
+			if reqParams.SortOrder != nil {
+				paramsForRepo.SortOrder = *reqParams.SortOrder
+			} else {
+				paramsForRepo.SortOrder = task.SortDirectionAsc
+			}
+		} else {
+			paramsForRepo.SortBy = task.FieldUpdatedAt
+			paramsForRepo.SortOrder = task.SortDirectionDesc
+		}
+
+		dbTaskModels, err := uc.repo.GetTasks(paramsForRepo)
+		if err != nil {
+			log.Error("failed to get tasks from DB repo", "error", err)
+			return nil, task.ErrTaskInternal
+		}
+
+		var finalTasksToRespond []*task.Task
+		if viewTypeToUse == task.ViewTypeUserCentricGlobal || reqParams.TeamID != nil {
+			for _, tm := range dbTaskModels {
+				if tm.TeamID != nil {
+					isMember, teamErr := uc.teamService.IsUserMember(userID, *tm.TeamID)
+					if teamErr != nil || !isMember {
+						continue
+					}
+				}
+				finalTasksToRespond = append(finalTasksToRespond, tm)
+			}
+		} else {
+			finalTasksToRespond = dbTaskModels
+		}
+
+		if errSave := uc.repo.SaveTasks(cacheKey, finalTasksToRespond); errSave != nil {
+			log.Warn("failed to save tasks list to cache", "error", errSave)
+		}
+		tasksToProcess = finalTasksToRespond
+		log.Info("tasks list retrieved from DB", slog.Int("count", len(tasksToProcess)))
+	}
+
+	// Единая точка сборки ответов с пакетной загрузкой тегов
+	responses, err := uc.buildTaskResponsesInBatch(tasksToProcess, userID)
+	if err != nil {
+		log.Error("failed to build task responses in batch", "error", err)
+		return nil, task.ErrTaskInternal
+	}
+
+	return responses, nil
+}
+
+// buildTaskResponse - старая, неэффективная версия. Оставляем для GetTask (где нужна одна задача)
+func (uc *TaskUseCase) buildTaskResponse(taskModel *task.Task, currentUserID uint) (*task.TaskResponse, error) {
+	if taskModel == nil {
+		return nil, nil
+	}
+	resp := task.ToTaskResponse(taskModel)
+
+	var ownerOrTeamUserIDForTags uint
+	if taskModel.TeamID != nil {
+		ownerOrTeamUserIDForTags = currentUserID
+	} else {
+		ownerOrTeamUserIDForTags = taskModel.CreatedByUserID
+	}
+
+	tags, err := uc.getTaskTags(taskModel.TaskID, ownerOrTeamUserIDForTags, taskModel.TeamID)
+	if err != nil {
+		uc.log.Warn("failed to get tags for task response", "taskID", taskModel.TaskID, "error", err)
+	}
+	resp.Tags = tags
+	return resp, nil
+}
+
+// getTaskTags - старая, неэффективная версия. Оставляем для GetTask
 func (uc *TaskUseCase) getTaskTags(taskID uint, ownerOrTeamUserID uint, teamID *uint) ([]*tag.TagResponse, error) {
 	op := "TaskUseCase.getTaskTags"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)))
@@ -297,6 +517,8 @@ func (uc *TaskUseCase) getTaskTags(taskID uint, ownerOrTeamUserID uint, teamID *
 	}
 	return tagResponses, nil
 }
+
+// --- Остальные функции UseCase (Create, Update, Delete и т.д.) остаются без изменений ---
 
 func (uc *TaskUseCase) CreateTask(userID uint, req task.CreateTaskRequest) (*task.TaskResponse, error) {
 	op := "TaskUseCase.CreateTask"
@@ -390,27 +612,6 @@ func (uc *TaskUseCase) CreateTask(userID uint, req task.CreateTaskRequest) (*tas
 	return taskResp, nil
 }
 
-func (uc *TaskUseCase) buildTaskResponse(taskModel *task.Task, currentUserID uint) (*task.TaskResponse, error) {
-	if taskModel == nil {
-		return nil, nil
-	}
-	resp := task.ToTaskResponse(taskModel)
-
-	var ownerOrTeamUserIDForTags uint
-	if taskModel.TeamID != nil {
-		ownerOrTeamUserIDForTags = currentUserID
-	} else {
-		ownerOrTeamUserIDForTags = taskModel.CreatedByUserID
-	}
-
-	tags, err := uc.getTaskTags(taskModel.TaskID, ownerOrTeamUserIDForTags, taskModel.TeamID)
-	if err != nil {
-		uc.log.Warn("failed to get tags for task response", "taskID", taskModel.TaskID, "error", err)
-	}
-	resp.Tags = tags
-	return resp, nil
-}
-
 func (uc *TaskUseCase) GetTask(taskID uint, userID uint) (*task.TaskResponse, error) {
 	op := "TaskUseCase.GetTask"
 	log := uc.log.With(slog.String("op", op), slog.Uint64("taskID", uint64(taskID)), slog.Uint64("userID", uint64(userID)))
@@ -474,131 +675,6 @@ func (uc *TaskUseCase) checkTaskAccess(taskModel *task.Task, userID uint) error 
 		}
 	}
 	return nil
-}
-
-// GetTasks ПОЛУЧАЕТ СПИСОК ЗАДАЧ С КЭШИРОВАНИЕМ
-// ИСПРАВЛЕНА: полностью переработана логика кэширования для устранения проблемы "N+1"
-// и повышения производительности.
-func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]*task.TaskResponse, error) {
-	op := "TaskUseCase.GetTasks"
-	viewTypeToUse := task.ViewTypeDefault
-	if reqParams.ViewType != nil {
-		viewTypeToUse = *reqParams.ViewType
-	}
-	log := uc.log.With(slog.String("op", op), slog.Uint64("userID", uint64(userID)), slog.String("viewType", string(viewTypeToUse)))
-
-	// 1. Сгенерировать ключ и попытаться прочитать из кэша
-	cacheKey := uc.generateTasksCacheKey(userID, reqParams)
-	log = log.With(slog.String("cacheKey", cacheKey))
-
-	cachedTaskModels, errCache := uc.repo.GetTasksCache(cacheKey)
-	if errCache == nil && cachedTaskModels != nil {
-		// --- ВЕТКА CACHE-HIT: БЫСТРЫЙ ОТВЕТ ---
-		// Мы доверяем данным в кэше. Они уже были проверены на доступность.
-		// Никаких циклов и проверок IsUserMember здесь быть не должно.
-		log.Info("task models list retrieved from cache", slog.Int("count", len(cachedTaskModels)))
-
-		responses := make([]*task.TaskResponse, 0, len(cachedTaskModels))
-		for _, tm := range cachedTaskModels {
-			resp, buildErr := uc.buildTaskResponse(tm, userID)
-			if buildErr != nil {
-				log.Warn("failed to build task response for cached task, skipping", "taskID", tm.TaskID, "error", buildErr)
-				continue
-			}
-			if resp != nil {
-				responses = append(responses, resp)
-			}
-		}
-		return responses, nil
-	}
-
-	// --- ВЕТКА CACHE-MISS: если в кэше ничего нет ---
-	log.Info("no data in cache, proceeding to DB")
-
-	// Теперь делаем проверку на членство в команде, т.к. идем в БД
-	if reqParams.TeamID != nil {
-		isMember, teamErr := uc.teamService.IsUserMember(userID, *reqParams.TeamID)
-		if teamErr != nil {
-			log.Error("failed to check team membership for GetTasks", "error", teamErr, "teamID", *reqParams.TeamID)
-			return nil, task.ErrTaskInternal
-		}
-		if !isMember {
-			log.Warn("user not member of requested team for GetTasks", "teamID", *reqParams.TeamID)
-			return []*task.TaskResponse{}, nil
-		}
-	}
-
-	// Подготовка параметров для репозитория
-	paramsForRepo := task.GetTasksParams{
-		UserID:           userID,
-		ViewType:         viewTypeToUse,
-		TeamID:           reqParams.TeamID,
-		Status:           reqParams.Status,
-		Priority:         reqParams.Priority,
-		AssignedToUserID: reqParams.AssignedToUserID,
-		DeadlineFrom:     reqParams.DeadlineFrom,
-		DeadlineTo:       reqParams.DeadlineTo,
-		SearchQuery:      reqParams.Search,
-		IsDeleted:        reqParams.IsDeleted,
-	}
-	if reqParams.SortBy != nil {
-		paramsForRepo.SortBy = *reqParams.SortBy
-		if reqParams.SortOrder != nil {
-			paramsForRepo.SortOrder = *reqParams.SortOrder
-		} else {
-			paramsForRepo.SortOrder = task.SortDirectionAsc
-		}
-	} else {
-		paramsForRepo.SortBy = task.FieldUpdatedAt
-		paramsForRepo.SortOrder = task.SortDirectionDesc
-	}
-
-	// Получаем задачи из БД
-	dbTaskModels, err := uc.repo.GetTasks(paramsForRepo)
-	if err != nil {
-		log.Error("failed to get tasks from DB repo", "error", err)
-		return nil, task.ErrTaskInternal
-	}
-
-	// Фильтруем по правам доступа. Эта логика выполняется ТОЛЬКО при промахе кэша.
-	var finalTasksToRespond []*task.Task
-	if viewTypeToUse == task.ViewTypeUserCentricGlobal || reqParams.TeamID != nil {
-		for _, tm := range dbTaskModels {
-			if tm.TeamID != nil {
-				isMember, teamErr := uc.teamService.IsUserMember(userID, *tm.TeamID)
-				if teamErr != nil {
-					log.Error("error checking team membership for task in GetTasks", "taskID", tm.TaskID, "teamID", *tm.TeamID, "error", teamErr)
-					continue
-				}
-				if !isMember {
-					continue
-				}
-			}
-			finalTasksToRespond = append(finalTasksToRespond, tm)
-		}
-	} else {
-		finalTasksToRespond = dbTaskModels
-	}
-
-	// Сохраняем в кэш УЖЕ ПРОВЕРЕННЫЙ И ОТФИЛЬТРОВАННЫЙ список
-	if errSave := uc.repo.SaveTasks(cacheKey, finalTasksToRespond); errSave != nil {
-		log.Warn("failed to save tasks list (models) to cache", "error", errSave)
-	}
-
-	// Собираем финальный ответ
-	responses := make([]*task.TaskResponse, 0, len(finalTasksToRespond))
-	for _, tm := range finalTasksToRespond {
-		resp, buildErr := uc.buildTaskResponse(tm, userID)
-		if buildErr != nil {
-			log.Warn("failed to build task response for DB task, skipping", "taskID", tm.TaskID, "error", buildErr)
-			continue
-		}
-		if resp != nil {
-			responses = append(responses, resp)
-		}
-	}
-	log.Info("tasks list retrieved from DB", slog.Int("count", len(responses)))
-	return responses, nil
 }
 
 func (uc *TaskUseCase) UpdateTask(taskID uint, userID uint, req task.UpdateTaskRequest) (*task.TaskResponse, error) {
@@ -838,16 +914,14 @@ func (uc *TaskUseCase) checkTaskEditAccess(taskToEdit *task.Task, userID uint, s
 }
 
 func (uc *TaskUseCase) invalidateTaskListsCache(userID uint, teamID *uint) {
-	// Эта функция может быть неидеальной, т.к. она не инвалидирует кэш для всех возможных фильтров.
-	// Она инвалидирует только самые базовые представления. Для 100% консистентности
-	// может потребоваться более сложная стратегия инвалидации (например, по тегам).
-	basePersonalReq := task.GetTasksRequest{}
-	personalView := task.ViewTypeUserPersonal
-	basePersonalReq.ViewType = &personalView
+	// Эта функция инвалидирует только самые базовые представления.
+	// Для 100% консистентности может потребоваться более сложная стратегия.
+	// Например, удаление по префиксу "tasks:user:1:*"
+	basePersonalReq := task.GetTasksRequest{ViewType: new(task.GetTasksViewType)}
+	*basePersonalReq.ViewType = task.ViewTypeUserPersonal
 
-	baseGlobalReq := task.GetTasksRequest{}
-	globalView := task.ViewTypeUserCentricGlobal
-	baseGlobalReq.ViewType = &globalView
+	baseGlobalReq := task.GetTasksRequest{ViewType: new(task.GetTasksViewType)}
+	*baseGlobalReq.ViewType = task.ViewTypeUserCentricGlobal
 
 	keysToInvalidate := []string{
 		uc.generateTasksCacheKey(userID, basePersonalReq),
@@ -936,9 +1010,7 @@ func (uc *TaskUseCase) invalidateDeletedTasksCache(userID uint, teamID *uint) {
 
 	personalView := task.ViewTypeUserPersonal
 	baseReq.ViewType = &personalView
-	keysToInvalidate := []string{
-		uc.generateTasksCacheKey(userID, baseReq),
-	}
+	keysToInvalidate := []string{uc.generateTasksCacheKey(userID, baseReq)}
 
 	globalView := task.ViewTypeUserCentricGlobal
 	baseReq.ViewType = &globalView
@@ -950,11 +1022,13 @@ func (uc *TaskUseCase) invalidateDeletedTasksCache(userID uint, teamID *uint) {
 	}
 
 	if err := uc.repo.InvalidateTasks(keysToInvalidate...); err != nil {
-		uc.log.Warn("failed to invalidate deleted tasks list cache", "error", err, "keys", keysToInvalidate)
+		uc.log.Warn("failed to invalidate deleted tasks list cache", "error", err)
 	} else {
 		uc.log.Info("successfully invalidated deleted task list cache keys", "keys", keysToInvalidate)
 	}
 }
+
+// ... (весь код, который я предоставил в предыдущем ответе, досюда)
 
 func (uc *TaskUseCase) RestoreTask(taskID uint, userID uint) (*task.TaskResponse, error) {
 	op := "TaskUseCase.RestoreTask"
@@ -1000,6 +1074,9 @@ func (uc *TaskUseCase) DeleteTaskPermanently(taskID uint, userID uint) error {
 
 	taskToDelete, err := uc.repo.GetTaskByIDIncludingDeleted(taskID)
 	if err != nil {
+		if errors.Is(err, task.ErrTaskNotFound) {
+			return nil // Возвращаем nil, если задача уже удалена, это идемпотентно.
+		}
 		return err
 	}
 

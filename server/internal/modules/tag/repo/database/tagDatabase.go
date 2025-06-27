@@ -306,3 +306,20 @@ func (r *TagDatabase) GetTaskTags(taskID uint) ([]*tag.TaskTag, error) {
 	log.Debug("task_tags retrieved for task", slog.Int("count", len(taskTags)))
 	return taskTags, nil
 }
+
+func (r *TagDatabase) GetLinksForTaskIDs(taskIDs []uint) ([]*tag.TaskTag, error) {
+	op := "TagDatabase.GetLinksForTaskIDs"
+	log := r.log.With(slog.String("op", op))
+	var taskTags []*tag.TaskTag
+
+	if len(taskIDs) == 0 {
+		return taskTags, nil
+	}
+
+	if err := r.db.Where("task_id IN ?", taskIDs).Find(&taskTags).Error; err != nil {
+		log.Error("failed to get task_tags for multiple tasks from DB", "error", err)
+		return nil, tag.ErrTagInternal
+	}
+	log.Debug("task_tags retrieved for multiple tasks", "count", len(taskTags))
+	return taskTags, nil
+}
