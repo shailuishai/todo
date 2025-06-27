@@ -138,14 +138,24 @@ func (uc *TaskUseCase) ProcessDeadlineChecks(ctx context.Context) error {
 	return nil
 }
 
+// generateTasksCacheKey ГЕНЕРИРУЕТ УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ КЭШИРОВАНИЯ СПИСКА ЗАДАЧ
+// ИСПРАВЛЕНА: теперь включает ViewType для избежания коллизий.
 func (uc *TaskUseCase) generateTasksCacheKey(userID uint, reqParams task.GetTasksRequest) string {
 	var keyParts []string
 	keyParts = append(keyParts, "tasks", "user", strconv.FormatUint(uint64(userID), 10))
 
+	// Сначала добавляем ViewType, так как он более общий
+	if reqParams.ViewType != nil {
+		keyParts = append(keyParts, "view", string(*reqParams.ViewType))
+	} else {
+		// Если ViewType не указан, используется значение по умолчанию.
+		// Лучше явно указать это в ключе, чтобы избежать коллизий.
+		keyParts = append(keyParts, "view", string(task.ViewTypeDefault))
+	}
+
+	// Затем, если указан TeamID, добавляем его.
 	if reqParams.TeamID != nil {
 		keyParts = append(keyParts, "team", strconv.FormatUint(uint64(*reqParams.TeamID), 10))
-	} else {
-		keyParts = append(keyParts, "personal")
 	}
 
 	if reqParams.IsDeleted != nil && *reqParams.IsDeleted {
@@ -179,6 +189,9 @@ func (uc *TaskUseCase) generateTasksCacheKey(userID uint, reqParams task.GetTask
 		} else {
 			keyParts = append(keyParts, string(task.SortDirectionAsc))
 		}
+	} else {
+		// Добавим сортировку по умолчанию в ключ, чтобы избежать коллизий
+		keyParts = append(keyParts, "sort", string(task.FieldUpdatedAt), string(task.SortDirectionDesc))
 	}
 	return strings.Join(keyParts, ":")
 }
@@ -463,6 +476,9 @@ func (uc *TaskUseCase) checkTaskAccess(taskModel *task.Task, userID uint) error 
 	return nil
 }
 
+// GetTasks ПОЛУЧАЕТ СПИСОК ЗАДАЧ С КЭШИРОВАНИЕМ
+// ИСПРАВЛЕНА: полностью переработана логика кэширования для устранения проблемы "N+1"
+// и повышения производительности.
 func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]*task.TaskResponse, error) {
 	op := "TaskUseCase.GetTasks"
 	viewTypeToUse := task.ViewTypeDefault
@@ -471,6 +487,35 @@ func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]
 	}
 	log := uc.log.With(slog.String("op", op), slog.Uint64("userID", uint64(userID)), slog.String("viewType", string(viewTypeToUse)))
 
+	// 1. Сгенерировать ключ и попытаться прочитать из кэша
+	cacheKey := uc.generateTasksCacheKey(userID, reqParams)
+	log = log.With(slog.String("cacheKey", cacheKey))
+
+	cachedTaskModels, errCache := uc.repo.GetTasksCache(cacheKey)
+	if errCache == nil && cachedTaskModels != nil {
+		// --- ВЕТКА CACHE-HIT: БЫСТРЫЙ ОТВЕТ ---
+		// Мы доверяем данным в кэше. Они уже были проверены на доступность.
+		// Никаких циклов и проверок IsUserMember здесь быть не должно.
+		log.Info("task models list retrieved from cache", slog.Int("count", len(cachedTaskModels)))
+
+		responses := make([]*task.TaskResponse, 0, len(cachedTaskModels))
+		for _, tm := range cachedTaskModels {
+			resp, buildErr := uc.buildTaskResponse(tm, userID)
+			if buildErr != nil {
+				log.Warn("failed to build task response for cached task, skipping", "taskID", tm.TaskID, "error", buildErr)
+				continue
+			}
+			if resp != nil {
+				responses = append(responses, resp)
+			}
+		}
+		return responses, nil
+	}
+
+	// --- ВЕТКА CACHE-MISS: если в кэше ничего нет ---
+	log.Info("no data in cache, proceeding to DB")
+
+	// Теперь делаем проверку на членство в команде, т.к. идем в БД
 	if reqParams.TeamID != nil {
 		isMember, teamErr := uc.teamService.IsUserMember(userID, *reqParams.TeamID)
 		if teamErr != nil {
@@ -482,6 +527,8 @@ func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]
 			return []*task.TaskResponse{}, nil
 		}
 	}
+
+	// Подготовка параметров для репозитория
 	paramsForRepo := task.GetTasksParams{
 		UserID:           userID,
 		ViewType:         viewTypeToUse,
@@ -506,49 +553,14 @@ func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]
 		paramsForRepo.SortOrder = task.SortDirectionDesc
 	}
 
-	cacheKey := uc.generateTasksCacheKey(userID, reqParams)
-	log = log.With(slog.String("cacheKey", cacheKey))
-
-	cachedTaskModels, errCache := uc.repo.GetTasksCache(cacheKey)
-	if errCache == nil && cachedTaskModels != nil {
-		log.Info("task models list retrieved from cache", slog.Int("count", len(cachedTaskModels)))
-
-		var accessibleCachedTasks []*task.Task
-		for _, tm := range cachedTaskModels {
-			if reqParams.IsDeleted == nil || !*reqParams.IsDeleted {
-				if tm.IsDeleted {
-					continue
-				}
-			}
-			if tm.TeamID != nil {
-				isMember, teamErr := uc.teamService.IsUserMember(userID, *tm.TeamID)
-				if teamErr != nil || !isMember {
-					continue
-				}
-			}
-			accessibleCachedTasks = append(accessibleCachedTasks, tm)
-		}
-
-		responses := make([]*task.TaskResponse, 0, len(accessibleCachedTasks))
-		for _, tm := range accessibleCachedTasks {
-			resp, buildErr := uc.buildTaskResponse(tm, userID)
-			if buildErr != nil {
-				log.Warn("failed to build task response for cached task, skipping", "taskID", tm.TaskID, "error", buildErr)
-				continue
-			}
-			if resp != nil {
-				responses = append(responses, resp)
-			}
-		}
-		return responses, nil
-	}
-
+	// Получаем задачи из БД
 	dbTaskModels, err := uc.repo.GetTasks(paramsForRepo)
 	if err != nil {
 		log.Error("failed to get tasks from DB repo", "error", err)
 		return nil, task.ErrTaskInternal
 	}
 
+	// Фильтруем по правам доступа. Эта логика выполняется ТОЛЬКО при промахе кэша.
 	var finalTasksToRespond []*task.Task
 	if viewTypeToUse == task.ViewTypeUserCentricGlobal || reqParams.TeamID != nil {
 		for _, tm := range dbTaskModels {
@@ -568,10 +580,12 @@ func (uc *TaskUseCase) GetTasks(userID uint, reqParams task.GetTasksRequest) ([]
 		finalTasksToRespond = dbTaskModels
 	}
 
+	// Сохраняем в кэш УЖЕ ПРОВЕРЕННЫЙ И ОТФИЛЬТРОВАННЫЙ список
 	if errSave := uc.repo.SaveTasks(cacheKey, finalTasksToRespond); errSave != nil {
 		log.Warn("failed to save tasks list (models) to cache", "error", errSave)
 	}
 
+	// Собираем финальный ответ
 	responses := make([]*task.TaskResponse, 0, len(finalTasksToRespond))
 	for _, tm := range finalTasksToRespond {
 		resp, buildErr := uc.buildTaskResponse(tm, userID)
@@ -726,9 +740,7 @@ func (uc *TaskUseCase) PatchTask(taskID uint, userID uint, req task.PatchTaskReq
 		madeChangesToDetails = true
 	}
 
-	// <<< ИСПРАВЛЕНИЕ: Добавлена обработка статуса >>>
 	if req.Status != nil && *req.Status != existingTask.Status {
-		// Проверяем права на изменение ТОЛЬКО статуса
 		if errAccess := uc.checkTaskEditAccess(existingTask, userID, true); errAccess != nil {
 			return nil, errAccess
 		}
@@ -749,7 +761,6 @@ func (uc *TaskUseCase) PatchTask(taskID uint, userID uint, req task.PatchTaskReq
 		}
 	}
 
-	// Обновляем `CompletedAt` на основе (возможно нового) статуса
 	if existingTask.Status == "done" && existingTask.CompletedAt == nil {
 		now := time.Now()
 		existingTask.CompletedAt = &now
@@ -757,7 +768,6 @@ func (uc *TaskUseCase) PatchTask(taskID uint, userID uint, req task.PatchTaskReq
 	if existingTask.Status != "done" && existingTask.CompletedAt != nil {
 		existingTask.CompletedAt = nil
 	}
-	// <<< КОНЕЦ ИСПРАВЛЕНИЯ >>>
 
 	updatedTaskModel, err := uc.repo.UpdateTask(existingTask)
 	if err != nil {
@@ -828,11 +838,25 @@ func (uc *TaskUseCase) checkTaskEditAccess(taskToEdit *task.Task, userID uint, s
 }
 
 func (uc *TaskUseCase) invalidateTaskListsCache(userID uint, teamID *uint) {
+	// Эта функция может быть неидеальной, т.к. она не инвалидирует кэш для всех возможных фильтров.
+	// Она инвалидирует только самые базовые представления. Для 100% консистентности
+	// может потребоваться более сложная стратегия инвалидации (например, по тегам).
+	basePersonalReq := task.GetTasksRequest{}
+	personalView := task.ViewTypeUserPersonal
+	basePersonalReq.ViewType = &personalView
+
+	baseGlobalReq := task.GetTasksRequest{}
+	globalView := task.ViewTypeUserCentricGlobal
+	baseGlobalReq.ViewType = &globalView
+
 	keysToInvalidate := []string{
-		uc.generateTasksCacheKey(userID, task.GetTasksRequest{TeamID: nil}),
+		uc.generateTasksCacheKey(userID, basePersonalReq),
+		uc.generateTasksCacheKey(userID, baseGlobalReq),
 	}
+
 	if teamID != nil {
-		keysToInvalidate = append(keysToInvalidate, uc.generateTasksCacheKey(userID, task.GetTasksRequest{TeamID: teamID}))
+		baseTeamReq := task.GetTasksRequest{TeamID: teamID}
+		keysToInvalidate = append(keysToInvalidate, uc.generateTasksCacheKey(userID, baseTeamReq))
 	}
 
 	if err := uc.repo.InvalidateTasks(keysToInvalidate...); err != nil {
@@ -908,11 +932,21 @@ func (uc *TaskUseCase) checkTaskDeleteAccess(taskToDelete *task.Task, userID uin
 
 func (uc *TaskUseCase) invalidateDeletedTasksCache(userID uint, teamID *uint) {
 	isDeleted := true
+	baseReq := task.GetTasksRequest{IsDeleted: &isDeleted}
+
+	personalView := task.ViewTypeUserPersonal
+	baseReq.ViewType = &personalView
 	keysToInvalidate := []string{
-		uc.generateTasksCacheKey(userID, task.GetTasksRequest{TeamID: nil, IsDeleted: &isDeleted}),
+		uc.generateTasksCacheKey(userID, baseReq),
 	}
+
+	globalView := task.ViewTypeUserCentricGlobal
+	baseReq.ViewType = &globalView
+	keysToInvalidate = append(keysToInvalidate, uc.generateTasksCacheKey(userID, baseReq))
+
 	if teamID != nil {
-		keysToInvalidate = append(keysToInvalidate, uc.generateTasksCacheKey(userID, task.GetTasksRequest{TeamID: teamID, IsDeleted: &isDeleted}))
+		baseTeamReq := task.GetTasksRequest{TeamID: teamID, IsDeleted: &isDeleted}
+		keysToInvalidate = append(keysToInvalidate, uc.generateTasksCacheKey(userID, baseTeamReq))
 	}
 
 	if err := uc.repo.InvalidateTasks(keysToInvalidate...); err != nil {

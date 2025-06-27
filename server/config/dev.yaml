@@ -31,7 +31,7 @@ cache:
   db: 0
   state_expiration: 5m
   email_confirmed_code_expiration: 16m
-  default_task_cache_ttl: 5m
+  default_task_cache_ttl: 15m
   default_team_cache_ttl: 15m
   default_team_list_cache_ttl: 5m
 
